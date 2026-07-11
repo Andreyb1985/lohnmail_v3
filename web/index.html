@@ -1,0 +1,1386 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LohnMail v2 — Enterprise Edition</title>
+  <link rel="stylesheet" href="styles.css?v=license-statuses-20260710-0018" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">LM</div>
+        <div>
+          <div class="brand-title">LohnMail v2</div>
+          <div class="brand-subtitle">Enterprise Edition</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active"><span data-icon="grid"></span>Dashboard</button>
+        <button class="nav-item"><span data-icon="process"></span>Verarbeitung</button>
+        <button class="nav-item"><span data-icon="check"></span>Prüfung</button>
+        <button class="nav-item"><span data-icon="send"></span>Versand</button>
+        <button class="nav-item"><span data-icon="report"></span>Berichte</button>
+        <button class="nav-item"><span data-icon="mail"></span>Nachricht</button>
+        <div class="nav-separator"></div>
+        <button class="nav-item"><span data-icon="building"></span>Unternehmen</button>
+        <button class="nav-item"><span data-icon="key"></span>Lizenzen</button>
+        <button class="nav-item"><span data-icon="settings"></span>Einstellungen</button>
+        <div class="nav-separator"></div>
+        <button class="nav-item"><span data-icon="help"></span>Hilfe</button>
+        <button class="nav-item"><span data-icon="info"></span>Über LohnMail</button>
+      </nav>
+
+      <div class="side-status">
+        <div class="status-dot"></div>
+        <div>
+          <div class="side-status-title">System bereit</div>
+          <div class="side-status-subtitle">Alle Dienste aktiv</div>
+        </div>
+      </div>
+      <div class="side-version">v2.0.0 Enterprise Edition</div>
+    </aside>
+
+    <section class="main">
+      <header class="topbar">
+        <div class="page-breadcrumb">
+          <strong>Dashboard</strong>
+          <span>Übersicht & Systemstatus</span>
+        </div>
+        <div class="top-actions">
+          <div class="pill green" data-dashboard="license-pill">Lizenz: Aktiv</div>
+          <div class="warning-center">
+            <button class="bell" data-warning-toggle title="Hinweise"><span data-icon="bell"></span><span class="badge" data-warning-count hidden>0</span></button>
+            <div class="warning-menu" data-warning-menu hidden>
+              <div class="warning-menu-head">
+                <strong>Hinweise</strong>
+                <small data-warning-summary>Alles bereit</small>
+              </div>
+              <div class="warning-list" data-warning-list></div>
+            </div>
+          </div>
+          <div class="company-switcher">
+            <button class="company-switch-button" data-company-switch-toggle>
+              <span class="company-switch-avatar" data-company-switch="initials">--</span>
+              <span>
+                <small>Aktiver Mandant</small>
+                <strong data-company-switch="name">Mandant laden...</strong>
+                <em data-company-switch="status">Excel prüfen</em>
+              </span>
+              <i>⌄</i>
+            </button>
+            <div class="company-switch-menu" data-company-switch-menu hidden>
+              <label class="company-switch-search">
+                <span data-icon="search"></span>
+                <input data-company-switch-search placeholder="Mandant suchen...">
+              </label>
+              <div class="company-switch-list" data-company-switch-list></div>
+              <div class="company-switch-actions">
+                <button data-company-action="new-company"><span data-icon="building"></span>Neuer Mandant</button>
+                <button data-company-switch-action="open-company"><span data-icon="arrow-up-right"></span>Unternehmen öffnen</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="content">
+        <section class="page page-dashboard active" data-page="Dashboard">
+        <div class="content-heading page-action-heading">
+          <div>
+            <h1>Dashboard</h1>
+            <p>Überblick über Verarbeitung, Versand, Berichte und Systemstatus.</p>
+          </div>
+          <button class="primary" data-dashboard-action="new-run"><span data-icon="play"></span>Neuer Lauf</button>
+        </div>
+
+        <section class="metrics-grid">
+          <article class="metric metric-blue">
+            <div class="metric-icon"><span data-icon="users"></span></div>
+            <div>
+              <h3>Verarbeitete Mitarbeiter</h3>
+              <div class="metric-value" data-dashboard="employees">0</div>
+              <p>Gesamt</p>
+              <div class="metric-track"><span style="width:0%"></span></div>
+            </div>
+          </article>
+          <article class="metric metric-green">
+            <div class="metric-icon"><span data-icon="mail"></span></div>
+            <div>
+              <h3>Versendete E-Mails</h3>
+              <div class="metric-value" data-dashboard="sent">0</div>
+              <p>E-Mails gesendet</p>
+              <div class="metric-track"><span style="width:0%"></span></div>
+            </div>
+          </article>
+          <article class="metric metric-orange">
+            <div class="metric-icon"><span data-icon="warning"></span></div>
+            <div>
+              <h3>Mitarbeiter ohne E-Mail</h3>
+              <div class="metric-value" data-dashboard="missing-email">0</div>
+              <p>Bitte prüfen</p>
+              <div class="metric-track"><span style="width:0%"></span></div>
+            </div>
+          </article>
+          <article class="metric metric-red">
+            <div class="metric-icon"><span data-icon="x"></span></div>
+            <div>
+              <h3>Fehler</h3>
+              <div class="metric-value" data-dashboard="errors">0</div>
+              <p data-dashboard="errors-label">Keine Fehler</p>
+              <div class="metric-track"><span style="width:0%"></span></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="dashboard-grid">
+          <article class="card last-run">
+            <h2>Letzter Lauf</h2>
+            <div class="empty-state">
+              <div class="empty-icon"><span data-icon="hourglass"></span></div>
+              <p>Noch kein Lauf in dieser Sitzung.<br />Starten Sie eine Prüfung oder Verarbeitung.</p>
+              <button class="ghost" data-dashboard-action="open-processing"><span data-icon="play"></span>Verarbeitung starten</button>
+            </div>
+          </article>
+
+          <article class="card health">
+            <h2>Systemstatus</h2>
+            <div class="health-list">
+              <div><span class="check">✓</span>Verarbeitungsmodul <b data-dashboard="status-processing">Bereit</b></div>
+              <div><span class="check">✓</span>PDF Engine <b data-dashboard="status-pdf">Bereit</b></div>
+              <div><span class="check">✓</span>Excel Engine <b data-dashboard="status-excel">Bereit</b></div>
+              <div><span class="check">✓</span>E-Mail (SMTP) <b data-dashboard="status-mail">Bereit</b></div>
+              <div><span class="check">✓</span>Lizenzserver <b data-dashboard="status-license">Bereit</b></div>
+              <div><span class="check">✓</span>Dateisystem <b data-dashboard="status-filesystem">Bereit</b></div>
+            </div>
+          </article>
+
+          <article class="card quick">
+            <h2>Schnellaktionen</h2>
+            <div class="quick-grid">
+              <button data-dashboard-action="open-processing"><span data-icon="play"></span>Verarbeitung starten</button>
+              <button data-processing-action="start-check"><span data-icon="checkcircle"></span>Prüfung starten</button>
+              <button data-dashboard-action="open-shipping"><span data-icon="send"></span>Versand starten</button>
+              <button data-dashboard-action="open-reports"><span data-icon="bars"></span>Berichte anzeigen</button>
+            </div>
+          </article>
+
+          <article class="card activity">
+            <h2>Aktivitätsverlauf</h2>
+            <div class="activity-empty">
+              <span data-icon="clock"></span>
+              <div>Noch keine Aktivität.<br />Der nächste Lauf wird hier zusammengefasst.</div>
+            </div>
+          </article>
+
+          <article class="card reports">
+            <h2>Letzte Berichte</h2>
+            <div class="report-list">
+              <div class="report-item" data-report="audit"><span class="file file-xls">XLS</span><div><strong>audit_check.xlsx</strong><small>Nicht erstellt</small></div><button><span data-icon="arrow-up-right"></span></button></div>
+              <div class="report-item" data-report="missing"><span class="file file-pdf">PDF</span><div><strong>ohne_email_gesamt.pdf</strong><small>Nicht erstellt</small></div><button><span data-icon="arrow-up-right"></span></button></div>
+              <div class="report-item" data-report="send"><span class="file file-xls">XLS</span><div><strong>send_report.xlsx</strong><small>Nicht erstellt</small></div><button><span data-icon="arrow-up-right"></span></button></div>
+            </div>
+            <button class="wide-button">Alle Berichte anzeigen</button>
+          </article>
+
+          <article class="card pipeline-card">
+            <h2>Processing Overview</h2>
+            <div class="pipeline">
+              <div data-dashboard-pipeline-step="pdf"><span data-icon="doc"></span><small>PDF Import</small><em data-dashboard-pipeline-label="pdf">Wartet</em></div>
+              <i></i>
+              <div data-dashboard-pipeline-step="excel"><span data-icon="table"></span><small>Excel Import</small><em data-dashboard-pipeline-label="excel">Wartet</em></div>
+              <i></i>
+              <div data-dashboard-pipeline-step="validation"><span data-icon="checkcircle"></span><small>Prüfung</small><em data-dashboard-pipeline-label="validation">Wartet</em></div>
+              <i></i>
+              <div data-dashboard-pipeline-step="processing"><span data-icon="settings"></span><small>Verarbeitung</small><em data-dashboard-pipeline-label="processing">Wartet</em></div>
+              <i></i>
+              <div data-dashboard-pipeline-step="shipping"><span data-icon="send"></span><small>Versand</small><em data-dashboard-pipeline-label="shipping">Wartet</em></div>
+              <i></i>
+              <div data-dashboard-pipeline-step="reports"><span data-icon="bars"></span><small>Berichte</small><em data-dashboard-pipeline-label="reports">Wartet</em></div>
+            </div>
+            <div class="progress"><span data-dashboard="pipeline-progress"></span><b data-dashboard="pipeline-progress-label">0%</b></div>
+            <p data-dashboard="pipeline-message">Noch kein Lauf gestartet.</p>
+          </article>
+        </section>
+        </section>
+
+        <section class="page page-message" data-page="Nachricht">
+          <div class="content-heading">
+            <div>
+              <h1>Nachricht</h1>
+              <p>Freie E-Mail an Mitarbeiter mit hinterlegter E-Mail-Adresse senden.</p>
+            </div>
+          </div>
+
+          <section class="message-layout">
+            <article class="card message-compose-card" data-message-card>
+              <div class="card-title-row">
+                <div>
+                  <h2>Nachricht senden</h2>
+                  <small data-mass="context">Empfänger werden aus der Excel-Datei des aktiven Unternehmens geladen.</small>
+                </div>
+                <span class="message-mode" data-mass="mode">smtp</span>
+              </div>
+              <div class="mass-form-grid">
+                <label>Betreff<input data-mass-field="subject" placeholder="Betreff eingeben"></label>
+                <label class="mass-body">Nachricht<textarea data-mass-field="body" rows="8" placeholder="Nachricht eingeben"></textarea></label>
+              </div>
+              <div class="mass-preview">
+                <div>
+                  <span data-icon="building"></span>
+                  <strong data-mass="company">Unternehmen nicht geladen</strong>
+                  <small data-mass="excel">Excel-Datei prüfen</small>
+                </div>
+                <div>
+                  <span data-icon="mail"></span>
+                  <strong data-mass="recipient-count">0 Empfänger</strong>
+                  <small data-mass="preview-subject">Noch keine Vorschau</small>
+                </div>
+                <div class="mass-progress"><span data-mass="progress" style="width:0%"></span></div>
+              </div>
+              <div class="mass-recipients" data-mass="recipients">
+                <div>Vorschau lädt nach Klick auf „Vorschau laden“.</div>
+              </div>
+              <div class="mass-actions">
+                <button class="secondary-action" data-mass-action="preview"><span data-icon="search"></span>Vorschau laden</button>
+                <button class="primary" data-mass-action="send" disabled><span data-icon="send"></span>Nachricht senden</button>
+              </div>
+              <div class="settings-message mass-message" data-mass="message">Nachricht kann vorbereitet werden.</div>
+            </article>
+          </section>
+        </section>
+
+        <section class="page page-processing" data-page="Verarbeitung">
+          <div class="content-heading processing-heading page-action-heading">
+            <div>
+              <h1>Verarbeitung</h1>
+              <p>Daten importieren, prüfen und verarbeiten.</p>
+            </div>
+            <button class="primary" data-processing="start-button" data-processing-action="start-check"><span data-icon="play"></span><span data-processing="start-label">Verarbeitung starten</span></button>
+          </div>
+
+          <section class="workflow-card">
+            <div class="workflow-step done" data-processing-step="pdf">
+              <div class="step-index">1</div>
+              <div class="step-icon"><span data-icon="doc"></span></div>
+              <div><strong>PDF Import</strong><small data-processing="workflow-pdf">Abgeschlossen</small></div>
+            </div>
+            <i></i>
+            <div class="workflow-step active" data-processing-step="excel">
+              <div class="step-index">2</div>
+              <div class="step-icon"><span data-icon="table"></span></div>
+              <div><strong>Excel Import</strong><small data-processing="workflow-excel">Bereit</small></div>
+            </div>
+            <i></i>
+            <div class="workflow-step muted" data-processing-step="validation">
+              <div class="step-index">3</div>
+              <div class="step-icon"><span data-icon="search"></span></div>
+              <div><strong>Validierung</strong><small>Wartet</small></div>
+            </div>
+            <i></i>
+            <div class="workflow-step muted">
+              <div class="step-index">4</div>
+              <div class="step-icon"><span data-icon="settings"></span></div>
+              <div><strong>Verarbeitung</strong><small>Wartet</small></div>
+            </div>
+            <i></i>
+            <div class="workflow-step muted">
+              <div class="step-index">5</div>
+              <div class="step-icon"><span data-icon="send"></span></div>
+              <div><strong>Versand</strong><small>Wartet</small></div>
+            </div>
+            <i></i>
+            <div class="workflow-step muted">
+              <div class="step-index">6</div>
+              <div class="step-icon"><span data-icon="report"></span></div>
+              <div><strong>Ergebnis</strong><small>Wartet</small></div>
+            </div>
+          </section>
+
+          <section class="processing-grid">
+            <div class="processing-main">
+              <article class="card import-card">
+                <h2>Import-Auswahl</h2>
+                <div class="import-row ok" data-processing-row="pdf">
+                  <div class="import-icon pdf"><span data-icon="doc"></span></div>
+                  <div class="import-info">
+                    <strong>Lohnjournal (PDF)</strong>
+                    <small data-processing="pdf-kind">DATEV Lohnjournal Export</small>
+                    <div class="import-meta"><span>Modus<br><b data-processing="pdf-mode">Ordner</b></span><span>Status<br><b data-processing="pdf-label">Bereit</b></span><span>Geändert<br><b data-processing="pdf-updated">--</b></span></div>
+                    <div class="input-mode-switch" data-processing="pdf-mode-switch"><button type="button" data-pdf-mode="folder">Ordner</button><button type="button" data-pdf-mode="single_pdf">Gesamt-PDF</button></div>
+                  </div>
+                  <div class="file-field" data-processing-action="choose-pdf"><span data-processing="pdf-path">Nicht ausgewählt</span><button title="PDF-Eingang" type="button"><span data-icon="doc"></span></button></div>
+                  <div class="row-status success" data-processing="pdf-status"><span data-icon="checkcircle"></span></div>
+                </div>
+                <div class="import-row pending" data-processing-row="excel">
+                  <div class="import-icon xls"><span data-icon="table"></span></div>
+                  <div class="import-info">
+                    <strong>Mitarbeiter (Excel)</strong>
+                    <small>Mitarbeiterliste / Stammdaten</small>
+                    <div class="import-meta"><span>Typ<br><b>Excel</b></span><span>Status<br><b data-processing="excel-label">Nicht ausgewählt</b></span><span>Geändert<br><b data-processing="excel-updated">--</b></span></div>
+                  </div>
+                  <div class="file-field" data-processing-action="choose-excel"><span data-processing="excel-path">Nicht ausgewählt</span><button title="Excel-Datei" type="button"><span data-icon="table"></span></button></div>
+                  <div class="row-status neutral" data-processing="excel-status">–</div>
+                </div>
+                <div class="import-row ok" data-processing-row="output">
+                  <div class="import-icon folder"><span data-icon="report"></span></div>
+                  <div class="import-info">
+                    <strong>Ausgabeordner</strong>
+                    <small>Ergebnisse speichern</small>
+                    <div class="import-meta"><span>Typ<br><b>Ordner</b></span><span>Status<br><b data-processing="output-label">Bereit</b></span><span>Geändert<br><b data-processing="output-updated">--</b></span></div>
+                  </div>
+                  <div class="file-field"><span data-processing="output-path">Gesob_Lohn</span><button title="Ausgabeordner"><span data-icon="report"></span></button></div>
+                  <div class="row-status success" data-processing="output-status"><span data-icon="checkcircle"></span></div>
+                </div>
+                <div class="info-banner" data-processing="input-message"><span data-icon="info"></span> Eingaben werden geladen.</div>
+              </article>
+
+              <article class="card operation-log">
+                <div class="card-title-row"><h2>Aktivitätsprotokoll</h2><button data-processing-action="show-log">Alle anzeigen</button></div>
+                <div class="log-list" data-processing="activity-log"></div>
+              </article>
+            </div>
+
+            <aside class="processing-side">
+              <article class="card process-status">
+                <h2>Verarbeitungs-Status</h2>
+                <div class="status-rows">
+                  <div><span>Aktueller Schritt</span><b data-processing="current-step">Eingaben prüfen</b></div>
+                  <div><span>Gesamtfortschritt</span><b data-processing="progress-label">0%</b></div>
+                  <div class="side-progress"><span data-processing="progress-bar" style="width:0%"></span></div>
+                  <div><span>Mitarbeiter gesamt</span><b data-processing="employees-total">0</b></div>
+                  <div><span>Verarbeitet</span><b data-processing="processed">0</b></div>
+                  <div><span>Erfolgreich versendet</span><b data-processing="sent">0</b></div>
+                  <div><span>Warnungen</span><b class="warning-text" data-processing="warnings">0</b></div>
+                  <div><span>Fehler</span><b class="error-text" data-processing="errors">0</b></div>
+                  <div><span>Verstrichene Zeit</span><b data-processing="elapsed">00:00:00</b></div>
+                  <div><span>Geschätzte Restzeit</span><b data-processing="remaining">--:--:--</b></div>
+                </div>
+              </article>
+
+              <article class="card side-actions">
+                <h2>Schnellaktionen</h2>
+                <div class="side-action-grid">
+                  <button data-processing-action="choose-pdf"><span data-icon="doc"></span>Import PDF</button>
+                  <button data-processing-action="choose-excel"><span data-icon="table"></span>Import Excel</button>
+                  <button><span data-icon="process"></span>Cache leeren</button>
+                  <button><span data-icon="x"></span>Alle zurücksetzen</button>
+                </div>
+              </article>
+            </aside>
+          </section>
+        </section>
+
+
+        <section class="page page-validation" data-page="Prüfung">
+          <div class="content-heading validation-heading page-action-heading">
+            <div>
+              <h1>Prüfung</h1>
+              <p>Validierung und Prüfung Ihrer Lohnunterlagen.</p>
+            </div>
+            <button class="primary validation-next" data-validation-action="go-shipping"><span data-icon="send"></span>Zum Versand</button>
+            <div class="heading-actions validation-report-actions">
+              <button class="secondary-action report-action hidden" data-report-open="missing"><span data-icon="doc"></span>PDF ohne E-Mail öffnen</button>
+              <button class="secondary-action report-action" data-report-open="audit"><span data-icon="report"></span>Prüfbericht exportieren</button>
+            </div>
+          </div>
+
+          <section class="workflow-card global-workflow" data-global-workflow>
+            <button class="workflow-step done" data-workflow-step="pdf" data-workflow-target="Verarbeitung">
+              <div class="step-index">1</div>
+              <div class="step-icon"><span data-icon="doc"></span></div>
+              <div><strong>PDF Import</strong><small>Bereit</small></div>
+            </button>
+            <i></i>
+            <button class="workflow-step done" data-workflow-step="excel" data-workflow-target="Verarbeitung">
+              <div class="step-index">2</div>
+              <div class="step-icon"><span data-icon="table"></span></div>
+              <div><strong>Excel Import</strong><small>Bereit</small></div>
+            </button>
+            <i></i>
+            <button class="workflow-step active" data-workflow-step="validation" data-workflow-target="Prüfung">
+              <div class="step-index">3</div>
+              <div class="step-icon"><span data-icon="search"></span></div>
+              <div><strong>Validierung</strong><small>Aktuell</small></div>
+            </button>
+            <i></i>
+            <button class="workflow-step done" data-workflow-step="processing" data-workflow-target="Verarbeitung">
+              <div class="step-index">4</div>
+              <div class="step-icon"><span data-icon="settings"></span></div>
+              <div><strong>Verarbeitung</strong><small>Bereit</small></div>
+            </button>
+            <i></i>
+            <button class="workflow-step muted" data-workflow-step="shipping" data-workflow-target="Versand">
+              <div class="step-index">5</div>
+              <div class="step-icon"><span data-icon="send"></span></div>
+              <div><strong>Versand</strong><small>Wartet</small></div>
+            </button>
+            <i></i>
+            <button class="workflow-step muted" data-workflow-step="reports" data-workflow-target="Berichte">
+              <div class="step-index">6</div>
+              <div class="step-icon"><span data-icon="report"></span></div>
+              <div><strong>Ergebnis</strong><small>Wartet</small></div>
+            </button>
+          </section>
+
+          <section class="validation-metrics">
+            <article class="validation-metric critical"><span data-icon="x"></span><div><strong data-validation="critical-count">0</strong><small>Kritische Fehler</small><em>Müssen behoben werden</em></div></article>
+            <article class="validation-metric warning"><span data-icon="warning"></span><div><strong data-validation="warning-count">0</strong><small>Warnungen</small><em>Überprüfen empfohlen</em></div></article>
+            <article class="validation-metric info"><span data-icon="info"></span><div><strong data-validation="info-count">0</strong><small>Hinweise</small><em>Zur Information</em></div></article>
+            <article class="validation-metric success"><span data-icon="checkcircle"></span><div><strong data-validation="checked-count">0</strong><small>Geprüfte Mitarbeiter</small><em data-validation="checked-label">Von 0 (0%)</em></div></article>
+          </section>
+
+          <section class="validation-toolbar">
+            <div class="filter-tabs">
+              <button class="active" data-validation-filter="all"><span data-icon="checkcircle"></span><span data-validation="filter-all">Alle (0)</span></button>
+              <button data-validation-filter="critical"><span data-icon="x"></span><span data-validation="filter-critical">Kritisch (0)</span></button>
+              <button data-validation-filter="warning"><span data-icon="warning"></span><span data-validation="filter-warning">Warnungen (0)</span></button>
+              <button data-validation-filter="info"><span data-icon="info"></span><span data-validation="filter-info">Hinweise (0)</span></button>
+            </div>
+            <label class="table-search"><input data-validation="search" placeholder="In Tabelle suchen..." /><span data-icon="search"></span></label>
+            <button class="toolbar-btn" data-validation-action="toggle-issues"><span data-icon="process"></span><span data-validation="issues-filter-label">Filter</span></button>
+            <button class="toolbar-btn" data-validation-action="toggle-group">Gruppieren: Aus</button>
+            <button class="toolbar-btn" data-validation-action="export-csv"><span data-icon="report"></span>Export</button>
+            <div class="validation-shipping-status"><span data-icon="send"></span><span data-validation="shipping-status">0 versandbereit · 0 ohne E-Mail · 0 Fehler</span></div>
+          </section>
+
+          <section class="validation-grid">
+            <article class="card validation-table-card">
+              <div class="validation-table-scroll">
+              <table class="validation-table">
+                <thead>
+                  <tr><th><input type="checkbox"></th><th>Typ</th><th>Mitarbeiter</th><th>Personalnr.</th><th>Kategorie</th><th>Beschreibung</th><th>E-Mail</th><th>Dokument</th><th>Zeile</th></tr>
+                </thead>
+                <tbody data-validation="table-body">
+                  <tr class="selected critical-row"><td><input type="checkbox"></td><td><span class="type-dot red"><span data-icon="x"></span></span></td><td>Max Mustermann</td><td>10025</td><td>Steuer</td><td>Steuerklasse fehlt oder ungültig</td><td>Lohnabrechnung_05_2025.pdf</td><td>23</td></tr>
+                  <tr class="critical-row"><td><input type="checkbox"></td><td><span class="type-dot red"><span data-icon="x"></span></span></td><td>Anna Schmitz</td><td>10038</td><td>Sozialversicherung</td><td>KV-Beitrag über Beitragsbemessungsgrenze</td><td>Lohnabrechnung_05_2025.pdf</td><td>45</td></tr>
+                  <tr class="critical-row"><td><input type="checkbox"></td><td><span class="type-dot red"><span data-icon="x"></span></span></td><td>Peter Müller</td><td>10012</td><td>Lohnart</td><td>Lohnart 4010 hat keinen Betrag</td><td>Stammdaten_05_2025.xlsx</td><td>178</td></tr>
+                  <tr><td><input type="checkbox"></td><td><span class="type-dot orange"><span data-icon="warning"></span></span></td><td>Lisa Wagner</td><td>10067</td><td>Arbeitszeit</td><td>Überstunden ohne Zuschlag</td><td>Lohnabrechnung_05_2025.pdf</td><td>67</td></tr>
+                  <tr><td><input type="checkbox"></td><td><span class="type-dot orange"><span data-icon="warning"></span></span></td><td>Thomas Becker</td><td>10014</td><td>Stammdaten</td><td>Geburtsdatum fehlt</td><td>Stammdaten_05_2025.xlsx</td><td>12</td></tr>
+                  <tr><td><input type="checkbox"></td><td><span class="type-dot orange"><span data-icon="warning"></span></span></td><td>Sophie Schneider</td><td>10081</td><td>Bankverbindung</td><td>IBAN-Prüfziffer ungültig</td><td>Stammdaten_05_2025.xlsx</td><td>32</td></tr>
+                  <tr><td><input type="checkbox"></td><td><span class="type-dot blue"><span data-icon="info"></span></span></td><td>Jan Hoffmann</td><td>10033</td><td>Info</td><td>Eintrittsdatum in der Zukunft</td><td>Stammdaten_05_2025.xlsx</td><td>5</td></tr>
+                  <tr><td><input type="checkbox"></td><td><span class="type-dot blue"><span data-icon="info"></span></span></td><td>Maria Klein</td><td>10047</td><td>Info</td><td>Sachbezug ohne Betrag</td><td>Lohnabrechnung_05_2025.pdf</td><td>91</td></tr>
+                  <tr><td><input type="checkbox"></td><td><span class="type-dot blue"><span data-icon="info"></span></span></td><td>Michael Braun</td><td>10022</td><td>Info</td><td>Mehrfachbeschäftigung vorhanden</td><td>Stammdaten_05_2025.xlsx</td><td>144</td></tr>
+                  <tr><td><input type="checkbox"></td><td><span class="type-dot blue"><span data-icon="info"></span></span></td><td>Julia Fischer</td><td>10058</td><td>Info</td><td>Befristung läuft in 30 Tagen aus</td><td>Stammdaten_05_2025.xlsx</td><td>8</td></tr>
+                </tbody>
+              </table>
+              </div>
+              <div class="table-footer"><span data-validation="table-footer">Zeige 0 Einträge</span><div class="pagination"><button data-validation-page="prev">‹</button><button class="active" data-validation="page-current">1</button><button data-validation-page="next">›</button></div><select data-validation="page-size"><option value="20">20 pro Seite</option><option value="50">50 pro Seite</option><option value="100">100 pro Seite</option></select></div>
+            </article>
+
+            <aside class="card detail-panel">
+              <div class="detail-head"><h2>Detailansicht</h2><div><button>‹</button><button>›</button><button>×</button></div></div>
+              <div class="detail-scroll">
+              <div class="detail-alert"><span data-icon="x"></span><b data-validation="detail-severity">Keine Auswahl</b><strong data-validation="detail-title">Noch keine Prüfdaten</strong><p data-validation="detail-description">Starten Sie zuerst die Verarbeitung.</p></div>
+              <div class="detail-list">
+                <div><span>Mitarbeiter</span><b data-validation="detail-employee">-</b></div>
+                <div><span>Kategorie</span><b data-validation="detail-category">-</b></div>
+                <div><span>Dokument</span><b data-validation="detail-document">-</b></div>
+                <div><span>Position</span><b data-validation="detail-position">-</b></div>
+                <div><span>E-Mail</span><b data-validation="detail-email">-</b></div>
+                <div><span>Status</span><b data-validation="detail-status">-</b></div>
+              </div>
+              <h3>Vorschau</h3>
+              <div class="preview-tabs"><button class="active">Aus PDF</button><button>Aus Excel</button></div>
+              <table class="preview-table"><thead><tr><th>Zeile</th><th>Feld</th><th>Wert im Dokument</th><th>Erwarteter Wert</th></tr></thead><tbody><tr><td>23</td><td>Steuerklasse</td><td>-</td><td>1, 2, 3, 4, 5 oder 6</td></tr><tr><td>24</td><td>Kinderfreibeträge</td><td>0</td><td>0 oder 1+</td></tr><tr><td>25</td><td>Faktor</td><td>-</td><td>0,000 - 9,999</td></tr></tbody></table>
+              <h3>Aktionen</h3>
+              <div class="detail-actions"><button class="primary-small">In Stammdaten öffnen</button><button>Als erledigt markieren</button><button>Aktion wählen…</button></div>
+              <h3>Notizen</h3>
+              <div class="note-box">Notiz hinzufügen...</div>
+              </div>
+            </aside>
+          </section>
+        </section>
+
+        <section class="page page-mailing" data-page="Versand">
+          <div class="content-heading mailing-heading page-action-heading">
+            <div>
+              <h1>Versand</h1>
+              <p>Lohnabrechnungen per E-Mail senden oder exportieren.</p>
+            </div>
+            <button class="primary" data-shipping-action="start-dry-run"><span data-icon="send"></span><span data-shipping="start-label">Versand vorbereiten</span></button>
+          </div>
+
+          <section class="workflow-card global-workflow" data-global-workflow>
+            <button class="workflow-step done" data-workflow-step="pdf" data-workflow-target="Verarbeitung">
+              <div class="step-index">1</div>
+              <div class="step-icon"><span data-icon="doc"></span></div>
+              <div><strong>PDF Import</strong><small>Bereit</small></div>
+            </button>
+            <i></i>
+            <button class="workflow-step done" data-workflow-step="excel" data-workflow-target="Verarbeitung">
+              <div class="step-index">2</div>
+              <div class="step-icon"><span data-icon="table"></span></div>
+              <div><strong>Excel Import</strong><small>Bereit</small></div>
+            </button>
+            <i></i>
+            <button class="workflow-step done" data-workflow-step="validation" data-workflow-target="Prüfung">
+              <div class="step-index">3</div>
+              <div class="step-icon"><span data-icon="search"></span></div>
+              <div><strong>Validierung</strong><small>Bereit</small></div>
+            </button>
+            <i></i>
+            <button class="workflow-step done" data-workflow-step="processing" data-workflow-target="Verarbeitung">
+              <div class="step-index">4</div>
+              <div class="step-icon"><span data-icon="settings"></span></div>
+              <div><strong>Verarbeitung</strong><small>Bereit</small></div>
+            </button>
+            <i></i>
+            <button class="workflow-step active" data-workflow-step="shipping" data-workflow-target="Versand">
+              <div class="step-index">5</div>
+              <div class="step-icon"><span data-icon="send"></span></div>
+              <div><strong>Versand</strong><small>Aktuell</small></div>
+            </button>
+            <i></i>
+            <button class="workflow-step muted" data-workflow-step="reports" data-workflow-target="Berichte">
+              <div class="step-index">6</div>
+              <div class="step-icon"><span data-icon="report"></span></div>
+              <div><strong>Ergebnis</strong><small>Wartet</small></div>
+            </button>
+          </section>
+
+          <section class="mailing-metrics">
+            <article class="mailing-metric ready">
+              <span data-icon="send"></span>
+              <div>
+                <small>Bereit zum Versand</small>
+                <strong data-shipping="ready-count">0</strong>
+                <em data-shipping="ready-label">Aus geprüften Daten</em>
+                <div class="metric-track"><span data-shipping="ready-track" style="width:0%"></span></div>
+              </div>
+            </article>
+            <article class="mailing-metric sent">
+              <span data-icon="mail"></span>
+              <div>
+                <small>Gesendet heute</small>
+                <strong data-shipping="sent-count">0</strong>
+                <em data-shipping="sent-label">Noch nicht versendet</em>
+                <div class="metric-track"><span data-shipping="sent-track" style="width:0%"></span></div>
+              </div>
+            </article>
+            <article class="mailing-metric queue">
+              <span data-icon="clock"></span>
+              <div>
+                <small>In Warteschlange</small>
+                <strong data-shipping="queued-count">0</strong>
+                <em data-shipping="queued-label">Bereit / Dry-Run</em>
+                <div class="metric-track"><span data-shipping="queued-track" style="width:0%"></span></div>
+              </div>
+            </article>
+            <article class="mailing-metric error">
+              <span data-icon="warning"></span>
+              <div>
+                <small>Fehler</small>
+                <strong data-shipping="error-count">0</strong>
+                <em data-shipping="error-label">Keine Fehler</em>
+              </div>
+            </article>
+            <article class="mailing-metric export">
+              <span data-icon="report"></span>
+              <div>
+                <small>Exportiert</small>
+                <strong data-shipping="exported-count">0</strong>
+                <em>Prepared PDFs</em>
+              </div>
+            </article>
+          </section>
+
+          <section class="mailing-grid">
+            <article class="card mailing-table-card">
+              <div class="mailing-tabs">
+                <button class="active" data-shipping="queue-tab" data-shipping-action="tab-queue">Warteschlange (0)</button>
+                <button data-shipping="sent-tab" data-shipping-action="tab-sent">Gesendet (0)</button>
+                <button data-shipping="error-tab" data-shipping-action="tab-error">Fehler (0)</button>
+                <button data-shipping-action="tab-drafts">Entwürfe (0)</button>
+              </div>
+
+              <div class="mailing-toolbar">
+                <label><input type="checkbox" data-shipping="select-visible"></label>
+                <button class="queue-chip active" data-shipping-filter="all">Alle <b data-shipping-filter-count="all">0</b></button>
+                <button class="toolbar-btn" data-shipping-filter="ready">Versandbereit <b data-shipping-filter-count="ready">0</b></button>
+                <button class="toolbar-btn" data-shipping-filter="missing-email">Ohne E-Mail <b data-shipping-filter-count="missing-email">0</b></button>
+                <button class="toolbar-btn" data-shipping-filter="error">Fehler <b data-shipping-filter-count="error">0</b></button>
+                <button class="toolbar-btn" data-shipping-filter="sent">Gesendet <b data-shipping-filter-count="sent">0</b></button>
+                <label class="table-search"><input data-shipping="search" placeholder="In Liste suchen..." /><span data-icon="search"></span></label>
+              </div>
+
+              <div class="mailing-table-scroll">
+                <table class="mailing-table">
+                  <thead>
+                    <tr><th><input type="checkbox"></th><th>Mitarbeiter</th><th>E-Mail</th><th>Dokument</th><th>Größe</th><th>Status</th><th>Geplant für</th><th></th></tr>
+                  </thead>
+                  <tbody data-shipping="table-body">
+                    <tr class="selected"><td><input type="checkbox"></td><td><span class="avatar-mini">MM</span><b>Max Mustermann<small>10025</small></b></td><td>max.mustermann@example.de</td><td><span class="file-dot pdf"><span data-icon="doc"></span></span>Lohnabrechnung_05_2025.pdf</td><td>128 KB</td><td><span class="state ready">Bereit</span></td><td>15.05.2025 11:00</td><td>...</td></tr>
+                    <tr><td><input type="checkbox"></td><td><span class="avatar-mini">AS</span><b>Anna Schmitz<small>10038</small></b></td><td>anna.schmitz@example.de</td><td><span class="file-dot pdf"><span data-icon="doc"></span></span>Lohnabrechnung_05_2025.pdf</td><td>114 KB</td><td><span class="state ready">Bereit</span></td><td>15.05.2025 11:00</td><td>...</td></tr>
+                    <tr><td><input type="checkbox"></td><td><span class="avatar-mini">PM</span><b>Peter Müller<small>10012</small></b></td><td>peter.mueller@example.de</td><td><span class="file-dot xls"><span data-icon="table"></span></span>Stammdaten_05_2025.xlsx</td><td>45 KB</td><td><span class="state ready">Bereit</span></td><td>15.05.2025 11:00</td><td>...</td></tr>
+                    <tr><td><input type="checkbox"></td><td><span class="avatar-mini">LW</span><b>Lisa Wagner<small>10067</small></b></td><td>lisa.wagner@example.de</td><td><span class="file-dot pdf"><span data-icon="doc"></span></span>Lohnabrechnung_05_2025.pdf</td><td>122 KB</td><td><span class="state ready">Bereit</span></td><td>15.05.2025 11:00</td><td>...</td></tr>
+                    <tr><td><input type="checkbox"></td><td><span class="avatar-mini">TB</span><b>Thomas Becker<small>10014</small></b></td><td>thomas.becker@example.de</td><td><span class="file-dot xls"><span data-icon="table"></span></span>Stammdaten_05_2025.xlsx</td><td>47 KB</td><td><span class="state ready">Bereit</span></td><td>15.05.2025 11:00</td><td>...</td></tr>
+                    <tr><td><input type="checkbox"></td><td><span class="avatar-mini">SS</span><b>Sophie Schneider<small>10081</small></b></td><td>sophie.schneider@example.de</td><td><span class="file-dot pdf"><span data-icon="doc"></span></span>Lohnabrechnung_05_2025.pdf</td><td>130 KB</td><td><span class="state ready">Bereit</span></td><td>15.05.2025 11:00</td><td>...</td></tr>
+                    <tr><td><input type="checkbox"></td><td><span class="avatar-mini">JH</span><b>Jan Hoffmann<small>10033</small></b></td><td>jan.hoffmann@example.de</td><td><span class="file-dot xls"><span data-icon="table"></span></span>Stammdaten_05_2025.xlsx</td><td>44 KB</td><td><span class="state ready">Bereit</span></td><td>15.05.2025 11:00</td><td>...</td></tr>
+                    <tr><td><input type="checkbox"></td><td><span class="avatar-mini">MK</span><b>Maria Klein<small>10047</small></b></td><td>maria.klein@example.de</td><td><span class="file-dot pdf"><span data-icon="doc"></span></span>Lohnabrechnung_05_2025.pdf</td><td>118 KB</td><td><span class="state ready">Bereit</span></td><td>15.05.2025 11:00</td><td>...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="table-footer"><span data-shipping="table-footer">Zeige 0 Einträge</span><div class="pagination"><button data-shipping-action="page-prev">‹</button><button class="active" data-shipping="page-current">1</button><button data-shipping-action="page-next">›</button></div><select data-shipping="page-size"><option value="20">20 pro Seite</option><option value="50">50 pro Seite</option><option value="100">100 pro Seite</option></select></div>
+            </article>
+
+            <aside class="card mailing-preview">
+              <div class="detail-head"><h2>Vorschau & Details</h2><div><button data-shipping-action="preview-top">⌃</button><button data-shipping-action="preview-close">×</button></div></div>
+              <div class="mailing-preview-scroll">
+                <div class="recipient-head">
+                  <div class="recipient-avatar" data-shipping-detail="initials">MA</div>
+                  <div><strong data-shipping-detail="employee">Keine Auswahl</strong><small data-shipping-detail="persnr">Personalnummer: -</small></div>
+                  <span class="state ready" data-shipping-detail="status">Bereit</span>
+                </div>
+                <div class="recipient-meta">
+                  <div><span data-icon="mail"></span><span>E-Mail</span><b data-shipping-detail="email">-</b></div>
+                  <div><span data-icon="doc"></span><span>Dokument</span><b data-shipping-detail="document">-</b></div>
+                  <div><span data-icon="report"></span><span>Größe</span><b data-shipping-detail="size">-</b></div>
+                  <div><span data-icon="clock"></span><span>Geplant für</span><b data-shipping-detail="planned">Dry-Run</b></div>
+                  <div><span data-icon="settings"></span><span>Status</span><b data-shipping-detail="status-text">-</b></div>
+                  <div><span data-icon="table"></span><span>Hinweis</span><b data-shipping-detail="error">-</b></div>
+                </div>
+                <div class="preview-switch"><button class="active" data-shipping-action="preview-pdf"><span data-icon="doc"></span>PDF Vorschau</button><button data-shipping-action="preview-mail"><span data-icon="mail"></span>E-Mail Vorschau</button></div>
+                <div class="pdf-preview">
+                  <div class="pdf-page">
+                    <header><strong data-shipping-detail="preview-title">PDF-Vorschau</strong><small data-shipping-detail="preview-status">Dry-Run</small></header>
+                    <p><b data-shipping-detail="preview-employee">Keine Auswahl</b><br><span data-shipping-detail="preview-persnr">Personalnummer: -</span></p>
+                    <h4>Dokument</h4>
+                    <div><span>Datei</span><b data-shipping-detail="preview-document">-</b></div>
+                    <div><span>E-Mail</span><b data-shipping-detail="preview-email">-</b></div>
+                    <div><span>Status</span><b data-shipping-detail="preview-row-status">-</b></div>
+                    <div class="total"><span>Modus</span><b data-shipping-detail="preview-mode">Dry-Run</b></div>
+                    <h4>Hinweis</h4>
+                    <div><span>Fehler</span><b data-shipping-detail="preview-error">-</b></div>
+                  </div>
+                  <div class="preview-controls"><span>1 / 1</span><button data-shipping-action="preview-zoom-out">−</button><span data-shipping="preview-zoom">100%</span><button data-shipping-action="preview-zoom-in">+</button></div>
+                </div>
+              </div>
+            </aside>
+          </section>
+
+          <section class="mailing-actionbar">
+            <div><strong data-shipping="actionbar-title">0 Dokumente in Warteschlange</strong><span data-shipping="actionbar-subtitle">Dry-Run vorbereitet Anhänge und Bericht.</span></div>
+            <button class="secondary-action" data-shipping-action="export-report"><span data-icon="report"></span>Exportieren</button>
+            <button class="secondary-action" data-shipping-action="schedule-queue"><span data-icon="clock"></span>Warteschlange planen</button>
+            <button class="primary" data-shipping-action="start-dry-run"><span data-icon="send"></span><span data-shipping="actionbar-label">Versand vorbereiten</span></button>
+            <button class="primary danger-send" data-shipping-action="send-now"><span data-icon="mail"></span><span data-shipping="send-label">Jetzt senden</span></button>
+          </section>
+        </section>
+
+        <section class="page page-reports" data-page="Berichte">
+          <div class="content-heading reports-heading">
+            <div>
+              <h1>Berichte</h1>
+              <p>Übersicht und Analyse Ihrer Verarbeitung und Versandaktivitäten.</p>
+            </div>
+            <button class="secondary-action" data-reports-action="export-csv"><span data-icon="report"></span>Export</button>
+          </div>
+
+          <section class="report-metrics">
+            <article class="report-metric processed">
+              <span data-icon="doc"></span>
+              <div><small>Verarbeitungen</small><strong data-reports-metric="processed">0</strong><em data-reports-metric="processed-label">Aktuelle Sitzung</em></div>
+            </article>
+            <article class="report-metric mailed">
+              <span data-icon="send"></span>
+              <div><small>Gesendete E-Mails</small><strong data-reports-metric="sent">0</strong><em data-reports-metric="sent-label">Aktuelle Sitzung</em></div>
+            </article>
+            <article class="report-metric delivered">
+              <span data-icon="checkcircle"></span>
+              <div><small>Erfolgreich zugestellt</small><strong data-reports-metric="delivered">0</strong><em data-reports-metric="delivered-label">Noch nicht versendet</em></div>
+            </article>
+            <article class="report-metric failed">
+              <span data-icon="warning"></span>
+              <div><small>Fehlgeschlagen</small><strong data-reports-metric="failed">0</strong><em data-reports-metric="failed-label">Keine Fehler</em></div>
+            </article>
+            <article class="report-metric exported">
+              <span data-icon="arrow-up-right"></span>
+              <div><small>Exportierte Dateien</small><strong data-reports-metric="exported">0</strong><em data-reports-metric="exported-label">Berichte</em></div>
+            </article>
+          </section>
+
+          <section class="reports-toolbar">
+            <button class="toolbar-btn" data-reports-action="period"><span data-icon="clock"></span><span data-reports="period-label">Aktuelle Sitzung</span></button>
+            <button class="toolbar-btn" data-reports-action="type"><span data-reports="type-label">Alle Typen</span>⌄</button>
+            <button class="toolbar-btn" data-reports-action="status"><span data-reports="status-label">Alle Status</span>⌄</button>
+            <label class="table-search"><input data-reports="search" placeholder="In Berichten suchen..." /><span data-icon="search"></span></label>
+            <button class="toolbar-btn" data-reports-action="toggle-ready"><span data-icon="process"></span><span data-reports="filter-label">Filter</span></button>
+            <span></span>
+            <button class="secondary-action" data-reports-action="export-csv"><span data-icon="report"></span>Export⌄</button>
+          </section>
+
+          <article class="card report-files-panel">
+            <div class="card-title-row"><h2>Prüfberichte</h2><button data-report-open="audit">Prüfbericht öffnen</button></div>
+            <div class="report-list report-files-list">
+              <div class="report-item" data-report="audit"><span class="file file-xls">XLS</span><div><strong>audit_check.xlsx</strong><small>Nicht erstellt</small></div><button><span data-icon="arrow-up-right"></span></button></div>
+              <div class="report-item" data-report="missing"><span class="file file-pdf">PDF</span><div><strong>ohne_email_gesamt.pdf</strong><small>Nicht erstellt</small></div><button><span data-icon="arrow-up-right"></span></button></div>
+              <div class="report-item" data-report="send"><span class="file file-xls">XLS</span><div><strong>send_report.xlsx</strong><small>Nicht erstellt</small></div><button><span data-icon="arrow-up-right"></span></button></div>
+            </div>
+          </article>
+
+          <section class="reports-grid">
+            <div class="reports-main">
+              <article class="card report-chart-card">
+                <div class="card-title-row"><h2>Verarbeitung & Versand Verlauf</h2><button data-reports-action="chart-mode">Sitzung⌄</button></div>
+                <div class="chart-legend">
+                  <span class="green-line">Verarbeitungen</span>
+                  <span class="blue-line">Gesendete E-Mails</span>
+                  <span class="purple-line">Erfolgreich zugestellt</span>
+                  <span class="orange-line">Fehlgeschlagen</span>
+                </div>
+                <div class="report-chart">
+                  <div class="chart-gridlines"><i></i><i></i><i></i><i></i></div>
+                  <svg viewBox="0 0 760 190" preserveAspectRatio="none" aria-hidden="true">
+                    <path class="area green" d="M0 150 C40 138 60 126 92 116 S160 88 204 102 S278 128 320 94 S390 82 430 62 S520 98 560 72 S636 118 680 104 S730 78 760 86 L760 190 L0 190 Z"></path>
+                    <path class="line green" d="M0 150 C40 138 60 126 92 116 S160 88 204 102 S278 128 320 94 S390 82 430 62 S520 98 560 72 S636 118 680 104 S730 78 760 86"></path>
+                    <path class="area blue" d="M0 170 C48 158 72 142 112 132 S178 122 220 138 S278 148 318 116 S388 106 432 98 S506 132 548 102 S632 126 674 142 S724 122 760 126 L760 190 L0 190 Z"></path>
+                    <path class="line blue" d="M0 170 C48 158 72 142 112 132 S178 122 220 138 S278 148 318 116 S388 106 432 98 S506 132 548 102 S632 126 674 142 S724 122 760 126"></path>
+                    <path class="line purple" d="M0 184 C46 178 76 170 112 164 S178 166 218 174 S276 180 318 162 S386 166 430 146 S506 166 548 154 S632 168 674 176 S724 160 760 158"></path>
+                    <path class="line orange" d="M0 188 C80 186 134 188 198 188 S306 186 374 188 S474 190 544 184 S646 188 760 186"></path>
+                  </svg>
+                  <div class="chart-y"><span>1.000</span><span>750</span><span>500</span><span>250</span><span>0</span></div>
+                  <div class="chart-x"><span>15 Apr</span><span>20 Apr</span><span>25 Apr</span><span>30 Apr</span><span>05 Mai</span><span>10 Mai</span><span>15 Mai</span></div>
+                </div>
+              </article>
+
+              <article class="card reports-table-card">
+                <h2>Berichte Übersicht</h2>
+                <table class="reports-table">
+                  <thead>
+                    <tr><th>Datum</th><th>Typ</th><th>Titel</th><th>Status</th><th>Verarbeitung</th><th>Prüfung</th><th>Versand</th><th>Erstellt von</th><th>Aktionen</th></tr>
+                  </thead>
+                  <tbody data-reports="table-body">
+                    <tr class="selected"><td>15.05.2025 10:24</td><td><span class="file-dot xls"><span data-icon="doc"></span></span></td><td><b>Lohnabrechnung Mai 2025</b><small>Standard Verarbeitung</small></td><td><span class="state ready">Abgeschlossen</span></td><td><b>842 / 842</b><small>100%</small></td><td><b class="ok-text">0 Fehler</b><small>842 geprüft</small></td><td><b>842 / 842</b><small>100%</small></td><td>Max Admin</td><td><button><span data-icon="arrow-up-right"></span></button><button>...</button></td></tr>
+                    <tr><td>08.05.2025 09:18</td><td><span class="file-dot pdf"><span data-icon="send"></span></span></td><td><b>Lohnabrechnung April 2025</b><small>Standard Verarbeitung</small></td><td><span class="state ready">Abgeschlossen</span></td><td><b>815 / 815</b><small>100%</small></td><td><b class="warn-text">2 Warnungen</b><small>815 geprüft</small></td><td><b>813 / 815</b><small>99,8%</small></td><td>Max Admin</td><td><button><span data-icon="arrow-up-right"></span></button><button>...</button></td></tr>
+                    <tr><td>30.04.2025 14:32</td><td><span class="file-dot xls"><span data-icon="report"></span></span></td><td><b>Lohnabrechnung April 2025</b><small>Korrektur Verarbeitung</small></td><td><span class="state ready">Abgeschlossen</span></td><td><b>815 / 815</b><small>100%</small></td><td><b>0 Fehler</b><small>815 geprüft</small></td><td><b>815 / 815</b><small>100%</small></td><td>Max Admin</td><td><button><span data-icon="arrow-up-right"></span></button><button>...</button></td></tr>
+                    <tr><td>22.04.2025 11:05</td><td><span class="file-dot xls"><span data-icon="doc"></span></span></td><td><b>Lohnabrechnung März 2025</b><small>Standard Verarbeitung</small></td><td><span class="state ready">Abgeschlossen</span></td><td><b>798 / 798</b><small>100%</small></td><td><b class="warn-text">1 Warnung</b><small>798 geprüft</small></td><td><b>797 / 798</b><small>99,9%</small></td><td>Max Admin</td><td><button><span data-icon="arrow-up-right"></span></button><button>...</button></td></tr>
+                    <tr><td>15.04.2025 09:42</td><td><span class="file-dot pdf"><span data-icon="warning"></span></span></td><td><b>Lohnabrechnung März 2025</b><small>Test Verarbeitung</small></td><td><span class="state failed">Fehlgeschlagen</span></td><td><b>798 / 798</b><small>100%</small></td><td><b class="error-text">12 Fehler</b><small>798 geprüft</small></td><td><b class="error-text">0 / 798</b><small>0%</small></td><td>Max Admin</td><td><button><span data-icon="arrow-up-right"></span></button><button>...</button></td></tr>
+                  </tbody>
+                </table>
+                <div class="table-footer"><span data-reports="table-footer">Zeige 0 Einträge</span><div class="pagination"><button data-reports-action="page-prev" disabled>‹</button><button class="active" data-reports="page-current">1</button><button data-reports-action="page-next" disabled>›</button></div><button data-reports-action="page-size">10 pro Seite⌄</button></div>
+              </article>
+            </div>
+
+            <aside class="card report-details">
+              <div class="detail-head"><h2>Bericht Details</h2><div><button data-reports-action="detail-close">×</button></div></div>
+              <div class="report-detail-scroll">
+                <div class="report-detail-title">
+                  <span class="report-file-icon"><span data-icon="doc" data-reports-detail="icon"></span></span>
+                  <div><strong data-reports-detail="title">Kein Bericht ausgewählt</strong><small data-reports-detail="subtitle">Bitte einen Eintrag wählen.</small></div>
+                  <span class="state" data-reports-detail="status">Nicht erstellt</span>
+                </div>
+                <div class="report-meta-list">
+                  <div><span data-icon="report"></span><span>Bericht ID</span><b data-reports-detail="id">-</b></div>
+                  <div><span data-icon="clock"></span><span>Zeitraum</span><b data-reports-detail="period">Aktuelle Sitzung</b></div>
+                  <div><span data-icon="checkcircle"></span><span>Erstellt am</span><b data-reports-detail="created">-</b></div>
+                  <div><span data-icon="users"></span><span>Erstellt von</span><b data-reports-detail="owner">LohnMail</b></div>
+                  <div><span data-icon="hourglass"></span><span>Pfad</span><b data-reports-detail="path">-</b></div>
+                </div>
+
+                <h3>Zusammenfassung</h3>
+                <div class="summary-list">
+                  <div><span data-icon="users"></span>Verarbeitete Mitarbeiter<b data-reports-detail="employees">0</b></div>
+                  <div><span data-icon="x"></span>Gefundene Fehler<b class="error-text" data-reports-detail="errors">0</b></div>
+                  <div><span data-icon="warning"></span>Warnungen<b class="warning-text" data-reports-detail="warnings">0</b></div>
+                  <div><span data-icon="send"></span>Gesendete E-Mails<b data-reports-detail="sent">0</b></div>
+                  <div><span data-icon="checkcircle"></span>Erfolgreich zugestellt<b data-reports-detail="delivered">0</b></div>
+                  <div><span data-icon="x"></span>Fehlgeschlagen<b class="error-text" data-reports-detail="failed">0</b></div>
+                </div>
+
+                <h3>Aktionen</h3>
+                <div class="report-actions">
+                  <button data-reports-action="open-pdf"><span data-icon="doc"></span>PDF Bericht öffnen</button>
+                  <button data-reports-action="open-excel"><span data-icon="table"></span>Excel Export</button>
+                  <button data-reports-action="open-selected"><span data-icon="arrow-up-right"></span>Bericht öffnen</button>
+                </div>
+              </div>
+            </aside>
+          </section>
+        </section>
+
+        <section class="page page-company" data-page="Unternehmen">
+          <div class="content-heading company-heading">
+            <div>
+              <h1>Unternehmen</h1>
+              <p>Mandant, Stammdaten-Datei und lokale Ausgabe prüfen.</p>
+            </div>
+            <button class="secondary-action" data-company-action="refresh"><span data-icon="process"></span>Aktualisieren</button>
+          </div>
+
+          <section class="company-metrics">
+            <article class="company-metric active">
+              <span data-icon="building"></span>
+              <div><small>Aktiver Mandant</small><strong data-company="selected-name">-</strong><em data-company="selected-id">-</em></div>
+            </article>
+            <article class="company-metric excel">
+              <span data-icon="table"></span>
+              <div><small>Mitarbeiter Excel</small><strong data-company="excel-status">Nicht ausgewählt</strong><em data-company="excel-updated">--</em></div>
+            </article>
+            <article class="company-metric mail">
+              <span data-icon="mail"></span>
+              <div><small>SMTP</small><strong data-company="smtp-status">Nicht konfiguriert</strong><em data-company="smtp-from">-</em></div>
+            </article>
+            <article class="company-metric license">
+              <span data-icon="key"></span>
+              <div><small>Lizenz</small><strong data-company="license-status">Nicht registriert</strong><em>Lokale Konfiguration</em></div>
+            </article>
+          </section>
+
+          <section class="company-grid">
+            <article class="card company-list-card">
+              <div class="card-title-row">
+                <h2>Mandanten</h2>
+                <div class="company-title-actions">
+                  <button data-company-action="new-company"><span data-icon="building"></span>Neuer Mandant</button>
+                  <button data-company-action="choose-excel"><span data-icon="table"></span>Excel auswählen</button>
+                </div>
+              </div>
+              <div class="company-list" data-company="company-list"></div>
+              <div class="company-note" data-company="message">Unternehmensdaten werden aus settings.json geladen.</div>
+            </article>
+
+            <article class="card company-settings-card">
+              <h2>Aktive Konfiguration</h2>
+              <div class="company-field-grid">
+                <div><span data-icon="building"></span><span>Mandant</span><b data-company="detail-name">-</b></div>
+                <div><span data-icon="key"></span><span>Mandanten-ID</span><b data-company="detail-id">-</b></div>
+                <div><span data-icon="table"></span><span>Excel-Datei</span><b data-company="detail-excel">-</b></div>
+                <div><span data-icon="report"></span><span>Ausgabeordner</span><b data-company="detail-output">-</b></div>
+                <div><span data-icon="clock"></span><span>Abrechnungsperiode</span><b data-company="detail-period">-</b></div>
+                <div><span data-icon="mail"></span><span>Mail-Modus</span><b data-company="detail-mail-mode">-</b></div>
+              </div>
+              <div class="company-actions">
+                <button data-company-action="choose-excel"><span data-icon="table"></span>Excel auswählen</button>
+                <button data-company-action="open-excel"><span data-icon="arrow-up-right"></span>Excel öffnen</button>
+                <button data-company-action="save-company"><span data-icon="checkcircle"></span>Speichern</button>
+                <button data-company-action="open-output"><span data-icon="report"></span>Ausgabeordner öffnen</button>
+              </div>
+            </article>
+
+            <article class="card company-edit-card">
+              <h2>Mandant bearbeiten</h2>
+              <div class="company-edit-grid">
+                <label>Name<input data-company-edit-field="name" placeholder="Unternehmensname"></label>
+                <label>Mandanten-ID<input data-company-edit-field="id" readonly></label>
+                <label class="wide">Mail-Einstellungen<select data-company-edit-field="mail_scope"><option value="global">Globale E-Mail Einstellungen verwenden</option><option value="custom">Eigene SMTP Einstellungen</option></select></label>
+              </div>
+              <div class="company-mail-edit" data-company-mail-edit>
+                <div class="company-edit-grid">
+                  <label>SMTP Server<input data-company-edit-field="smtp.server" placeholder="smtp.example.de"></label>
+                  <label>SMTP Port<input data-company-edit-field="smtp.port" type="number" min="1" max="65535"></label>
+                  <label>Sicherheit<select data-company-edit-field="smtp.security"><option value="tls">tls</option><option value="ssl">ssl</option><option value="none">none</option></select></label>
+                  <label>SMTP Benutzer<input data-company-edit-field="smtp.username"></label>
+                  <label>SMTP Passwort<input data-company-edit-field="smtp.password" type="password" placeholder="Leer lassen = beibehalten"></label>
+                  <label>Absender E-Mail<input data-company-edit-field="smtp.from_email" type="email"></label>
+                  <label>Absender Name<input data-company-edit-field="smtp.from_name"></label>
+                  <label>Timeout (Sek.)<input data-company-edit-field="smtp.timeout_sec" type="number" min="5" max="300"></label>
+                </div>
+                <button class="secondary-action" data-company-action="test-company-mail"><span data-icon="mail"></span>Mandant SMTP testen</button>
+              </div>
+            </article>
+
+            <article class="card company-status-card">
+              <h2>Systemstatus für Mandant</h2>
+              <div class="company-status-list">
+                <div><span data-icon="table"></span><span>Stammdaten-Datei</span><b data-company="status-excel">Offen</b></div>
+                <div><span data-icon="report"></span><span>Ausgabeordner</span><b data-company="status-output">Bereit</b></div>
+                <div><span data-icon="mail"></span><span>SMTP Absender</span><b data-company="status-smtp">Offen</b></div>
+                <div><span data-icon="key"></span><span>Lizenzstatus</span><b data-company="status-license">Nicht registriert</b></div>
+              </div>
+            </article>
+          </section>
+        </section>
+
+        <section class="page page-license" data-page="Lizenzen">
+          <div class="content-heading license-heading">
+            <div>
+              <h1>Lizenzen</h1>
+              <p>Trial, Lizenzstatus und Stripe-Verwaltung.</p>
+            </div>
+            <button class="secondary-action" data-license-action="refresh"><span data-icon="process"></span>Aktualisieren</button>
+          </div>
+
+          <section class="license-metrics">
+            <article class="license-metric status">
+              <span data-icon="key"></span>
+              <div><small>Status</small><strong data-license="status">Nicht registriert</strong><em data-license="mode">Lokal</em></div>
+            </article>
+            <article class="license-metric type">
+              <span data-icon="building"></span>
+              <div><small>Lizenztyp</small><strong data-license="type">Nicht registriert</strong><em data-license="plan">-</em></div>
+            </article>
+            <article class="license-metric seats">
+              <span data-icon="users"></span>
+              <div><small>Restlaufzeit</small><strong data-license="days">-</strong><em data-license="trial-end">-</em></div>
+            </article>
+            <article class="license-metric server">
+              <span data-icon="screen"></span>
+              <div><small>Lizenzserver</small><strong data-license="server">Nicht verbunden</strong><em data-license="server-note">Keine Serverlogik aktiv</em></div>
+            </article>
+          </section>
+
+          <section class="license-grid">
+            <article class="card license-manager-card">
+              <div class="card-title-row"><h2>License Manager</h2><span class="state warning" data-license="badge">Nicht registriert</span></div>
+              <div class="license-key-box">
+                <span data-icon="key"></span>
+                <div><small>Lizenzschlüssel</small><strong data-license="key">Nicht hinterlegt</strong></div>
+              </div>
+              <div class="license-detail-list">
+                <div><span data-icon="checkcircle"></span><span>Aktueller Modus</span><b data-license="detail-mode">Lokal</b></div>
+                <div><span data-icon="building"></span><span>Mandant</span><b data-license="detail-company">-</b></div>
+                <div><span data-icon="screen"></span><span>Computer-ID</span><b data-license="machine-id">-</b></div>
+                <div><span data-icon="clock"></span><span>Aktuelle Periode</span><b data-license="period-end">-</b></div>
+                <div><span data-icon="clock"></span><span>Letzte Prüfung</span><b data-license="checked-at">Beim Start geladen</b></div>
+              </div>
+            </article>
+
+            <article class="card license-actions-card">
+              <h2>Aktionen</h2>
+              <div class="license-actions">
+                <button class="license-primary-action" data-license-action="buy"><span data-icon="key"></span>Lizenz kaufen</button>
+                <button data-license-action="check"><span data-icon="process"></span>Lizenz prüfen</button>
+                <button data-license-action="activate"><span data-icon="checkcircle"></span>Lizenzschlüssel eingeben</button>
+                <button data-license-action="portal"><span data-icon="arrow-up-right"></span>Kundenportal öffnen</button>
+                <button data-license-action="deactivate"><span data-icon="x"></span>Lizenz deaktivieren</button>
+              </div>
+              <div class="license-note" data-license="message">Lizenzstatus wird geladen.</div>
+            </article>
+
+            <article class="card license-states-card">
+              <h2>Statuszustände</h2>
+              <div class="license-state-grid" data-license="state-list">
+                <span class="license-state info">Trial</span>
+                <span class="license-state success">Aktiv</span>
+                <span class="license-state warning">Zahlung überfällig</span>
+                <span class="license-state error">Abgelaufen</span>
+                <span class="license-state error">Ungültig</span>
+                <span class="license-state warning">Keine Verbindung</span>
+              </div>
+            </article>
+
+            <article class="card license-history-card">
+              <div class="card-title-row"><h2>Aktivierungshistorie</h2><button data-license-action="history">Alle anzeigen</button></div>
+              <table class="license-history-table">
+                <thead><tr><th>Datum</th><th>Aktion</th><th>Computer</th><th>Benutzer</th><th>Status</th></tr></thead>
+                <tbody data-license="history-body"><tr><td colspan="5">Noch keine lokale Aktivierungshistorie vorhanden.</td></tr></tbody>
+              </table>
+            </article>
+          </section>
+        </section>
+
+        <section class="page page-settings" data-page="Einstellungen">
+          <div class="content-heading settings-heading">
+            <div>
+              <h1>Einstellungen</h1>
+              <p>SMTP, E-Mail-Vorlage, Passwortlogik und Zeitraum konfigurieren.</p>
+            </div>
+            <div class="settings-heading-actions">
+              <button class="secondary-action" data-settings-action="reload"><span data-icon="process"></span>Neu laden</button>
+              <button class="primary" data-settings-action="save"><span data-icon="checkcircle"></span>Speichern</button>
+            </div>
+          </div>
+
+          <nav class="settings-tabs" aria-label="Einstellungen Kategorien">
+            <button class="active" data-settings-tab="general"><span data-icon="settings"></span>Allgemein</button>
+            <button data-settings-tab="email"><span data-icon="mail"></span>E-Mail</button>
+            <button data-settings-tab="templates"><span data-icon="table"></span>Vorlagen</button>
+            <button data-settings-tab="notifications"><span data-icon="bell"></span>Benachrichtigungen</button>
+            <button data-settings-tab="security"><span data-icon="key"></span>Sicherheit</button>
+            <button data-settings-tab="advanced"><span data-icon="process"></span>Erweitert</button>
+          </nav>
+
+          <section class="settings-workspace">
+            <div class="settings-main-column">
+              <article class="settings-panel active" data-settings-panel="general">
+                <section class="card settings-reference-card">
+                  <h2>Abrechnungszeitraum</h2>
+                  <div class="reference-form-grid">
+                    <label>Periodenmodus<select data-settings-field="period.mode"><option value="automatic_current_month">automatic_current_month</option><option value="manual">manual</option></select></label>
+                    <label>Monat<input data-settings-field="period.month" type="number" min="1" max="12"></label>
+                    <label>Jahr<input data-settings-field="period.year" type="number" min="2020" max="2100"></label>
+                  </div>
+                </section>
+
+                <section class="card settings-reference-card">
+                  <h2>Sprache</h2>
+                  <div class="reference-form-grid one">
+                    <label>Anwendungssprache<span class="select-like"><span data-icon="settings"></span><select><option>Deutsch</option></select></span></label>
+                  </div>
+                </section>
+
+                <div class="settings-bottom-actions">
+                  <button class="secondary-action" data-settings-action="reload"><span data-icon="process"></span>Abbrechen</button>
+                  <button class="primary" data-settings-action="save"><span data-icon="checkcircle"></span>Einstellungen speichern</button>
+                </div>
+              </article>
+
+              <article class="settings-panel" data-settings-panel="email">
+                <section class="card settings-reference-card">
+                  <h2>E-Mail Versand</h2>
+                  <div class="reference-form-grid">
+                    <label>Versandmethode<select data-settings-field="mail_mode"><option value="smtp">smtp</option><option value="outlook">outlook</option></select></label>
+                    <label>SMTP Server<input data-settings-field="smtp.server" placeholder="smtp.example.de"></label>
+                    <label>SMTP Port<input data-settings-field="smtp.port" type="number" min="1" max="65535"></label>
+                    <label>Sicherheit<select data-settings-field="smtp.security"><option value="tls">tls</option><option value="ssl">ssl</option><option value="none">none</option></select></label>
+                    <label>SMTP Benutzer<input data-settings-field="smtp.username"></label>
+                    <label>SMTP Passwort<input data-settings-field="smtp.password" type="password" placeholder="Leer lassen = beibehalten"></label>
+                    <label>Timeout (Sek.)<input data-settings-field="smtp.timeout_sec" type="number" min="5" max="300"></label>
+                    <label>Absender E-Mail<input data-settings-field="smtp.from_email" type="email"></label>
+                    <label>Absender Name<input data-settings-field="smtp.from_name"></label>
+                  </div>
+                  <div class="settings-inline-actions">
+                    <button class="secondary-action" data-settings-action="test-mail"><span data-icon="mail"></span>Verbindung testen</button>
+                    <button class="secondary-action" data-settings-action="load-outlook"><span data-icon="process"></span>Outlook Konten laden</button>
+                  </div>
+                  <div class="settings-message compact" data-settings="mail-message">SMTP nutzt Serverdaten. Outlook nutzt Microsoft Outlook und das Feld Absender E-Mail als Konto.</div>
+                  <div class="settings-bottom-actions">
+                    <button class="secondary-action" data-settings-action="reload"><span data-icon="process"></span>Abbrechen</button>
+                    <button class="primary" data-settings-action="save-email"><span data-icon="checkcircle"></span>E-Mail speichern</button>
+                  </div>
+                </section>
+
+              </article>
+
+              <article class="settings-panel" data-settings-panel="templates">
+                <section class="card settings-reference-card">
+                  <h2>E-Mail Vorlagen</h2>
+                  <div class="reference-form-grid one">
+                    <label>Betreff<input data-settings-field="mail_text.subject"></label>
+                    <label>Text<textarea data-settings-field="mail_text.body" rows="9"></textarea></label>
+                    <label>HTML Vorlage<textarea data-settings-field="mail_text.body_html" rows="5" placeholder="Optional"></textarea></label>
+                  </div>
+                  <div class="settings-message compact" data-settings="templates-message">Vorlagen werden fuer den Lohnabrechnungsversand verwendet.</div>
+                  <div class="settings-bottom-actions">
+                    <button class="secondary-action" data-settings-action="reload"><span data-icon="process"></span>Abbrechen</button>
+                    <button class="primary" data-settings-action="save-templates"><span data-icon="checkcircle"></span>Vorlage speichern</button>
+                  </div>
+                </section>
+              </article>
+
+              <article class="settings-panel" data-settings-panel="notifications">
+                <section class="card settings-reference-card">
+                  <h2>Benachrichtigungen</h2>
+                  <div class="settings-toggle-list compact">
+                    <label><span data-icon="x"></span><strong>Kritische Hinweise anzeigen<small>Mandant fehlt, Excel fehlt oder kritische Prüffehler werden immer angezeigt</small></strong><input type="checkbox" checked disabled></label>
+                    <label><span data-icon="bell"></span><strong>Hinweiszähler im Header anzeigen<small>Zeigt die Anzahl offener Hinweise am Glocken-Symbol</small></strong><input data-settings-field="notifications.show_badge" type="checkbox"></label>
+                    <label><span data-icon="process"></span><strong>Workflow-Hinweise anzeigen<small>PDF-Eingang, SMTP, Lizenz und Mandanten-Konfiguration im Header melden</small></strong><input data-settings-field="notifications.workflow_warnings" type="checkbox"></label>
+                    <label><span data-icon="warning"></span><strong>Prüfung-Warnungen anzeigen<small>Warnungen aus der Prüfung im Hinweiszentrum anzeigen</small></strong><input data-settings-field="notifications.validation_warnings" type="checkbox"></label>
+                    <label><span data-icon="x"></span><strong>Verarbeitungsfehler anzeigen<small>Fehlgeschlagene Prüf- oder Verarbeitungsläufe im Header melden</small></strong><input data-settings-field="notifications.processing_errors" type="checkbox"></label>
+                    <label><span data-icon="send"></span><strong>Versand- und Bericht-Ereignisse anzeigen<small>Spätere Versand- und Report-Hinweise im Hinweiszentrum zulassen</small></strong><input data-settings-field="notifications.delivery_events" type="checkbox"></label>
+                    <label><span data-icon="bell"></span><strong>Hinweise beim Start automatisch öffnen<small>Öffnet das Hinweiszentrum automatisch, wenn beim Start offene Hinweise vorliegen</small></strong><input data-settings-field="notifications.auto_open_on_start" type="checkbox"></label>
+                  </div>
+                  <div class="settings-message compact" data-settings="notifications-message">Kritische Hinweise bleiben sichtbar, damit ein Lauf nicht mit falschem Mandanten oder fehlender Excel-Datei gestartet wird.</div>
+                </section>
+              </article>
+
+              <article class="settings-panel" data-settings-panel="security">
+                <section class="card settings-reference-card">
+                  <h2>Sicherheit</h2>
+                  <div class="reference-form-grid">
+                    <label class="settings-check"><input data-settings-field="pdf_password.enabled" type="checkbox">PDF Passwort aktivieren</label>
+                    <label>Passwort Prefix<input data-settings-field="pdf_password.prefix"></label>
+                    <label>Passwort Suffix<input data-settings-field="pdf_password.suffix"></label>
+                  </div>
+                </section>
+              </article>
+
+              <article class="settings-panel" data-settings-panel="advanced">
+                <section class="card settings-reference-card">
+                  <h2>Erweitert</h2>
+                  <div class="settings-shortcut-grid">
+                    <button data-settings-action="open-company"><span data-icon="building"></span><strong>Unternehmen</strong><small>Mandanten und Excel-Zuordnung</small></button>
+                    <button data-settings-action="open-license"><span data-icon="key"></span><strong>Lizenzen</strong><small>Lokaler Lizenzstatus</small></button>
+                    <button data-settings-action="open-processing"><span data-icon="process"></span><strong>Verarbeitung</strong><small>PDF, Excel und Ausgabe prüfen</small></button>
+                    <button data-settings-action="open-reports"><span data-icon="report"></span><strong>Berichte</strong><small>Erstellte Dateien öffnen</small></button>
+                  </div>
+                  <div class="settings-message" data-settings="message">Einstellungen werden aus settings.json geladen.</div>
+                </section>
+              </article>
+            </div>
+
+            <aside class="settings-side-column">
+              <article class="card settings-side-card">
+                <h2>System Informationen</h2>
+                <div class="settings-info-list">
+                  <div><span data-icon="info"></span><span>Version</span><b>v2.0.0</b></div>
+                  <div><span data-icon="table"></span><span>Datenbank</span><b>SQLite lokal</b></div>
+                  <div><span data-icon="clock"></span><span>Eingerichtet am</span><b>--</b></div>
+                  <div><span data-icon="process"></span><span>Letzte Aktualisierung</span><b data-settings-summary="period">Automatisch</b></div>
+                  <div><span data-icon="screen"></span><span>Betriebssystem</span><b>Desktop</b></div>
+                  <div><span data-icon="settings"></span><span>Architektur</span><b>Lokal</b></div>
+                </div>
+              </article>
+
+            </aside>
+          </section>
+        </section>
+
+        <section class="page page-help" data-page="Hilfe">
+          <section class="help-hero card">
+            <div class="help-hero-icon"><span data-icon="help"></span></div>
+            <div>
+              <h2>Wie können wir Ihnen helfen?</h2>
+              <p>Suchen Sie in unserer Wissensdatenbank oder wählen Sie ein Thema aus.</p>
+            </div>
+            <label class="help-search">
+              <span data-icon="search"></span>
+              <input placeholder='Suchbegriff eingeben (z. B. "PDF Export", "SMTP", "Lizenz")'>
+              <button data-help-action="search"><span data-icon="search"></span>Suchen</button>
+            </label>
+          </section>
+
+          <section class="help-grid">
+            <article class="card help-topics">
+              <h2>Häufige Themen</h2>
+              <div class="help-topic-grid">
+                <button data-help-action="topic"><span class="topic-icon green"><span data-icon="send"></span></span><strong>Erste Schritte</strong><small>Installation, Einrichtung und erste Schritte mit LohnMail</small><i>›</i></button>
+                <button data-help-action="topic"><span class="topic-icon green"><span data-icon="process"></span></span><strong>Verarbeitung</strong><small>E-Mails verarbeiten und Dokumente extrahieren</small><i>›</i></button>
+                <button data-help-action="topic"><span class="topic-icon violet"><span data-icon="checkcircle"></span></span><strong>Prüfung</strong><small>Daten prüfen, Fehler beheben und validieren</small><i>›</i></button>
+                <button data-help-action="topic"><span class="topic-icon blue"><span data-icon="send"></span></span><strong>Versand</strong><small>E-Mails versenden und Protokolle verwalten</small><i>›</i></button>
+                <button data-help-action="topic"><span class="topic-icon mint"><span data-icon="report"></span></span><strong>Berichte</strong><small>Berichte erstellen, exportieren und analysieren</small><i>›</i></button>
+                <button data-help-action="topic"><span class="topic-icon amber"><span data-icon="settings"></span></span><strong>Einstellungen</strong><small>Konfiguration, Vorlagen und Systemeinstellungen</small><i>›</i></button>
+              </div>
+            </article>
+
+            <article class="card help-quick">
+              <h2>Schnellzugriff</h2>
+              <div class="quick-link-list">
+                <button data-help-action="video"><span class="topic-icon green small"><span data-icon="play"></span></span><strong>Video Tutorials</strong><small>Schritt-für-Schritt Anleitungen</small><i>›</i></button>
+                <button data-help-action="manual"><span class="topic-icon red small"><span data-icon="doc"></span></span><strong>PDF Handbuch</strong><small>Vollständige Dokumentation</small><i>›</i></button>
+                <button data-help-action="release"><span class="topic-icon amber small"><span data-icon="info"></span></span><strong>Release Notes</strong><small>Neuigkeiten und Änderungen</small><i>›</i></button>
+                <button data-help-action="status"><span class="topic-icon green small"><span data-icon="process"></span></span><strong>Systemstatus</strong><small>Aktueller Status aller Dienste</small><i>›</i></button>
+              </div>
+            </article>
+
+            <article class="card knowledge-card">
+              <h2>Wissensdatenbank</h2>
+              <table class="knowledge-table">
+                <thead><tr><th>Artikel</th><th>Kategorie</th><th>Zuletzt aktualisiert</th></tr></thead>
+                <tbody>
+                  <tr><td><span data-icon="doc"></span>Wie richte ich die E-Mail Verbindung (SMTP) ein?</td><td><b class="tag neutral">Einstellungen</b></td><td>14.05.2025</td></tr>
+                  <tr><td><span data-icon="doc"></span>PDF Export: Berichte als PDF speichern</td><td><b class="tag green">Berichte</b></td><td>12.05.2025</td></tr>
+                  <tr><td><span data-icon="doc"></span>Fehlerbehebung: Häufige Probleme und Lösungen</td><td><b class="tag orange">Fehlerbehebung</b></td><td>10.05.2025</td></tr>
+                  <tr><td><span data-icon="doc"></span>Lizenz aktivieren und Benutzer verwalten</td><td><b class="tag green">Lizenzen</b></td><td>08.05.2025</td></tr>
+                  <tr><td><span data-icon="doc"></span>Datenprüfung: Fehlerarten verstehen</td><td><b class="tag violet">Prüfung</b></td><td>07.05.2025</td></tr>
+                </tbody>
+              </table>
+              <button class="wide-button" data-help-action="articles"><span data-icon="doc"></span>Alle Artikel anzeigen</button>
+            </article>
+
+            <aside class="help-side-stack">
+              <article class="card support-card">
+                <h2>Support kontaktieren</h2>
+                <div class="support-list">
+                  <button data-help-action="email"><span data-icon="mail"></span><strong>E-Mail Support</strong><small>support@lohnmail.de</small><i><span data-icon="mail"></span></i></button>
+                  <button data-help-action="phone"><span data-icon="help"></span><strong>Telefon Support</strong><small>+49 209 123456-99</small><i><span data-icon="help"></span></i></button>
+                  <button data-help-action="remote"><span data-icon="screen"></span><strong>Remote Support</strong><small>Fernwartung starten</small><i><span data-icon="screen"></span></i></button>
+                </div>
+                <p>Supportzeiten: Mo – Fr 08:00 – 17:00 Uhr</p>
+              </article>
+
+              <article class="card support-request-card">
+                <h2>Haben Sie nicht gefunden, was Sie suchen?</h2>
+                <p>Unser Support-Team hilft Ihnen gerne weiter.</p>
+                <button class="outline-green" data-help-action="request"><span data-icon="help"></span>Support Anfrage erstellen</button>
+              </article>
+            </aside>
+          </section>
+        </section>
+
+        <section class="page page-about" data-page="Über LohnMail">
+          <section class="about-grid">
+            <div class="about-left">
+              <article class="card product-card">
+                <div class="product-hero">
+                  <div class="product-logo-mark"><span>LM</span></div>
+                  <div>
+                    <h1>LohnMail v2</h1>
+                    <h2>Enterprise Edition</h2>
+                    <p>Die professionelle Lösung für Lohnabrechnung, E-Mail Versand und Dokumentenmanagement.</p>
+                  </div>
+                </div>
+                <div class="product-meta-list">
+                  <div><span data-icon="info"></span><span>Version</span><b>v2.0.0 (Build 2025.05.15)</b></div>
+                  <div><span data-icon="key"></span><span>Edition</span><b class="success-text">Enterprise Edition</b></div>
+                  <div><span data-icon="clock"></span><span>Build Datum</span><b>15.05.2025 10:24</b></div>
+                  <div><span data-icon="checkcircle"></span><span>Lizenz Status</span><b class="state ready">Aktiv</b></div>
+                </div>
+                <div class="about-actions">
+                  <button class="secondary-action" data-about-action="website"><span data-icon="screen"></span>Website besuchen</button>
+                  <button class="secondary-action green-outline" data-about-action="release"><span data-icon="arrow-up-right"></span>Release Notes</button>
+                </div>
+              </article>
+
+              <article class="card tech-card">
+                <h2>Technologie & Komponenten</h2>
+                <div class="tech-grid">
+                  <div><span class="tech-icon qt">Qt</span><strong>Frontend</strong><small>PySide6 6.7.2</small></div>
+                  <div><span class="tech-icon py">Py</span><strong>Backend</strong><small>Python 3.12</small></div>
+                  <div><span class="tech-icon db"><span data-icon="table"></span></span><strong>Datenbank</strong><small>SQLite 3.45.1</small></div>
+                  <div><span class="tech-icon pdf"><span data-icon="doc"></span></span><strong>PDF Engine</strong><small>PyPDF2 3.0.1</small></div>
+                  <div><span class="tech-icon mail"><span data-icon="mail"></span></span><strong>E-Mail</strong><small>SMTP / Outlook</small></div>
+                  <div><span class="tech-icon xls">X</span><strong>Excel Engine</strong><small>openpyxl 3.1.2</small></div>
+                  <div><span class="tech-icon qt">Qt</span><strong>UI Framework</strong><small>Qt 6.7</small></div>
+                  <div><span class="tech-icon build"><span data-icon="process"></span></span><strong>Build System</strong><small>PyInstaller 6.6</small></div>
+                </div>
+                <button class="wide-button" data-about-action="details">Technische Details anzeigen</button>
+              </article>
+            </div>
+
+            <aside class="about-right">
+              <article class="card about-product-card">
+                <div class="about-card-head"><span data-icon="info"></span><h2>Über das Produkt</h2></div>
+                <p>LohnMail wurde entwickelt, um den gesamten Prozess der Lohnabrechnung zu optimieren – von der Verarbeitung über Prüfung und Versand bis hin zur Analyse und Berichterstellung. Mit Fokus auf Sicherheit, Effizienz und Benutzerfreundlichkeit.</p>
+                <div class="feature-grid">
+                  <div><span data-icon="key"></span><strong>Sicher & DSGVO-konform</strong><small>Ihre Daten sind sicher und verschlüsselt</small></div>
+                  <div><span data-icon="process"></span><strong>Zuverlässig</strong><small>Stabile Performance und kontinuierliche Updates</small></div>
+                  <div><span data-icon="process"></span><strong>Automatisiert</strong><small>Weniger manuelle Arbeit, mehr Effizienz</small></div>
+                  <div><span data-icon="building"></span><strong>Skalierbar</strong><small>Wächst mit Ihrem Unternehmen mit</small></div>
+                </div>
+              </article>
+
+              <article class="card legal-card">
+                <div class="about-card-head"><span data-icon="key"></span><h2>Rechtliche Informationen</h2></div>
+                <div class="legal-list">
+                  <button class="active" data-about-action="privacy"><span data-icon="key"></span><strong>Datenschutzerklärung<small>Lokale Verarbeitung, keine Cloud-Übertragung von Lohnunterlagen</small></strong><i>›</i></button>
+                  <button data-about-action="terms"><span data-icon="doc"></span><strong>Nutzungsbedingungen<small>Enterprise Desktop-Anwendung für interne Lohnabrechnungsprozesse</small></strong><i>›</i></button>
+                  <button data-about-action="license"><span data-icon="doc"></span><strong>Lizenzvereinbarung<small>Aktive Edition, Nutzungsumfang und Aktivierung im Lizenzbereich</small></strong><i>›</i></button>
+                  <button data-about-action="oss"><span data-icon="settings"></span><strong>Open Source Lizenzen<small>PySide6, Python, SQLite, PyPDF2, openpyxl und weitere Komponenten</small></strong><i>›</i></button>
+                </div>
+                <div class="legal-summary">
+                  <div><span>Datenschutz</span><b>DSGVO-konforme lokale Verarbeitung</b></div>
+                  <div><span>Datenstand</span><b>15.05.2025 10:24</b></div>
+                  <div><span>Lizenzstatus</span><b>Enterprise Edition</b></div>
+                </div>
+              </article>
+
+              <article class="card about-support-card">
+                <div class="about-card-head"><span data-icon="help"></span><h2>Kontakt & Support</h2></div>
+                <p>Bei Fragen oder Problemen steht Ihnen unser Support-Team gerne zur Verfügung.</p>
+                <button class="wide-button" data-about-action="support"><span data-icon="mail"></span>Support kontaktieren</button>
+                <p>Supportzeiten: Mo – Fr 08:00 – 17:00 Uhr</p>
+              </article>
+            </aside>
+          </section>
+        </section>
+
+      </main>
+
+      <div class="company-modal" data-company-modal hidden>
+        <button class="company-modal-backdrop" data-company-modal-close aria-label="Schliessen"></button>
+        <section class="company-modal-panel" role="dialog" aria-modal="true" aria-labelledby="company-modal-title">
+          <header class="company-modal-header">
+            <div>
+              <span data-icon="building"></span>
+              <div>
+                <small>Mandantenverwaltung</small>
+                <h2 id="company-modal-title">Neuen Mandanten erstellen</h2>
+              </div>
+            </div>
+            <button class="company-modal-close" data-company-modal-close aria-label="Schliessen">x</button>
+          </header>
+          <div class="company-modal-body">
+            <label>
+              <span>Unternehmensname</span>
+              <input type="text" data-company-create="name" placeholder="z. B. VRWK Verwaltung GmbH">
+            </label>
+            <label>
+              <span>Mandanten-ID</span>
+              <input type="text" data-company-create="id" placeholder="z. B. vrwk">
+              <small>Leer lassen, um die ID automatisch aus dem Namen zu erzeugen.</small>
+            </label>
+            <div class="company-modal-hint">
+              <span data-icon="table"></span>
+              <div>
+                <strong>Mitarbeiter Excel</strong>
+                <p>Die Excel-Datei kann direkt nach dem Erstellen ausgewählt und dem neuen Mandanten zugeordnet werden.</p>
+              </div>
+            </div>
+            <p class="company-modal-message" data-company-create="message"></p>
+          </div>
+          <footer class="company-modal-actions">
+            <button class="secondary-action" data-company-modal-close>Abbrechen</button>
+            <button class="secondary-action green-outline" data-company-create-action="create">Erstellen</button>
+            <button class="primary" data-company-create-action="create-excel"><span data-icon="table"></span>Erstellen & Excel auswählen</button>
+          </footer>
+        </section>
+      </div>
+
+      <div class="shipping-send-modal" data-shipping-send-modal hidden>
+        <button class="shipping-send-modal-backdrop" data-shipping-send-close aria-label="Schliessen"></button>
+        <section class="shipping-send-modal-panel" role="dialog" aria-modal="true" aria-labelledby="shipping-send-modal-title">
+          <header class="shipping-send-modal-header">
+            <div>
+              <span data-icon="send"></span>
+              <div>
+                <small>Finale Versandprüfung</small>
+                <h2 id="shipping-send-modal-title">E-Mails vor dem Senden prüfen</h2>
+              </div>
+            </div>
+            <button class="shipping-send-modal-close" data-shipping-send-close aria-label="Schliessen">x</button>
+          </header>
+          <div class="shipping-send-modal-body">
+            <div class="shipping-send-summary">
+              <div><small>Empfänger</small><strong data-shipping-preview="total">0</strong></div>
+              <div><small>Versandmethode</small><strong data-shipping-preview="mode">smtp</strong></div>
+              <div><small>Absender</small><strong data-shipping-preview="from">-</strong></div>
+            </div>
+            <div class="shipping-send-mail">
+              <label><span>Betreff</span><input data-shipping-preview="subject" readonly></label>
+              <label><span>Nachricht</span><textarea data-shipping-preview="body" rows="7" readonly></textarea></label>
+            </div>
+            <div class="shipping-send-notes" data-shipping-preview="summary"></div>
+            <div class="shipping-send-table-wrap">
+              <table class="shipping-send-table">
+                <thead><tr><th>PersNr</th><th>Name</th><th>E-Mail</th><th>Anhang</th><th>Quell-PDFs</th></tr></thead>
+                <tbody data-shipping-preview="rows"><tr><td colspan="5">Keine Vorschau geladen.</td></tr></tbody>
+              </table>
+            </div>
+            <p class="shipping-send-message" data-shipping-preview="message"></p>
+          </div>
+          <footer class="shipping-send-modal-actions">
+            <button class="secondary-action" data-shipping-send-close>Abbrechen</button>
+            <button class="primary danger-send" data-shipping-send-action="confirm"><span data-icon="mail"></span>Versand starten</button>
+          </footer>
+        </section>
+      </div>
+
+      <div class="legal-modal" data-legal-modal hidden>
+        <button class="legal-modal-backdrop" data-legal-close aria-label="Schliessen"></button>
+        <section class="legal-modal-panel" role="dialog" aria-modal="true" aria-labelledby="legal-modal-title">
+          <header class="legal-modal-header">
+            <div>
+              <span data-icon="key"></span>
+              <div>
+                <small>Rechtliche Informationen</small>
+                <h2 id="legal-modal-title" data-legal-detail="title">Datenschutzerklärung</h2>
+              </div>
+            </div>
+            <button class="legal-modal-close" data-legal-close aria-label="Schliessen">x</button>
+          </header>
+          <div class="legal-modal-body">
+            <p data-legal-detail="intro">LohnMail verarbeitet Lohnunterlagen lokal auf diesem Rechner. Die Anwendung sammelt keine Nutzungsanalyse, überträgt keine Lohnunterlagen an Cloud-Dienste und sendet keine personenbezogenen Daten an den Hersteller.</p>
+            <div class="legal-detail-list" data-legal-detail="body"></div>
+          </div>
+        </section>
+      </div>
+
+      <footer class="footer">
+        <span data-dashboard="footer-license"><span data-icon="key"></span> Lizenz: Aktiv</span>
+        <span data-dashboard="footer-mail"><span data-icon="mail"></span> SMTP: Online</span>
+        <span data-dashboard="footer-outlook"><span data-icon="screen"></span> Outlook: Verbunden</span>
+        <span data-dashboard="footer-mode"><span data-icon="desktop"></span> Modus: Lokal</span>
+        <strong data-dashboard="footer-system"><span class="status-dot small"></span>System bereit</strong>
+      </footer>
+    </section>
+  </div>
+
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <script src="app.js?v=license-warning-sync-20260711-0022"></script>
+</body>
+</html>

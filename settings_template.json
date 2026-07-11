@@ -1,0 +1,50 @@
+{
+  "mail_mode": "smtp",
+  "smtp": {
+    "server": "",
+    "port": 587,
+    "username": "",
+    "password": "",
+    "security": "tls",
+    "timeout_sec": 30,
+    "from_email": "",
+    "from_name": "Personalabteilung"
+  },
+  "pdf_password": {
+    "enabled": true,
+    "prefix": "",
+    "suffix": ""
+  },
+  "mail_text": {
+    "subject": "Ihre Entgeltabrechnung für {monat} {jahr}",
+    "body": "Sehr geehrte Damen und Herren,\n\nanbei erhalten Sie Ihre Entgeltabrechnung für {monat} {jahr}.\n\nMit freundlichen Grüßen\n{from_name}\n{company_name}",
+    "body_html": ""
+  },
+  "companies": [
+    {
+      "id": "gesob",
+      "name": "GeSoB GmbH",
+      "email_excel_file": ""
+    }
+  ],
+  "selected_company_id": "gesob",
+  "period": {
+    "mode": "automatic_current_month",
+    "month": 5,
+    "year": 2026
+  },
+  "ui": {
+    "dry_run_default": true,
+    "remember_last_paths": true,
+    "last_pdf_dir": "",
+    "last_pdf_input_mode": "folder",
+    "last_excel_file": "",
+    "window_width": 1100,
+    "window_height": 720
+  },
+  "license": {
+    "key": "",
+    "status": "unregistered",
+    "server_url": ""
+  }
+}

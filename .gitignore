@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# Python cache / environments
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Local runtime settings and generated payroll output
+settings.json
+Gesob_Lohn/
+
+# Local backups created during UI experiments
+backups/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+
+# License server is maintained as a separate repository
+license-server/
+
+# JavaScript package manager cache
+.npm/

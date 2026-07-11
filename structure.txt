@@ -1,0 +1,30 @@
+main.py
+app_gui.py
+
+core/config.py
+core/excel_io.py
+core/input_scan.py
+core/jobs.py
+core/mailer.py
+core/message_templates.py
+core/orchestrator.py
+core/period.py
+core/report.py
+core/text_utils.py
+core/_init_.py
+
+What each file does:
+
+main.py - application entry point
+app_gui.py - Qt UI layer: windows, dialogs, table rendering, signals
+core/config.py - settings defaults, loading, saving, migration paths
+core/excel_io.py - Excel parsing and PersNr / email validation
+core/input_scan.py - PDF file name scanning and grouping by PersNr
+core/jobs.py - background job logic for preview, send, and mass messages
+core/mailer.py - SMTP and Outlook sending
+core/message_templates.py - placeholder formatting and mail context building
+core/orchestrator.py - main check/send workflow for payroll PDFs
+core/period.py - payroll period helpers
+core/report.py - Excel report generation
+core/text_utils.py - text normalization helpers for UI/logs
+core/_init_.py - package re-exports used by the project
