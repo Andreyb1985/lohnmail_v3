@@ -14,6 +14,7 @@ from typing import Any
 
 LICENSE_DIR = Path.home() / ".lohnmail"
 LICENSE_PATH = LICENSE_DIR / "license.json"
+DEFAULT_LICENSE_SERVER_URL = "https://license-server-lm.vercel.app"
 CHECK_INTERVAL = timedelta(days=7)
 SUBSCRIPTION_OFFLINE_GRACE = timedelta(days=7)
 LIFETIME_OFFLINE_GRACE = timedelta(days=30)
@@ -48,11 +49,9 @@ class LicenseManager:
 
     def __init__(self, settings: dict | None = None) -> None:
         self.settings = settings or {}
-        license_settings = self.settings.get("license", {}) if isinstance(self.settings.get("license"), dict) else {}
         self.server_url = str(
             os.environ.get("LICENSE_SERVER_URL")
-            or license_settings.get("server_url", "")
-            or ""
+            or DEFAULT_LICENSE_SERVER_URL
         ).strip().rstrip("/")
 
     def load_state(self) -> dict:
