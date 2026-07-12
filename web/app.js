@@ -828,6 +828,9 @@
     var output = state.output || {};
     var smtp = state.smtp || {};
     var license = state.license || {};
+    if (license.status || license.label) {
+      latestLicenseState = license;
+    }
 
     setText('[data-company="selected-name"]', state.selected_company_name || '-');
     setText('[data-company="selected-id"]', state.selected_company_id || '-');
@@ -1000,6 +1003,12 @@
       minute: '2-digit',
     });
   }
+  function firstDateValue(){
+    for (var i = 0; i < arguments.length; i += 1) {
+      if (arguments[i]) return arguments[i];
+    }
+    return '';
+  }
   function licenseStatusClass(level){
     if (level === 'error') return 'failed';
     if (level === 'warning') return 'warning';
@@ -1020,19 +1029,25 @@
       latestDashboardState.license = state;
     }
     var active = !!state.active;
+    var trialEnd = firstDateValue(state.trial_ends_at, state.related_trial_ends_at);
+    var accessEnd = firstDateValue(state.access_ends_at, state.current_period_end, trialEnd);
+    var relatedTrialKey = state.related_trial_key_masked || '';
     setText('[data-license="status"]', state.label || 'Nicht registriert');
     setText('[data-license="mode"]', state.mode || 'Lokal');
     setText('[data-license="type"]', state.type || 'Nicht registriert');
     setText('[data-license="plan"]', state.plan || '-');
     setText('[data-license="days"]', state.days_remaining !== null && state.days_remaining !== undefined ? state.days_remaining + ' Tage' : '-');
-    setText('[data-license="trial-end"]', state.trial_ends_at ? formatDateTime(state.trial_ends_at) : '-');
+    setText('[data-license="trial-end"]', accessEnd ? 'bis ' + formatDateTime(accessEnd) : '-');
     setText('[data-license="server"]', state.server || 'Nicht verbunden');
     setText('[data-license="server-note"]', state.server_note || (state.server === 'Verbunden' ? 'Online-Prüfung aktiv' : 'Keine Serverlogik aktiv'));
     setText('[data-license="key"]', state.key_masked || 'Nicht hinterlegt');
     setText('[data-license="detail-mode"]', state.mode || 'Lokal');
     setText('[data-license="detail-company"]', state.company || '-');
     setText('[data-license="machine-id"]', state.machine_id || '-');
+    setText('[data-license="access-end"]', accessEnd ? formatDateTime(accessEnd) : '-');
+    setText('[data-license="trial-end-detail"]', trialEnd ? formatDateTime(trialEnd) : '-');
     setText('[data-license="period-end"]', state.current_period_end ? formatDateTime(state.current_period_end) : '-');
+    setText('[data-license="trial-source"]', relatedTrialKey || (trialEnd && state.type !== 'trial' ? 'Verknüpfter Trial' : '-'));
     setText('[data-license="checked-at"]', new Date().toLocaleString('de-DE'));
     setLicenseMessage(licenseMessageFromState(state));
 
@@ -1750,6 +1765,9 @@
 
     var license = state.license || {};
     var mail = state.mail || {};
+    if (license.status || license.label) {
+      latestLicenseState = license;
+    }
     setText('[data-dashboard="license-pill"]', 'Lizenz: ' + (license.label || 'Unbekannt'));
     setText('.side-status-title', (state.system && state.system.ready) ? 'System bereit' : 'System prüfen');
     setText('.side-status-subtitle', 'Mail: ' + (mail.label || 'Unbekannt'));

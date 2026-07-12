@@ -199,18 +199,38 @@ class LicenseManager:
     def _merge_server_response(self, state: dict, response: dict[str, Any]) -> dict:
         now = _now()
         merged = {**state}
-        for key in [
-            "license_key",
-            "status",
-            "type",
-            "plan",
+        nullable_keys = {
             "trial_started_at",
             "trial_ends_at",
             "current_period_end",
+            "access_ends_at",
+            "related_trial_ends_at",
+            "related_trial_license_key",
+            "days_remaining",
+            "email",
+            "company_name",
+            "license_key_masked",
+        }
+        for key in [
+            "license_key",
+            "license_key_masked",
+            "status",
+            "type",
+            "plan",
+            "email",
+            "company_name",
+            "seats",
+            "trial_started_at",
+            "trial_ends_at",
+            "current_period_end",
+            "access_ends_at",
+            "related_trial_ends_at",
+            "related_trial_license_key",
             "days_remaining",
         ]:
-            if key in response and response[key] is not None:
+            if key in response and (response[key] is not None or key in nullable_keys):
                 merged[key] = response[key]
+        merged["days_remaining"] = self._days_remaining(merged)
         merged["last_successful_check_at"] = _iso(now)
         merged["next_check_at"] = _iso(now + CHECK_INTERVAL)
         merged["offline_grace_until"] = _iso(now + (LIFETIME_OFFLINE_GRACE if merged.get("type") in {"lifetime", "internal"} else SUBSCRIPTION_OFFLINE_GRACE))
@@ -249,6 +269,13 @@ class LicenseManager:
             "trial_started_at": None,
             "trial_ends_at": None,
             "current_period_end": None,
+            "access_ends_at": None,
+            "related_trial_ends_at": None,
+            "related_trial_license_key": "",
+            "license_key_masked": "",
+            "email": "",
+            "company_name": "",
+            "seats": 1,
             "last_successful_check_at": None,
             "next_check_at": None,
             "offline_grace_until": None,
@@ -274,7 +301,12 @@ class LicenseManager:
         LICENSE_PATH.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _days_remaining(self, state: dict) -> int | None:
-        end = _parse_dt(state.get("trial_ends_at") or state.get("current_period_end"))
+        end = _parse_dt(
+            state.get("access_ends_at")
+            or state.get("trial_ends_at")
+            or state.get("related_trial_ends_at")
+            or state.get("current_period_end")
+        )
         if not end:
             return None
         return max(0, (end.date() - _now().date()).days)

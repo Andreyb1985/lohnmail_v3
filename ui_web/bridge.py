@@ -1234,17 +1234,28 @@ class WebBridge(QObject):
         manager = LicenseManager(settings)
         state = state or (manager.refresh(force=False, start_trial=True) if refresh else manager.load_state())
         raw_key = str(state.get("license_key", "") or settings.get("license", {}).get("key", "") or "").strip()
+        related_trial_key = str(state.get("related_trial_license_key", "") or "").strip()
         status = str(state.get("status", "") or "unregistered").strip().lower()
         license_type = str(state.get("type", "") or "none").strip().lower()
         active = status in {"trialing", "active", "expiring_soon"}
         status_label = self._license_label(status, license_type, state)
         status_level = self._license_status_level(status, active, manager.server_url)
+        trial_ends_at = str(state.get("trial_ends_at", "") or "")
+        related_trial_ends_at = str(state.get("related_trial_ends_at", "") or "")
+        current_period_end = str(state.get("current_period_end", "") or "")
+        access_ends_at = str(
+            state.get("access_ends_at", "")
+            or current_period_end
+            or trial_ends_at
+            or related_trial_ends_at
+            or ""
+        )
         return {
             "status": status,
             "label": status_label,
             "status_level": status_level,
             "active": active,
-            "key_masked": self._mask_license_key(raw_key),
+            "key_masked": str(state.get("license_key_masked", "") or self._mask_license_key(raw_key)),
             "key_present": bool(raw_key),
             "type": self._license_type_label(license_type),
             "plan": str(state.get("plan", "") or ("Trial" if license_type == "trial" else "Professional")),
@@ -1255,8 +1266,11 @@ class WebBridge(QObject):
             "company": get_company_name(settings),
             "machine_id": str(state.get("machine_id", "") or ""),
             "days_remaining": state.get("days_remaining"),
-            "trial_ends_at": str(state.get("trial_ends_at", "") or ""),
-            "current_period_end": str(state.get("current_period_end", "") or ""),
+            "trial_ends_at": trial_ends_at,
+            "current_period_end": current_period_end,
+            "access_ends_at": access_ends_at,
+            "related_trial_ends_at": related_trial_ends_at,
+            "related_trial_key_masked": self._mask_license_key(related_trial_key) if related_trial_key else "",
             "message": self._license_message(status, state),
             "state_list": self._license_state_list(status),
             "features": [
