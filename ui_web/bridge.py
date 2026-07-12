@@ -1312,6 +1312,9 @@ class WebBridge(QObject):
     @staticmethod
     def _license_label(status: str, license_type: str, state: dict) -> str:
         days = state.get("days_remaining")
+        if status == "trialing" and license_type == "subscription":
+            suffix = f" · {days} Tage verbleibend" if days is not None else ""
+            return f"Professional · Probezeit{suffix}"
         if status == "trialing":
             suffix = f" · {days} Tage verbleibend" if days is not None else ""
             return f"Trial{suffix}"
