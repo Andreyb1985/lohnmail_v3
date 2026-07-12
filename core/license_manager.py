@@ -129,11 +129,25 @@ class LicenseManager:
         self._save_state(state)
         return state
 
-    def purchase_session(self, email: str = "", company_name: str = "") -> dict:
+    def purchase_session(
+        self,
+        email: str = "",
+        company_name: str = "",
+        address: str = "",
+        company_number: str = "",
+    ) -> dict:
         state = self.load_state()
         response = self._post(
             "/api/stripe/create-checkout-session",
-            {"email": email, "company_name": company_name, "machine_id": state["machine_id"]},
+            {
+                "email": email,
+                "company_name": company_name,
+                "licensee_name": company_name,
+                "licensee_email": email,
+                "licensee_address": address,
+                "licensee_company_number": company_number,
+                "machine_id": state["machine_id"],
+            },
         )
         if response.get("license"):
             state = self._merge_server_response(state, response["license"])
@@ -208,6 +222,10 @@ class LicenseManager:
             "days_remaining",
             "email",
             "company_name",
+            "licensee_name",
+            "licensee_email",
+            "licensee_address",
+            "licensee_company_number",
             "license_key_masked",
         }
         for key in [
@@ -218,6 +236,10 @@ class LicenseManager:
             "plan",
             "email",
             "company_name",
+            "licensee_name",
+            "licensee_email",
+            "licensee_address",
+            "licensee_company_number",
             "seats",
             "trial_started_at",
             "trial_ends_at",
@@ -274,6 +296,10 @@ class LicenseManager:
             "license_key_masked": "",
             "email": "",
             "company_name": "",
+            "licensee_name": "",
+            "licensee_email": "",
+            "licensee_address": "",
+            "licensee_company_number": "",
             "seats": 1,
             "last_successful_check_at": None,
             "next_check_at": None,

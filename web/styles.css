@@ -2672,6 +2672,9 @@ input, input:focus, input:focus-visible {
 .license-history-card{
   grid-column:1 / -1;
 }
+.licensee-card{
+  grid-column:1 / -1;
+}
 .license-key-box{
   min-height:76px;
   display:grid;
@@ -2764,6 +2767,61 @@ input, input:focus, input:focus-visible {
 .license-actions .license-primary-action span[data-icon]{
   color:#fff;
 }
+.licensee-form{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+}
+.licensee-form label{
+  display:grid;
+  gap:6px;
+  color:#334155;
+  font-size:13px;
+  font-weight:850;
+}
+.licensee-form label.wide{
+  grid-column:1 / -1;
+}
+.licensee-form input{
+  min-width:0;
+  height:42px;
+  border:1px solid #dbe5ee;
+  border-radius:10px;
+  background:#fff;
+  color:#0f172a;
+  font:inherit;
+  font-weight:750;
+  padding:0 12px;
+}
+.licensee-form input:focus{
+  outline:none;
+  border-color:#00a86b;
+  box-shadow:0 0 0 3px rgba(0,168,107,.12);
+}
+.licensee-scope{
+  min-height:42px;
+  border:1px solid #bbf7d0;
+  border-radius:10px;
+  background:#ecfdf5;
+  color:#008357;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:0 12px;
+}
+.licensee-scope span[data-icon]{
+  width:17px;
+  height:17px;
+}
+.licensee-card .card-title-row button{
+  min-height:34px;
+  border:1px solid #dbe5ee;
+  border-radius:10px;
+  background:#fff;
+  color:#008357;
+  font-weight:850;
+  padding:0 14px;
+}
 .license-note{
   min-height:46px;
   border:1px solid #ffd6a8;
@@ -2839,7 +2897,9 @@ input, input:focus, input:focus-visible {
 @media(max-width:760px){
   .license-metrics{grid-template-columns:1fr}
   .license-actions,
-  .license-state-grid{grid-template-columns:1fr}
+  .license-state-grid,
+  .licensee-form{grid-template-columns:1fr}
+  .licensee-form label.wide{grid-column:auto}
   .license-detail-list div{grid-template-columns:20px minmax(0,1fr)}
   .license-detail-list b{grid-column:2;text-align:left}
 }

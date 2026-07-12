@@ -69,6 +69,12 @@ def build_default_settings(today: date | None = None) -> dict:
             "delivery_events": True,
             "auto_open_on_start": False,
         },
+        "licensee": {
+            "name": "",
+            "email": "",
+            "address": "",
+            "company_number": "",
+        },
         "license": {
             "key": "",
             "status": "unregistered",
@@ -122,6 +128,7 @@ def _deep_merge_settings(data: dict) -> dict:
     merged["period"] = _merge_dict(DEFAULT_SETTINGS["period"], merged.get("period"))
     merged["ui"] = _merge_dict(DEFAULT_SETTINGS["ui"], merged.get("ui"))
     merged["notifications"] = _merge_dict(DEFAULT_SETTINGS["notifications"], merged.get("notifications"))
+    merged["licensee"] = _merge_dict(DEFAULT_SETTINGS["licensee"], merged.get("licensee"))
     merged["license"] = _merge_dict(DEFAULT_SETTINGS["license"], merged.get("license"))
 
     companies = merged.get("companies")

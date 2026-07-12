@@ -932,13 +932,24 @@
               </div>
               <div class="license-detail-list">
                 <div><span data-icon="checkcircle"></span><span>Aktueller Modus</span><b data-license="detail-mode">Lokal</b></div>
-                <div><span data-icon="building"></span><span>Mandant</span><b data-license="detail-company">-</b></div>
+                <div><span data-icon="building"></span><span>Lizenznehmer</span><b data-license="detail-company">-</b></div>
                 <div><span data-icon="screen"></span><span>Computer-ID</span><b data-license="machine-id">-</b></div>
                 <div><span data-icon="clock"></span><span>Lizenz gültig bis</span><b data-license="access-end">-</b></div>
                 <div><span data-icon="clock"></span><span>Probezeit bis</span><b data-license="trial-end-detail">-</b></div>
                 <div><span data-icon="clock"></span><span>Stripe Periode</span><b data-license="period-end">-</b></div>
                 <div><span data-icon="key"></span><span>Trial-Quelle</span><b data-license="trial-source">-</b></div>
                 <div><span data-icon="clock"></span><span>Letzte Prüfung</span><b data-license="checked-at">Beim Start geladen</b></div>
+              </div>
+            </article>
+
+            <article class="card licensee-card">
+              <div class="card-title-row"><h2>Lizenznehmer</h2><button data-license-action="save-licensee">Speichern</button></div>
+              <div class="licensee-form">
+                <label>Firma / Kanzlei<input data-licensee-field="name" placeholder="Steuerkanzlei Muster GmbH"></label>
+                <label>E-Mail<input data-licensee-field="email" type="email" placeholder="rechnung@example.de"></label>
+                <label class="wide">Anschrift<input data-licensee-field="address" placeholder="Straße, PLZ Ort, Land"></label>
+                <label>Unternehmensnummer<input data-licensee-field="company_number" placeholder="Steuer-/HR-/USt-ID"></label>
+                <div class="licensee-scope"><span data-icon="building"></span><strong>1 Arbeitsplatz · unbegrenzte Mandanten</strong></div>
               </div>
             </article>
 

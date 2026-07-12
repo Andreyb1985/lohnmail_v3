@@ -42,6 +42,12 @@
     "window_width": 1100,
     "window_height": 720
   },
+  "licensee": {
+    "name": "",
+    "email": "",
+    "address": "",
+    "company_number": ""
+  },
   "license": {
     "key": "",
     "status": "unregistered",

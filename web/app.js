@@ -1050,6 +1050,7 @@
     setText('[data-license="trial-source"]', relatedTrialKey || (trialEnd && state.type !== 'trial' ? 'Verknüpfter Trial' : '-'));
     setText('[data-license="checked-at"]', new Date().toLocaleString('de-DE'));
     setLicenseMessage(licenseMessageFromState(state));
+    applyLicenseeState(state.licensee || {});
 
     var badge = document.querySelector('[data-license="badge"]');
     if (badge) {
@@ -1078,6 +1079,39 @@
       }
     }
     updateWarningCenter();
+  }
+  function collectLicenseeForm(){
+    var payload = {};
+    document.querySelectorAll('[data-licensee-field]').forEach(function(field){
+      payload[field.getAttribute('data-licensee-field')] = field.value || '';
+    });
+    return payload;
+  }
+  function applyLicenseeState(licensee){
+    licensee = licensee || {};
+    document.querySelectorAll('[data-licensee-field]').forEach(function(field){
+      var key = field.getAttribute('data-licensee-field');
+      field.value = licensee[key] || '';
+    });
+  }
+  function saveLicensee(callback){
+    var bridge = window.lohnmailBridge;
+    if (!bridge || !bridge.saveLicenseeState) {
+      setLicenseMessage('Lizenznehmer kann im Bridge nicht gespeichert werden.');
+      if (callback) callback(false);
+      return;
+    }
+    bridge.saveLicenseeState(JSON.stringify(collectLicenseeForm()), function(payload){
+      try {
+        var result = JSON.parse(payload || '{}');
+        if (result.state) applyLicenseState(result.state);
+        setLicenseMessage(result.message || (result.ok ? 'Lizenznehmer wurde gespeichert.' : 'Lizenznehmer konnte nicht gespeichert werden.'));
+        if (callback) callback(!!result.ok);
+      } catch (error) {
+        setLicenseMessage('Lizenznehmer konnte nicht gespeichert werden.');
+        if (callback) callback(false);
+      }
+    });
   }
   function consumeLicensePayload(payload){
     try {
@@ -1116,16 +1150,25 @@
       return;
     }
     if (action === 'buy' && window.lohnmailBridge && window.lohnmailBridge.buyLicense) {
-      setLicenseMessage('Stripe Checkout wird geöffnet...');
-      window.lohnmailBridge.buyLicense(function(payload){
-        try {
-          var result = JSON.parse(payload || '{}');
-          if (result.state) applyLicenseState(result.state);
-          setLicenseMessage(licenseMessageFromState(result.state, result.ok ? 'Stripe Checkout wurde geöffnet.' : (result.message || 'Checkout konnte nicht geöffnet werden.')));
-        } catch (error) {
-          setLicenseMessage('Checkout konnte nicht geöffnet werden.');
-        }
+      setLicenseMessage('Lizenznehmer wird gespeichert...');
+      saveLicensee(function(saved){
+        if (!saved) return;
+        setLicenseMessage('Stripe Checkout wird geöffnet...');
+        window.lohnmailBridge.buyLicense(function(payload){
+          try {
+            var result = JSON.parse(payload || '{}');
+            if (result.state) applyLicenseState(result.state);
+            setLicenseMessage(licenseMessageFromState(result.state, result.ok ? 'Stripe Checkout wurde geöffnet.' : (result.message || 'Checkout konnte nicht geöffnet werden.')));
+          } catch (error) {
+            setLicenseMessage('Checkout konnte nicht geöffnet werden.');
+          }
+        });
       });
+      return;
+    }
+    if (action === 'save-licensee') {
+      setLicenseMessage('Lizenznehmer wird gespeichert...');
+      saveLicensee();
       return;
     }
     if (action === 'portal' && window.lohnmailBridge && window.lohnmailBridge.openCustomerPortal) {

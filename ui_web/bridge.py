@@ -250,7 +250,15 @@ class WebBridge(QObject):
         settings = load_settings()
         manager = LicenseManager(settings)
         try:
-            response = manager.purchase_session(company_name=get_company_name(settings))
+            licensee = self._licensee_settings(settings)
+            if not licensee.get("name") or not licensee.get("email"):
+                raise ValueError("Bitte zuerst Lizenznehmer mit Firma und E-Mail speichern.")
+            response = manager.purchase_session(
+                email=licensee.get("email", ""),
+                company_name=licensee.get("name", ""),
+                address=licensee.get("address", ""),
+                company_number=licensee.get("company_number", ""),
+            )
             if response.get("already_active"):
                 state = manager.load_state()
                 return json.dumps(
@@ -272,6 +280,31 @@ class WebBridge(QObject):
             )
         except Exception as exc:
             return json.dumps({"ok": False, "message": str(exc), "state": self._license_payload(settings)}, ensure_ascii=False)
+
+    @Slot(str, result=str)
+    def saveLicenseeState(self, payload: str) -> str:
+        try:
+            data = json.loads(payload or "{}")
+            if not isinstance(data, dict):
+                raise ValueError("Ungültige Lizenznehmerdaten.")
+            settings = load_settings()
+            licensee = settings.setdefault("licensee", {})
+            for key in ["name", "email", "address", "company_number"]:
+                if key in data:
+                    licensee[key] = str(data.get(key) or "").strip()
+            if licensee.get("email") and not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", str(licensee.get("email"))):
+                raise ValueError("Bitte eine gültige E-Mail-Adresse eingeben.")
+            save_settings(settings)
+            settings = load_settings()
+            return json.dumps(
+                {"ok": True, "message": "Lizenznehmer wurde gespeichert.", "state": self._license_payload(settings)},
+                ensure_ascii=False,
+            )
+        except Exception as exc:
+            return json.dumps(
+                {"ok": False, "message": f"Lizenznehmer konnte nicht gespeichert werden: {exc}", "state": self._license_payload(load_settings())},
+                ensure_ascii=False,
+            )
 
     @Slot(result=str)
     def openCustomerPortal(self) -> str:
@@ -526,6 +559,7 @@ class WebBridge(QObject):
             period = settings.setdefault("period", {})
             ui_settings = settings.setdefault("ui", {})
             notifications = settings.setdefault("notifications", {})
+            licensee = settings.setdefault("licensee", {})
 
             if "mail_mode" in data:
                 settings["mail_mode"] = str(data.get("mail_mode") or "smtp").strip() or "smtp"
@@ -577,6 +611,11 @@ class WebBridge(QObject):
             ]:
                 if key in notification_data:
                     notifications[key] = bool(notification_data.get(key))
+
+            licensee_data = data.get("licensee") if isinstance(data.get("licensee"), dict) else {}
+            for key in ["name", "email", "address", "company_number"]:
+                if key in licensee_data:
+                    licensee[key] = str(licensee_data.get(key) or "").strip()
 
             save_settings(settings)
             settings = load_settings()
@@ -1233,6 +1272,7 @@ class WebBridge(QObject):
     def _license_payload(self, settings: dict, refresh: bool = False, state: dict | None = None) -> dict:
         manager = LicenseManager(settings)
         state = state or (manager.refresh(force=False, start_trial=True) if refresh else manager.load_state())
+        licensee = self._licensee_settings(settings, state)
         raw_key = str(state.get("license_key", "") or settings.get("license", {}).get("key", "") or "").strip()
         related_trial_key = str(state.get("related_trial_license_key", "") or "").strip()
         status = str(state.get("status", "") or "unregistered").strip().lower()
@@ -1263,7 +1303,8 @@ class WebBridge(QObject):
             "server": str(state.get("server", "") or ("Verbunden" if manager.server_url else "Nicht konfiguriert")),
             "server_note": "Online-Prüfung aktiv" if manager.server_url else "Keine Serverlogik aktiv",
             "mode": "Server" if manager.server_url else "Lokal",
-            "company": get_company_name(settings),
+            "company": licensee.get("name") or str(state.get("company_name", "") or "") or "-",
+            "licensee": licensee,
             "machine_id": str(state.get("machine_id", "") or ""),
             "days_remaining": state.get("days_remaining"),
             "trial_ends_at": trial_ends_at,
@@ -1289,6 +1330,33 @@ class WebBridge(QObject):
                     "status": status_label,
                 }
             ],
+        }
+
+    @staticmethod
+    def _licensee_settings(settings: dict, state: dict | None = None) -> dict:
+        state = state or {}
+        configured = settings.get("licensee") if isinstance(settings.get("licensee"), dict) else {}
+        name = str(
+            configured.get("name", "")
+            or state.get("licensee_name", "")
+            or state.get("company_name", "")
+            or ""
+        ).strip()
+        email = str(
+            configured.get("email", "")
+            or state.get("licensee_email", "")
+            or state.get("email", "")
+            or ""
+        ).strip()
+        return {
+            "name": name,
+            "email": email,
+            "address": str(configured.get("address", "") or state.get("licensee_address", "") or "").strip(),
+            "company_number": str(
+                configured.get("company_number", "")
+                or state.get("licensee_company_number", "")
+                or ""
+            ).strip(),
         }
 
     @staticmethod
@@ -1446,6 +1514,7 @@ class WebBridge(QObject):
                 "auto_open_on_start": bool(notification_settings.get("auto_open_on_start", False)),
             },
             "company": self._company_payload(settings),
+            "licensee": self._licensee_settings(settings),
             "license": self._license_payload(settings),
             "outlook_supported": True,
         }
