@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LohnMail v2 — Enterprise Edition</title>
-  <link rel="stylesheet" href="styles.css?v=license-access-sync-20260712-001" />
+  <link rel="stylesheet" href="styles.css?v=help-center-20260713-001" />
 </head>
 <body>
   <div class="app-shell">
@@ -331,7 +331,7 @@
                     <small>Ergebnisse speichern</small>
                     <div class="import-meta"><span>Typ<br><b>Ordner</b></span><span>Status<br><b data-processing="output-label">Bereit</b></span><span>Geändert<br><b data-processing="output-updated">--</b></span></div>
                   </div>
-                  <div class="file-field"><span data-processing="output-path">Gesob_Lohn</span><button title="Ausgabeordner"><span data-icon="report"></span></button></div>
+                  <div class="file-field" data-processing-action="open-output"><span data-processing="output-path">Gesob_Lohn</span><button title="Ausgabeordner öffnen" type="button"><span data-icon="report"></span></button></div>
                   <div class="row-status success" data-processing="output-status"><span data-icon="checkcircle"></span></div>
                 </div>
                 <div class="info-banner" data-processing="input-message"><span data-icon="info"></span> Eingaben werden geladen.</div>
@@ -365,8 +365,7 @@
                 <div class="side-action-grid">
                   <button data-processing-action="choose-pdf"><span data-icon="doc"></span>Import PDF</button>
                   <button data-processing-action="choose-excel"><span data-icon="table"></span>Import Excel</button>
-                  <button><span data-icon="process"></span>Cache leeren</button>
-                  <button><span data-icon="x"></span>Alle zurücksetzen</button>
+                  <button data-processing-action="open-output"><span data-icon="report"></span>Ausgabeordner öffnen</button>
                 </div>
               </article>
             </aside>
@@ -924,35 +923,6 @@
           </section>
 
           <section class="license-grid">
-            <article class="card license-manager-card">
-              <div class="card-title-row"><h2>License Manager</h2><span class="state warning" data-license="badge">Nicht registriert</span></div>
-              <div class="license-key-box">
-                <span data-icon="key"></span>
-                <div><small>Lizenzschlüssel</small><strong data-license="key">Nicht hinterlegt</strong></div>
-              </div>
-              <div class="license-detail-list">
-                <div><span data-icon="checkcircle"></span><span>Aktueller Modus</span><b data-license="detail-mode">Lokal</b></div>
-                <div><span data-icon="building"></span><span>Lizenznehmer</span><b data-license="detail-company">-</b></div>
-                <div><span data-icon="screen"></span><span>Computer-ID</span><b data-license="machine-id">-</b></div>
-                <div><span data-icon="clock"></span><span>Lizenz gültig bis</span><b data-license="access-end">-</b></div>
-                <div><span data-icon="clock"></span><span>Probezeit bis</span><b data-license="trial-end-detail">-</b></div>
-                <div><span data-icon="clock"></span><span>Stripe Periode</span><b data-license="period-end">-</b></div>
-                <div><span data-icon="key"></span><span>Trial-Quelle</span><b data-license="trial-source">-</b></div>
-                <div><span data-icon="clock"></span><span>Letzte Prüfung</span><b data-license="checked-at">Beim Start geladen</b></div>
-              </div>
-            </article>
-
-            <article class="card licensee-card">
-              <div class="card-title-row"><h2>Lizenznehmer</h2><button data-license-action="save-licensee">Speichern</button></div>
-              <div class="licensee-form">
-                <label>Firma / Kanzlei<input data-licensee-field="name" placeholder="Steuerkanzlei Muster GmbH"></label>
-                <label>E-Mail<input data-licensee-field="email" type="email" placeholder="rechnung@example.de"></label>
-                <label class="wide">Anschrift<input data-licensee-field="address" placeholder="Straße, PLZ Ort, Land"></label>
-                <label>Unternehmensnummer<input data-licensee-field="company_number" placeholder="Steuer-/HR-/USt-ID"></label>
-                <div class="licensee-scope"><span data-icon="building"></span><strong>1 Arbeitsplatz · unbegrenzte Mandanten</strong></div>
-              </div>
-            </article>
-
             <article class="card license-actions-card">
               <h2>Aktionen</h2>
               <div class="license-actions">
@@ -965,17 +935,50 @@
               <div class="license-note" data-license="message">Lizenzstatus wird geladen.</div>
             </article>
 
-            <article class="card license-states-card">
-              <h2>Statuszustände</h2>
-              <div class="license-state-grid" data-license="state-list">
-                <span class="license-state info">Trial</span>
-                <span class="license-state success">Aktiv</span>
-                <span class="license-state warning">Zahlung überfällig</span>
-                <span class="license-state error">Abgelaufen</span>
-                <span class="license-state error">Ungültig</span>
-                <span class="license-state warning">Keine Verbindung</span>
+            <div class="license-details-grid">
+              <article class="card license-manager-card">
+                <div class="card-title-row"><h2>License Manager</h2><span class="state warning" data-license="badge">Nicht registriert</span></div>
+                <div class="license-key-box">
+                  <span data-icon="key"></span>
+                  <div><small>Lizenzschlüssel</small><strong data-license="key">Nicht hinterlegt</strong></div>
+                </div>
+                <div class="license-detail-list">
+                  <div><span data-icon="checkcircle"></span><span>Aktueller Modus</span><b data-license="detail-mode">Lokal</b></div>
+                  <div><span data-icon="building"></span><span>Lizenznehmer</span><b data-license="detail-company">-</b></div>
+                  <div><span data-icon="screen"></span><span>Computer-ID</span><b data-license="machine-id">-</b></div>
+                  <div><span data-icon="clock"></span><span>Lizenz gültig bis</span><b data-license="access-end">-</b></div>
+                  <div><span data-icon="clock"></span><span>Probezeit bis</span><b data-license="trial-end-detail">-</b></div>
+                  <div><span data-icon="clock"></span><span>Stripe Periode</span><b data-license="period-end">-</b></div>
+                  <div><span data-icon="key"></span><span>Trial-Quelle</span><b data-license="trial-source">-</b></div>
+                  <div><span data-icon="clock"></span><span>Letzte Prüfung</span><b data-license="checked-at">Beim Start geladen</b></div>
+                </div>
+              </article>
+
+              <div class="license-right-column">
+                <article class="card licensee-card">
+                  <div class="card-title-row"><h2>Lizenznehmer bearbeiten</h2><button data-license-action="save-licensee">Speichern</button></div>
+                  <div class="licensee-form">
+                    <label>Firma / Kanzlei<input data-licensee-field="name" placeholder="Steuerkanzlei Muster GmbH"></label>
+                    <label>E-Mail<input data-licensee-field="email" type="email" placeholder="rechnung@example.de"></label>
+                    <label class="wide">Anschrift<input data-licensee-field="address" placeholder="Straße, PLZ Ort, Land"></label>
+                    <label>Unternehmensnummer<input data-licensee-field="company_number" placeholder="Steuer-/HR-/USt-ID"></label>
+                    <div class="licensee-scope"><span data-icon="building"></span><strong>1 Arbeitsplatz · unbegrenzte Mandanten</strong></div>
+                  </div>
+                </article>
+
+                <article class="card license-states-card">
+                  <h2>Statuszustände</h2>
+                  <div class="license-state-grid" data-license="state-list">
+                    <span class="license-state info">Trial</span>
+                    <span class="license-state success">Aktiv</span>
+                    <span class="license-state warning">Zahlung überfällig</span>
+                    <span class="license-state error">Abgelaufen</span>
+                    <span class="license-state error">Ungültig</span>
+                    <span class="license-state warning">Keine Verbindung</span>
+                  </div>
+                </article>
               </div>
-            </article>
+            </div>
 
             <article class="card license-history-card">
               <div class="card-title-row"><h2>Aktivierungshistorie</h2><button data-license-action="history">Alle anzeigen</button></div>
@@ -1143,7 +1146,7 @@
             </div>
             <label class="help-search">
               <span data-icon="search"></span>
-              <input placeholder='Suchbegriff eingeben (z. B. "PDF Export", "SMTP", "Lizenz")'>
+              <input data-help-search placeholder='Suchbegriff eingeben (z. B. "PDF", "SMTP", "Lizenz")'>
               <button data-help-action="search"><span data-icon="search"></span>Suchen</button>
             </label>
           </section>
@@ -1152,37 +1155,42 @@
             <article class="card help-topics">
               <h2>Häufige Themen</h2>
               <div class="help-topic-grid">
-                <button data-help-action="topic"><span class="topic-icon green"><span data-icon="send"></span></span><strong>Erste Schritte</strong><small>Installation, Einrichtung und erste Schritte mit LohnMail</small><i>›</i></button>
-                <button data-help-action="topic"><span class="topic-icon green"><span data-icon="process"></span></span><strong>Verarbeitung</strong><small>E-Mails verarbeiten und Dokumente extrahieren</small><i>›</i></button>
-                <button data-help-action="topic"><span class="topic-icon violet"><span data-icon="checkcircle"></span></span><strong>Prüfung</strong><small>Daten prüfen, Fehler beheben und validieren</small><i>›</i></button>
-                <button data-help-action="topic"><span class="topic-icon blue"><span data-icon="send"></span></span><strong>Versand</strong><small>E-Mails versenden und Protokolle verwalten</small><i>›</i></button>
-                <button data-help-action="topic"><span class="topic-icon mint"><span data-icon="report"></span></span><strong>Berichte</strong><small>Berichte erstellen, exportieren und analysieren</small><i>›</i></button>
-                <button data-help-action="topic"><span class="topic-icon amber"><span data-icon="settings"></span></span><strong>Einstellungen</strong><small>Konfiguration, Vorlagen und Systemeinstellungen</small><i>›</i></button>
+                <button data-help-action="topic" data-help-topic="start"><span class="topic-icon green"><span data-icon="send"></span></span><strong>Erste Schritte</strong><small>Mandant anlegen, Stammdaten zuweisen und ersten Lauf starten</small><i>›</i></button>
+                <button data-help-action="topic" data-help-topic="processing"><span class="topic-icon green"><span data-icon="process"></span></span><strong>Verarbeitung</strong><small>PDF-Eingang, Excel-Stammdaten und Ausgabeordner einrichten</small><i>›</i></button>
+                <button data-help-action="topic" data-help-topic="validation"><span class="topic-icon violet"><span data-icon="checkcircle"></span></span><strong>Prüfung</strong><small>Ergebnisse lesen, suchen, filtern und Fehler beheben</small><i>›</i></button>
+                <button data-help-action="topic" data-help-topic="shipping"><span class="topic-icon blue"><span data-icon="send"></span></span><strong>Versand</strong><small>Empfänger auswählen, Vorschau prüfen und sicher versenden</small><i>›</i></button>
+                <button data-help-action="topic" data-help-topic="reports"><span class="topic-icon mint"><span data-icon="report"></span></span><strong>Berichte</strong><small>Prüf-, Fehladress- und Versandberichte verwenden</small><i>›</i></button>
+                <button data-help-action="topic" data-help-topic="settings"><span class="topic-icon amber"><span data-icon="settings"></span></span><strong>Einstellungen</strong><small>SMTP, Outlook, Vorlagen, Zeitraum und Benachrichtigungen</small><i>›</i></button>
               </div>
             </article>
 
             <article class="card help-quick">
               <h2>Schnellzugriff</h2>
               <div class="quick-link-list">
-                <button data-help-action="video"><span class="topic-icon green small"><span data-icon="play"></span></span><strong>Video Tutorials</strong><small>Schritt-für-Schritt Anleitungen</small><i>›</i></button>
-                <button data-help-action="manual"><span class="topic-icon red small"><span data-icon="doc"></span></span><strong>PDF Handbuch</strong><small>Vollständige Dokumentation</small><i>›</i></button>
+                <button data-help-action="video"><span class="topic-icon green small"><span data-icon="play"></span></span><strong>Kurzanleitungen</strong><small>Geführte Abläufe für die wichtigsten Aufgaben</small><i>›</i></button>
+                <button data-help-action="manual"><span class="topic-icon red small"><span data-icon="doc"></span></span><strong>Handbuch</strong><small>Vollständige lokale Produktübersicht</small><i>›</i></button>
                 <button data-help-action="release"><span class="topic-icon amber small"><span data-icon="info"></span></span><strong>Release Notes</strong><small>Neuigkeiten und Änderungen</small><i>›</i></button>
                 <button data-help-action="status"><span class="topic-icon green small"><span data-icon="process"></span></span><strong>Systemstatus</strong><small>Aktueller Status aller Dienste</small><i>›</i></button>
               </div>
             </article>
 
             <article class="card knowledge-card">
-              <h2>Wissensdatenbank</h2>
+              <header class="knowledge-head">
+                <div>
+                  <h2>Wissensdatenbank</h2>
+                  <p data-help-result-summary>Alle lokalen Hilfeartikel</p>
+                </div>
+                <button data-help-action="clear" hidden><span data-icon="x"></span>Filter zurücksetzen</button>
+              </header>
               <table class="knowledge-table">
                 <thead><tr><th>Artikel</th><th>Kategorie</th><th>Zuletzt aktualisiert</th></tr></thead>
-                <tbody>
-                  <tr><td><span data-icon="doc"></span>Wie richte ich die E-Mail Verbindung (SMTP) ein?</td><td><b class="tag neutral">Einstellungen</b></td><td>14.05.2025</td></tr>
-                  <tr><td><span data-icon="doc"></span>PDF Export: Berichte als PDF speichern</td><td><b class="tag green">Berichte</b></td><td>12.05.2025</td></tr>
-                  <tr><td><span data-icon="doc"></span>Fehlerbehebung: Häufige Probleme und Lösungen</td><td><b class="tag orange">Fehlerbehebung</b></td><td>10.05.2025</td></tr>
-                  <tr><td><span data-icon="doc"></span>Lizenz aktivieren und Benutzer verwalten</td><td><b class="tag green">Lizenzen</b></td><td>08.05.2025</td></tr>
-                  <tr><td><span data-icon="doc"></span>Datenprüfung: Fehlerarten verstehen</td><td><b class="tag violet">Prüfung</b></td><td>07.05.2025</td></tr>
-                </tbody>
+                <tbody data-help-results></tbody>
               </table>
+              <div class="knowledge-empty" data-help-empty hidden>
+                <span data-icon="search"></span>
+                <strong>Keine passenden Artikel gefunden</strong>
+                <small>Versuchen Sie einen kürzeren Suchbegriff oder setzen Sie den Filter zurück.</small>
+              </div>
               <button class="wide-button" data-help-action="articles"><span data-icon="doc"></span>Alle Artikel anzeigen</button>
             </article>
 
@@ -1191,15 +1199,15 @@
                 <h2>Support kontaktieren</h2>
                 <div class="support-list">
                   <button data-help-action="email"><span data-icon="mail"></span><strong>E-Mail Support</strong><small>support@lohnmail.de</small><i><span data-icon="mail"></span></i></button>
-                  <button data-help-action="phone"><span data-icon="help"></span><strong>Telefon Support</strong><small>+49 209 123456-99</small><i><span data-icon="help"></span></i></button>
-                  <button data-help-action="remote"><span data-icon="screen"></span><strong>Remote Support</strong><small>Fernwartung starten</small><i><span data-icon="screen"></span></i></button>
+                  <button data-help-action="diagnostics"><span data-icon="checkcircle"></span><strong>Diagnose-Checkliste</strong><small>Angaben für eine schnelle Problemlösung</small><i><span data-icon="checkcircle"></span></i></button>
+                  <button data-help-action="remote"><span data-icon="screen"></span><strong>Fernsupport vorbereiten</strong><small>Nur nach Termin und Ihrer Freigabe</small><i><span data-icon="screen"></span></i></button>
                 </div>
-                <p>Supportzeiten: Mo – Fr 08:00 – 17:00 Uhr</p>
+                <p>Lohnunterlagen werden nicht automatisch an den Support übertragen.</p>
               </article>
 
               <article class="card support-request-card">
                 <h2>Haben Sie nicht gefunden, was Sie suchen?</h2>
-                <p>Unser Support-Team hilft Ihnen gerne weiter.</p>
+                <p>Öffnen Sie die Support-Checkliste und senden Sie nur die dort genannten technischen Angaben.</p>
                 <button class="outline-green" data-help-action="request"><span data-icon="help"></span>Support Anfrage erstellen</button>
               </article>
             </aside>
@@ -1384,6 +1392,34 @@
         </section>
       </div>
 
+      <div class="help-article-modal" data-help-modal hidden>
+        <button class="help-article-backdrop" data-help-close aria-label="Schliessen"></button>
+        <section class="help-article-panel" role="dialog" aria-modal="true" aria-labelledby="help-article-title">
+          <header class="help-article-header">
+            <div>
+              <span data-icon="help"></span>
+              <div>
+                <small data-help-detail="category">Hilfe</small>
+                <h2 id="help-article-title" data-help-detail="title">Hilfeartikel</h2>
+              </div>
+            </div>
+            <button class="help-article-close" data-help-close aria-label="Schliessen">x</button>
+          </header>
+          <div class="help-article-body">
+            <p class="help-article-summary" data-help-detail="summary"></p>
+            <div class="help-article-meta">
+              <span><span data-icon="clock"></span>Aktualisiert: <b data-help-detail="updated">13.07.2026</b></span>
+              <span><span data-icon="info"></span>Lokale Dokumentation</span>
+            </div>
+            <div class="help-article-sections" data-help-detail="body"></div>
+            <section class="help-related" data-help-related-wrap hidden>
+              <h3>Passende Artikel</h3>
+              <div data-help-related></div>
+            </section>
+          </div>
+        </section>
+      </div>
+
       <footer class="footer">
         <span data-dashboard="footer-license"><span data-icon="key"></span> Lizenz: Aktiv</span>
         <span data-dashboard="footer-mail"><span data-icon="mail"></span> SMTP: Online</span>
@@ -1395,6 +1431,6 @@
   </div>
 
   <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
-  <script src="app.js?v=license-access-sync-20260712-001"></script>
+  <script src="app.js?v=help-center-20260713-001"></script>
 </body>
 </html>

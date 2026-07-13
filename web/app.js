@@ -32,6 +32,9 @@
   var latestShippingSendPreview = null;
   var processingActivityLog = [];
   var lastProcessingLogKey = '';
+  var currentHelpTopic = 'all';
+  var helpSearchQuery = '';
+  var helpShowAll = false;
   function initBridge(){
     if (typeof QWebChannel === 'undefined') {
       setInfoBanner('Bridge nicht verfügbar. Bitte WebEngine neu starten.', false);
@@ -1557,20 +1560,319 @@
       return;
     }
   }
-  function runHelpAction(action){
-    var messages = {
-      search: 'Suche ist vorbereitet. Die lokale Wissensdatenbank wird als statische Übersicht angezeigt.',
-      topic: 'Hilfethema ausgewählt.',
-      video: 'Video Tutorials sind in dieser lokalen Version nicht hinterlegt.',
-      manual: 'PDF Handbuch ist noch nicht als lokale Datei hinterlegt.',
-      release: 'Release Notes sind im Bereich Über LohnMail sichtbar.',
-      status: 'Systemstatus wird im Dashboard und Footer angezeigt.',
-      articles: 'Alle lokalen Hilfeartikel werden aktuell in der Übersicht angezeigt.',
-      email: 'Support per E-Mail: support@lohnmail.de',
-      phone: 'Telefon Support: +49 209 123456-99',
-      remote: 'Remote Support ist in dieser lokalen UI noch nicht gestartet.',
-      request: 'Support-Anfrage ist vorbereitet.'
-    };
+  var helpArticles = [
+    {
+      id: 'first-run', topic: 'start', category: 'Erste Schritte', tag: 'green', updated: '13.07.2026',
+      title: 'Erster vollständiger Lauf: vom Mandanten bis zum Prüfbericht',
+      summary: 'Diese Anleitung führt durch die sichere Grundeinrichtung und den ersten Prüflauf, ohne bereits E-Mails zu versenden.',
+      keywords: 'start installation einrichtung mandant excel pdf workflow neuer lauf',
+      sections: [
+        {title: '1. Mandant auswählen oder anlegen', steps: ['Öffnen Sie Unternehmen und legen Sie den betreuten Mandanten mit Name und eindeutiger Mandanten-ID an.', 'Wählen Sie die zu diesem Mandanten gehörende Excel-Stammdatendatei aus und speichern Sie die Zuordnung.', 'Kontrollieren Sie im Header, dass der richtige aktive Mandant und „Excel bereit“ angezeigt werden.']},
+        {title: '2. Eingaben in Verarbeitung festlegen', steps: ['Wählen Sie bei Lohnjournal entweder Ordner für bereits getrennte PDF-Dateien oder Gesamt-PDF für eine zusammengefasste Datei.', 'Prüfen Sie den automatisch geladenen Excel-Pfad des aktiven Mandanten.', 'Öffnen Sie bei Bedarf den festen Ausgabeordner und stellen Sie sicher, dass er beschreibbar ist.']},
+        {title: '3. Prüfung ausführen', steps: ['Klicken Sie auf Verarbeitung starten. LohnMail prüft zunächst Eingaben und Zuordnungen.', 'Beobachten Sie Verarbeitungs-Status und Aktivitätsprotokoll. Bei Fehlern bleiben Sie auf der Seite und korrigieren die genannte Ursache.', 'Nach erfolgreichem Abschluss öffnen Sie Prüfung, lesen Warnungen und kontrollieren insbesondere Empfänger ohne E-Mail-Adresse.']},
+        {title: '4. Erst danach Versand vorbereiten', text: ['Öffnen Sie Versand erst, wenn die Prüfergebnisse plausibel sind. Markieren Sie nur sendbare Empfänger, öffnen Sie die Vorschau und kontrollieren Sie Empfänger, Betreff, Text und Anhang.'], note: 'Ein Prüflauf sendet keine E-Mails. Der tatsächliche Versand startet erst nach der gesonderten Bestätigung im Versanddialog.'}
+      ]
+    },
+    {
+      id: 'company-setup', topic: 'start', category: 'Unternehmen', tag: 'neutral', updated: '13.07.2026',
+      title: 'Mandanten verwalten und die richtige Excel-Datei zuordnen',
+      summary: 'LohnMail trennt den Lizenznehmer von den betreuten Mandanten. Jeder Mandant kann eigene Stammdaten und optional eigene Mail-Einstellungen besitzen.',
+      keywords: 'unternehmen mandant excel stammdaten wechseln kanzlei firma',
+      sections: [
+        {title: 'Mandant und Lizenznehmer sind nicht dasselbe', text: ['Der Lizenznehmer ist die Kanzlei oder Organisation, die LohnMail verwendet. Mandanten sind die Unternehmen, deren Abrechnungen bearbeitet werden. Eine Arbeitsplatzlizenz kann mehrere Mandanten verwalten.']},
+        {title: 'Excel-Zuordnung', bullets: ['Ordnen Sie jedem Mandanten seine eigene Mitarbeiterliste zu.', 'Beim Wechsel des aktiven Mandanten wird dessen gespeicherte Excel-Datei in Verarbeitung geladen.', 'Fehlt die Datei oder wurde sie verschoben, zeigt der Header eine Warnung und der Prüflauf bleibt gesperrt.']},
+        {title: 'Mandant wechseln', steps: ['Öffnen Sie die Mandantenauswahl rechts oben im Header.', 'Suchen Sie nach Name oder Mandanten-ID.', 'Wählen Sie den Mandanten und kontrollieren Sie den Excel-Status direkt unter seinem Namen.']},
+        {title: 'Eigene Mail-Einstellungen', text: ['Standardmäßig verwendet ein Mandant die globalen E-Mail-Einstellungen. Unter Unternehmen können Sie auf eigene SMTP-Einstellungen umstellen, speichern und die Verbindung separat testen.']}
+      ]
+    },
+    {
+      id: 'pdf-input', topic: 'processing', category: 'Verarbeitung', tag: 'green', updated: '13.07.2026',
+      title: 'PDF-Eingang wählen: Ordner oder Gesamt-PDF',
+      summary: 'Der Eingabemodus muss zum ausgewählten Pfad passen. Ein Ordner ist keine Gesamt-PDF und eine einzelne Datei ist kein PDF-Ordner.',
+      keywords: 'pdf ordner gesamt-pdf gesamt pdf falscher typ lohnjournal import',
+      sections: [
+        {title: 'Modus Ordner', text: ['Verwenden Sie Ordner, wenn die Abrechnungen bereits als einzelne PDF-Dateien vorliegen. Wählen Sie den Ordner, der die zu prüfenden Dokumente enthält.']},
+        {title: 'Modus Gesamt-PDF', text: ['Verwenden Sie Gesamt-PDF, wenn alle Abrechnungen in einer einzelnen PDF-Datei zusammengefasst sind. Nach dem Umschalten muss eine echte PDF-Datei ausgewählt werden.']},
+        {title: 'Status „Falscher Typ“', bullets: ['Im Modus Gesamt-PDF zeigt ein noch gespeicherter Ordnerpfad „Falscher Typ“.', 'Im Modus Ordner zeigt eine ausgewählte Einzeldatei ebenfalls „Falscher Typ“.', 'Wählen Sie nach dem Moduswechsel den Eingang erneut aus; dadurch wird der Pfad korrekt validiert.']},
+        {title: 'Vor dem Start prüfen', bullets: ['Status des PDF-Eingangs: Bereit', 'Status der Excel-Datei: Bereit', 'Status des Ausgabeordners: Bereit', 'Aktiver Mandant im Header stimmt mit den Unterlagen überein']}
+      ]
+    },
+    {
+      id: 'processing-status', topic: 'processing', category: 'Verarbeitung', tag: 'green', updated: '13.07.2026',
+      title: 'Verarbeitungs-Status und Aktivitätsprotokoll verstehen',
+      summary: 'Statuskarte und Protokoll zeigen, was LohnMail gerade prüft, welche Eingaben erkannt wurden und an welcher Stelle ein Lauf abgebrochen ist.',
+      keywords: 'verarbeitungs-status fortschritt aktivitätsprotokoll fehler warnung lauf',
+      sections: [
+        {title: 'Statusangaben', bullets: ['Aktueller Schritt beschreibt die laufende oder zuletzt abgeschlossene Phase.', 'Gesamtfortschritt zeigt den Ablauf in Prozent.', 'Mitarbeiter gesamt und Verarbeitet dienen der Vollständigkeitskontrolle.', 'Warnungen erlauben meist eine Fortsetzung; Fehler verhindern einen erfolgreichen Abschluss.']},
+        {title: 'Aktivitätsprotokoll', text: ['Jeder relevante Eingabe-, Fortschritts-, Abschluss- und Fehlerzustand wird in der Sitzung protokolliert. Mit Alle anzeigen erweitern Sie die Liste; Weniger anzeigen reduziert sie wieder.']},
+        {title: 'Bei einem Abbruch', steps: ['Lesen Sie die letzte rote oder orange Protokollzeile vollständig.', 'Korrigieren Sie nur die dort genannte Eingabe oder Installation.', 'Laden Sie die betroffene Datei neu und starten Sie die Prüfung erneut.']},
+        {title: 'Typische Abhängigkeiten', bullets: ['PyMuPDF bzw. PyPDF2 für PDF-Verarbeitung', 'openpyxl für Excel-Dateien', 'Schreibbarer Ausgabeordner', 'Gültige Personalnummern für die Zuordnung']}
+      ]
+    },
+    {
+      id: 'validation-results', topic: 'validation', category: 'Prüfung', tag: 'violet', updated: '13.07.2026',
+      title: 'Prüfergebnisse, Warnungen und kritische Fehler lesen',
+      summary: 'Die Prüfung zeigt alle Mitarbeiter, nicht nur fehlerhafte Datensätze. Filter und Suche grenzen die Ansicht ein, ohne Ergebnisse zu verändern.',
+      keywords: 'prüfung kritisch warnungen hinweise alle mitarbeiter keine email filter',
+      sections: [
+        {title: 'Bedeutung der Kategorien', bullets: ['Kritisch: Der Datensatz muss vor dem Versand korrigiert werden.', 'Warnung: Bitte prüfen; häufig fehlt eine E-Mail-Adresse oder eine Zuordnung ist unvollständig.', 'Hinweis: Information ohne unmittelbare Sperrwirkung.', 'OK: Für den Mitarbeiter wurden keine Auffälligkeiten gefunden.']},
+        {title: 'Tabelle bedienen', bullets: ['Alle zeigt jeden geprüften Mitarbeiter.', 'Kritisch, Warnungen und Hinweise filtern nach Schweregrad.', 'Die Tabellensuche berücksichtigt Name, Personalnummer, E-Mail, Dokument und Beschreibung.', 'Gruppieren ordnet die sichtbaren Ergebnisse; Export übernimmt den aktuellen Filter und Suchbegriff.']},
+        {title: 'Mitarbeiter ohne E-Mail', text: ['Diese Mitarbeiter bleiben in der Gesamtliste sichtbar und erscheinen unter Warnungen. Wenn der Sammelbericht erzeugt wurde, öffnet PDF ohne E-Mail die Datei ohne_email_gesamt.pdf.']},
+        {title: 'Vor dem Versand', note: 'Kontrollieren Sie die Anzahl „versandbereit“ in der Toolbar. Nur Datensätze mit gültiger E-Mail-Adresse und passendem Dokument können für den Versand ausgewählt werden.'}
+      ]
+    },
+    {
+      id: 'validation-tools', topic: 'validation', category: 'Prüfung', tag: 'violet', updated: '13.07.2026',
+      title: 'Suche, Filter, Gruppierung und CSV-Export in Prüfung',
+      summary: 'Alle Tabellenwerkzeuge arbeiten auf dem aktuellen Prüfergebnis und helfen bei Kontrolle oder Weitergabe der sichtbaren Ansicht.',
+      keywords: 'suche filter gruppierung csv export prüfbericht',
+      sections: [
+        {title: 'Suchen', text: ['Geben Sie einen Teil von Name, Personalnummer, E-Mail-Adresse, PDF-Dateiname oder Beschreibung ein. Die Treffer werden sofort aktualisiert.']},
+        {title: 'Filtern und gruppieren', text: ['Wählen Sie zuerst den Schweregrad. Der zusätzliche Filter beschränkt die Ansicht auf Auffälligkeiten. Gruppieren fasst die Treffer nach ihrem Status zusammen.']},
+        {title: 'Export', text: ['Export erstellt eine CSV-Datei aus der aktuell sichtbaren Auswahl. Aktiver Schweregrad, Suchtext und Zusatzfilter werden berücksichtigt. Prüfbericht exportieren öffnet den erzeugten Audit-Bericht.']},
+        {title: 'Nichts gefunden', bullets: ['Suchfeld leeren', 'Auf Alle wechseln', 'Zusatzfilter deaktivieren', 'Prüfung erneut laden, wenn zuvor der Mandant gewechselt wurde']}
+      ]
+    },
+    {
+      id: 'shipping-safe', topic: 'shipping', category: 'Versand', tag: 'blue', updated: '13.07.2026',
+      title: 'Versand sicher vorbereiten, kontrollieren und starten',
+      summary: 'Der Versand besteht bewusst aus Auswahl, Vorbereitung, Vorschau und finaler Bestätigung. Keine dieser Kontrollen sollte übersprungen werden.',
+      keywords: 'versand vorbereiten jetzt senden vorschau empfänger checkbox testversand',
+      sections: [
+        {title: '1. Empfänger auswählen', steps: ['Öffnen Sie den Filter Versandbereit.', 'Kontrollieren Sie Name, Personalnummer, E-Mail und Dokument.', 'Nutzen Sie die Kopf-Checkbox für alle sichtbaren sendbaren Einträge oder wählen Sie einzelne Mitarbeiter manuell.']},
+        {title: '2. Versand vorbereiten', text: ['Versand vorbereiten erstellt die Warteschlange für die markierten Empfänger. Einträge ohne E-Mail-Adresse bleiben ausgeschlossen und können nicht versehentlich versendet werden.']},
+        {title: '3. Vorschau prüfen', bullets: ['Empfängeradresse', 'Betreff und Nachrichtentext', 'Dateiname und Anzahl der Anhänge', 'Versandmethode SMTP oder Outlook', 'Ausgewählter Mandant und Abrechnungszeitraum']},
+        {title: '4. Final senden', text: ['Jetzt senden öffnet den abschließenden Bestätigungsdialog. Erst Versand starten löst die tatsächliche Übergabe an SMTP oder Outlook aus.'], note: 'Für einen Funktionstest zunächst nur einen internen Empfänger markieren und Testversand verwenden.'}
+      ]
+    },
+    {
+      id: 'shipping-errors', topic: 'shipping', category: 'Fehlerbehebung', tag: 'orange', updated: '13.07.2026',
+      title: 'Versandprobleme: Empfänger fehlen, Vorschau leer oder Verbindung fehlerhaft',
+      summary: 'Die häufigsten Versandprobleme lassen sich auf fehlende Prüfergebnisse, nicht markierte Empfänger oder unvollständige Mail-Einstellungen zurückführen.',
+      keywords: 'versand fehler smtp outlook vorschau leer keine empfänger warteschlange',
+      sections: [
+        {title: 'Liste ist leer', bullets: ['Prüfung muss für den aktiven Mandanten abgeschlossen sein.', 'Mindestens ein Mitarbeiter benötigt E-Mail-Adresse und zugeordnetes PDF.', 'Filter Alle oder Versandbereit wählen und Suchfeld leeren.']},
+        {title: 'Vorschau ist deaktiviert', text: ['Markieren Sie mindestens einen sendbaren Eintrag. Nach Änderungen an der Auswahl muss der Versand gegebenenfalls erneut vorbereitet werden.']},
+        {title: 'SMTP-Fehler', bullets: ['Server, Port und Sicherheit prüfen', 'Benutzername und Passwort neu speichern', 'Absenderadresse kontrollieren', 'Verbindung testen', 'Bei Microsoft 365 oder Gmail mögliche App-Passwörter bzw. Administrationsrichtlinien beachten']},
+        {title: 'Outlook-Fehler', bullets: ['Versandmethode Outlook wählen', 'Outlook lokal installieren und ein Konto anmelden', 'Outlook Konten laden', 'Absender E-Mail muss einem verfügbaren Outlook-Konto entsprechen']}
+      ]
+    },
+    {
+      id: 'reports-overview', topic: 'reports', category: 'Berichte', tag: 'green', updated: '13.07.2026',
+      title: 'Berichte öffnen, unterscheiden und weiterverwenden',
+      summary: 'LohnMail erzeugt getrennte Berichte für Prüfung, fehlende E-Mail-Adressen und Versand. Die Dateien liegen im Ausgabeordner des Laufs.',
+      keywords: 'berichte audit_check ohne_email_gesamt send_report xlsx pdf export',
+      sections: [
+        {title: 'audit_check.xlsx', text: ['Enthält das Prüfergebnis mit erkannten Mitarbeitern, Status und Auffälligkeiten. Verwenden Sie diesen Bericht zur fachlichen Nachkontrolle und Dokumentation.']},
+        {title: 'ohne_email_gesamt.pdf', text: ['Fasst die Abrechnungen der Mitarbeiter zusammen, für die keine nutzbare E-Mail-Adresse vorhanden ist. Die Datei ist für alternative interne Übergabe oder Ausdruck vorgesehen.']},
+        {title: 'send_report.xlsx', text: ['Dokumentiert den Versandstatus je Empfänger. Nach einem Versand kontrollieren Sie hier erfolgreiche, übersprungene und fehlerhafte Einträge.']},
+        {title: 'Berichte-Seite', bullets: ['Suche nach Dateiname oder Beschreibung', 'Filter nach Dateityp und Status', 'Datei direkt öffnen', 'Ausgabeordner öffnen', 'Nur tatsächlich erzeugte Dateien sind verfügbar']}
+      ]
+    },
+    {
+      id: 'mail-settings', topic: 'settings', category: 'Einstellungen', tag: 'neutral', updated: '13.07.2026',
+      title: 'E-Mail-Verbindung mit SMTP oder Outlook einrichten',
+      summary: 'Konfigurieren Sie genau die Versandmethode, die auf dem Arbeitsplatz verwendet werden soll, speichern Sie und führen Sie anschließend den Verbindungstest aus.',
+      keywords: 'smtp outlook port tls ssl passwort absender verbindung testen email',
+      sections: [
+        {title: 'SMTP einrichten', steps: ['Einstellungen > E-Mail öffnen und Versandmethode smtp wählen.', 'SMTP Server, Port, Sicherheit, Benutzer, Passwort, Absender E-Mail und Absender Name eintragen.', 'E-Mail speichern klicken.', 'Verbindung testen ausführen und das Ergebnis unter den Feldern lesen.']},
+        {title: 'Typische SMTP-Werte', bullets: ['TLS verwendet häufig Port 587.', 'SSL verwendet häufig Port 465.', 'Die verbindlichen Werte liefert der E-Mail-Anbieter oder Administrator.', 'Das Passwortfeld leer lassen, wenn ein bereits gespeichertes Passwort beibehalten werden soll.']},
+        {title: 'Outlook einrichten', steps: ['Versandmethode outlook wählen.', 'Microsoft Outlook lokal öffnen und das gewünschte Konto anmelden.', 'Outlook Konten laden klicken.', 'Als Absender E-Mail eines der erkannten Konten verwenden und speichern.']},
+        {title: 'Globale oder mandanteneigene Einstellungen', text: ['Globale Einstellungen gelten standardmäßig für alle Mandanten. Unter Unternehmen kann ein Mandant auf eigene SMTP-Daten umgestellt werden. Testen Sie diese Verbindung anschließend direkt in der Mandantenkarte.']}
+      ]
+    },
+    {
+      id: 'templates-period', topic: 'settings', category: 'Einstellungen', tag: 'neutral', updated: '13.07.2026',
+      title: 'Abrechnungszeitraum, E-Mail-Vorlagen und PDF-Passwort',
+      summary: 'Diese Einstellungen steuern die sichtbare Periode, den Nachrichtentext beim Lohnversand und optional den Schutz erzeugter PDFs.',
+      keywords: 'vorlage betreff text html zeitraum monat jahr pdf passwort sicherheit',
+      sections: [
+        {title: 'Abrechnungszeitraum', text: ['Automatisch verwendet den aktuellen Monat. Manuell erlaubt Monat und Jahr fest vorzugeben. Speichern Sie die Änderung vor dem nächsten Lauf.']},
+        {title: 'E-Mail-Vorlagen', bullets: ['Betreff für den Lohnabrechnungsversand', 'Text als zuverlässige Standarddarstellung', 'Optionaler HTML-Text für formatierte Nachrichten', 'Vorlage speichern, bevor eine neue Versandvorschau erzeugt wird']},
+        {title: 'PDF-Passwort', text: ['Unter Sicherheit kann ein Passwortschema aus Präfix und Suffix aktiviert werden. Verwenden Sie nur ein intern abgestimmtes Schema und testen Sie eine erzeugte Datei, bevor Sie den Massenversand starten.']},
+        {title: 'Benachrichtigungen', text: ['Kritische Hinweise bleiben immer sichtbar. Weitere Workflow-, Prüfungs-, Versand- und Berichtshinweise sowie das automatische Öffnen beim Start können separat gesteuert werden.']}
+      ]
+    },
+    {
+      id: 'license-help', topic: 'settings', category: 'Lizenzen', tag: 'green', updated: '13.07.2026',
+      title: 'Testphase, Lizenzkauf, Aktivierung und Kundenportal',
+      summary: 'Die Lizenz ist an den Lizenznehmer und Arbeitsplatz gebunden, nicht an einen einzelnen betreuten Mandanten. Mandanten können innerhalb des erlaubten Umfangs verwaltet werden.',
+      keywords: 'lizenz testphase kaufen aktivieren schlüssel kundenportal arbeitsplatz mandanten',
+      sections: [
+        {title: 'Lizenznehmer', text: ['Tragen Sie Kanzlei bzw. Firma, E-Mail, Anschrift und Unternehmensnummer ein und speichern Sie diese Angaben vor dem Kauf. Der aktive Mandant im Header ist davon unabhängig.']},
+        {title: 'Testphase und bezahlte Periode', text: ['Eine vorhandene Testphase bleibt bei einem Kauf erhalten. Die bezahlte Laufzeit wird serverseitig berücksichtigt und die resultierende Gültigkeit in der Anwendung angezeigt.']},
+        {title: 'Aktionen', bullets: ['Lizenz kaufen öffnet Stripe Checkout.', 'Lizenz prüfen synchronisiert den aktuellen Serverstatus.', 'Lizenzschlüssel eingeben aktiviert einen manuell ausgestellten Schlüssel.', 'Kundenportal öffnen verwaltet Zahlung und Abonnement.', 'Lizenz deaktivieren löst den Arbeitsplatz von der Lizenz.']},
+        {title: 'Verbindungsproblem', note: 'Bei fehlender Serververbindung nicht mehrfach kaufen. Prüfen Sie Internetzugang und klicken Sie zuerst auf Lizenz prüfen.'}
+      ]
+    },
+    {
+      id: 'troubleshooting', topic: 'processing', category: 'Fehlerbehebung', tag: 'orange', updated: '13.07.2026',
+      title: 'Häufige technische Fehler und ihre Lösung',
+      summary: 'Nutzen Sie die exakte Fehlermeldung im Aktivitätsprotokoll. Installationsfehler, ungültige Pfade und Datenprobleme benötigen unterschiedliche Korrekturen.',
+      keywords: 'fehler fitz pymupdf pypdf2 static directory nicht gefunden excel pfad',
+      sections: [
+        {title: '„Directory static/ does not exist“ oder falsches fitz', text: ['Das Paket fitz ist nicht PyMuPDF. Entfernen Sie im aktiven virtuellen Python-Umfeld das falsche Paket fitz und installieren Sie PyMuPDF. Starten Sie danach LohnMail neu.']},
+        {title: '„PyPDF2 ist nicht installiert“', text: ['Installieren Sie PyPDF2 im selben virtuellen Umfeld, mit dem main.py gestartet wird. Prüfen Sie im Terminal, dass python3 und pip zum gleichen venv gehören.']},
+        {title: 'Datei nicht gefunden oder falscher Typ', bullets: ['Datenträger ist nicht mehr verbunden', 'Datei oder Ordner wurde verschoben', 'Ordner/Gesamt-PDF-Modus passt nicht zum Pfad', 'Mandanten-Excel wurde umbenannt'], note: 'Wählen Sie den betroffenen Eingang neu aus, statt den alten Pfad manuell zu übernehmen.'},
+        {title: 'Daten werden nicht zugeordnet', bullets: ['Personalnummern in PDF und Excel vergleichen', 'Führende Nullen beachten', 'Richtigen Mandanten kontrollieren', 'Aktuelle Excel-Datei speichern und erneut auswählen']}
+      ]
+    },
+    {
+      id: 'data-security', topic: 'start', category: 'Datenschutz', tag: 'neutral', updated: '13.07.2026',
+      title: 'Lokale Datenverarbeitung, Datenschutz und sichere Arbeitsweise',
+      summary: 'Lohnunterlagen werden lokal verarbeitet. Eine externe Übertragung erfolgt nur durch einen ausdrücklich gestarteten E-Mail-Versand; Lizenzdaten werden getrennt davon geprüft.',
+      keywords: 'datenschutz lokal cloud tracking sicherheit löschung backup lohndaten',
+      sections: [
+        {title: 'Was lokal bleibt', bullets: ['Ausgewählte PDF- und Excel-Dateien', 'Prüfergebnisse und erzeugte Berichte', 'Anwendungseinstellungen und Mandantenzuordnungen', 'Versandvorbereitung bis zum aktiv bestätigten Versand']},
+        {title: 'Wann Daten übertragen werden', text: ['Lohnunterlagen werden nur übertragen, wenn ein Benutzer den Versand über SMTP oder Outlook final bestätigt. Die Online-Lizenzprüfung enthält keine Lohnunterlagen.']},
+        {title: 'Sichere Praxis', bullets: ['Ausgabeordner mit passenden Zugriffsrechten verwenden', 'Nicht benötigte Exporte nach interner Aufbewahrungsregel löschen', 'Vor dem Versand Empfänger und Anhang kontrollieren', 'Keine vollständigen Lohnunterlagen unaufgefordert an den Support senden']},
+        {title: 'Sicherung', text: ['Sichern Sie die benötigten Eingabe- und Ergebnisdateien nach den Regeln Ihrer Organisation. LohnMail ersetzt kein zentrales Backup- oder Dokumentenmanagementsystem.']}
+      ]
+    },
+    {
+      id: 'guided-tutorials', topic: 'start', category: 'Kurzanleitungen', tag: 'green', updated: '13.07.2026',
+      title: 'Kurzanleitungen für wiederkehrende Aufgaben',
+      summary: 'Kompakte Ablaufpläne für Mandantenwechsel, Prüflauf, Einzelversand und Monatsabschluss.',
+      keywords: 'tutorial video kurzanleitung schritt für schritt workflow',
+      sections: [
+        {title: 'Mandant wechseln', steps: ['Mandant im Header auswählen.', 'Status Excel bereit kontrollieren.', 'Verarbeitung öffnen und PDF-Eingang des Mandanten wählen.']},
+        {title: 'Nur einen Empfänger senden', steps: ['Prüfung abschließen.', 'Versand öffnen und alle Markierungen entfernen.', 'Gewünschten Empfänger markieren.', 'Vorschau kontrollieren, vorbereiten und final bestätigen.']},
+        {title: 'Mitarbeiter ohne E-Mail bearbeiten', steps: ['Prüfung > Warnungen öffnen.', 'Einträge ohne E-Mail kontrollieren.', 'PDF ohne E-Mail öffnen oder Bericht ohne_email_gesamt.pdf unter Berichte verwenden.']},
+        {title: 'Monatsabschluss', steps: ['Prüfbericht kontrollieren.', 'Versandbericht nach erfolgreichem Versand öffnen.', 'Ausgabeordner nach interner Ablagevorgabe sichern.', 'Nächsten Abrechnungszeitraum in Einstellungen kontrollieren.']}
+      ]
+    },
+    {
+      id: 'manual', topic: 'start', category: 'Handbuch', tag: 'neutral', updated: '13.07.2026',
+      title: 'LohnMail v2 Handbuch: Funktionen und empfohlener Arbeitsablauf',
+      summary: 'Das Handbuch erklärt die Bereiche der Anwendung und verweist auf die detaillierten Artikel der lokalen Wissensdatenbank.',
+      keywords: 'handbuch dokumentation alle funktionen übersicht',
+      sections: [
+        {title: 'Arbeitsbereiche', bullets: ['Dashboard: Status, letzte Berichte und Schnellaktionen', 'Verarbeitung: Eingaben, Prüfungslauf und Aktivitätsprotokoll', 'Prüfung: vollständige Mitarbeiterliste, Auffälligkeiten und Exporte', 'Versand: Empfängerauswahl, Vorschau und Versandstatus', 'Berichte: erzeugte Prüf-, Fehladress- und Versanddateien', 'Nachricht: freie Nachricht an ausgewählte Empfänger']},
+        {title: 'Verwaltung', bullets: ['Unternehmen: betreute Mandanten und deren Stammdaten', 'Lizenzen: Lizenznehmer, Laufzeit und Aktivierung', 'Einstellungen: Zeitraum, Mail, Vorlagen, Hinweise und Sicherheit', 'Hilfe: lokale Dokumentation und Support-Checkliste']},
+        {title: 'Empfohlene Reihenfolge', steps: ['Lizenznehmer und Mail-Verbindung einrichten.', 'Mandant anlegen und Excel zuordnen.', 'PDF-Eingang wählen und Prüfung starten.', 'Warnungen lesen und Daten korrigieren.', 'Versand auswählen, vorbereiten, prüfen und bestätigen.', 'Berichte archivieren.']},
+        {title: 'Navigation', text: ['Die breite Workflow-Leiste auf Verarbeitung, Prüfung und Versand zeigt den aktuellen Stand. Bereits verfügbare Schritte können direkt geöffnet werden. Der Header hält Lizenz, Hinweise und aktiven Mandanten sichtbar.']}
+      ]
+    },
+    {
+      id: 'support-checklist', topic: 'support', category: 'Support', tag: 'orange', updated: '13.07.2026',
+      title: 'Support-Anfrage vorbereiten: benötigte Angaben und Datenschutz',
+      summary: 'Mit vollständigen technischen Angaben kann ein Problem schneller eingegrenzt werden, ohne unnötig sensible Lohnunterlagen zu übertragen.',
+      keywords: 'support email diagnose fernwartung problem ticket',
+      sections: [
+        {title: 'Kontakt', text: ['E-Mail: support@lohnmail.de. Beschreiben Sie das Problem sachlich und nennen Sie, auf welcher Seite und nach welcher Aktion es auftritt.']},
+        {title: 'Bitte mitsenden', bullets: ['LohnMail-Version aus Über LohnMail', 'Betriebssystem und Python-Version', 'Exakter Wortlaut der Fehlermeldung', 'Zeitpunkt des Fehlers', 'Verwendeter Eingabemodus Ordner oder Gesamt-PDF', 'Ob SMTP oder Outlook verwendet wird']},
+        {title: 'Nur wenn erforderlich', bullets: ['Anonymisierter Screenshot ohne personenbezogene Daten', 'Relevanter Ausschnitt aus dem Aktivitätsprotokoll', 'Beispieldatei ausschließlich nach ausdrücklicher Abstimmung und möglichst anonymisiert']},
+        {title: 'Nicht unaufgefordert senden', bullets: ['Vollständige Lohnabrechnungen', 'Unverschlüsselte Mitarbeiterlisten', 'SMTP-Passwörter', 'Lizenz- oder Administrationsgeheimnisse'], note: 'Fernsupport wird nur nach Termin gestartet. Sie müssen jede Sitzung aktiv freigeben und können sie jederzeit beenden.'}
+      ]
+    }
+  ];
+  var helpTopicNames = {
+    all: 'Alle Themen', start: 'Erste Schritte', processing: 'Verarbeitung', validation: 'Prüfung',
+    shipping: 'Versand', reports: 'Berichte', settings: 'Einstellungen', support: 'Support'
+  };
+  function helpArticleById(id){
+    return helpArticles.find(function(article){ return article.id === id; }) || null;
+  }
+  function helpArticleSearchText(article){
+    var sectionText = (article.sections || []).map(function(section){
+      return [section.title, section.text, section.steps, section.bullets, section.note].flat().filter(Boolean).join(' ');
+    }).join(' ');
+    return [article.title, article.summary, article.category, article.keywords, sectionText].join(' ').toLocaleLowerCase('de');
+  }
+  function filteredHelpArticles(){
+    var query = helpSearchQuery.trim().toLocaleLowerCase('de');
+    return helpArticles.filter(function(article){
+      var topicMatches = currentHelpTopic === 'all' || article.topic === currentHelpTopic;
+      return topicMatches && (!query || helpArticleSearchText(article).indexOf(query) !== -1);
+    });
+  }
+  function renderHelpKnowledge(){
+    var body = document.querySelector('[data-help-results]');
+    if (!body) return;
+    var matches = filteredHelpArticles();
+    var visible = (!helpShowAll && currentHelpTopic === 'all' && !helpSearchQuery) ? matches.slice(0, 7) : matches;
+    body.innerHTML = visible.map(function(article){
+      return '<tr tabindex="0" data-help-article="' + escapeHtml(article.id) + '">' +
+        '<td><span data-icon="doc"></span><b>' + escapeHtml(article.title) + '</b><small>' + escapeHtml(article.summary) + '</small></td>' +
+        '<td><b class="tag ' + escapeHtml(article.tag || 'neutral') + '">' + escapeHtml(article.category) + '</b></td>' +
+        '<td>' + escapeHtml(article.updated) + '</td></tr>';
+    }).join('');
+    var empty = document.querySelector('[data-help-empty]');
+    if (empty) empty.hidden = matches.length > 0;
+    var table = document.querySelector('.knowledge-table');
+    if (table) table.hidden = matches.length === 0;
+    var summary = document.querySelector('[data-help-result-summary]');
+    if (summary) {
+      if (helpSearchQuery) summary.textContent = matches.length + ' Treffer für „' + helpSearchQuery + '“';
+      else if (currentHelpTopic !== 'all') summary.textContent = matches.length + ' Artikel · ' + (helpTopicNames[currentHelpTopic] || 'Thema');
+      else summary.textContent = visible.length + ' von ' + matches.length + ' lokalen Hilfeartikeln';
+    }
+    var clear = document.querySelector('[data-help-action="clear"]');
+    if (clear) clear.hidden = currentHelpTopic === 'all' && !helpSearchQuery;
+    var allButton = document.querySelector('[data-help-action="articles"]');
+    if (allButton) allButton.hidden = helpShowAll || currentHelpTopic !== 'all' || !!helpSearchQuery || matches.length <= visible.length;
+    document.querySelectorAll('[data-help-topic]').forEach(function(button){
+      button.classList.toggle('active', button.getAttribute('data-help-topic') === currentHelpTopic);
+    });
+    body.querySelectorAll('[data-help-article]').forEach(function(row){
+      function open(){ openHelpArticle(row.getAttribute('data-help-article')); }
+      row.addEventListener('click', open);
+      row.addEventListener('keydown', function(event){
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          open();
+        }
+      });
+    });
+  }
+  function renderHelpSection(section, index){
+    var html = '<section><h3>' + escapeHtml(section.title || ('Abschnitt ' + (index + 1))) + '</h3>';
+    (section.text || []).forEach(function(paragraph){ html += '<p>' + escapeHtml(paragraph) + '</p>'; });
+    if (section.steps && section.steps.length) {
+      html += '<ol>' + section.steps.map(function(step){ return '<li>' + escapeHtml(step) + '</li>'; }).join('') + '</ol>';
+    }
+    if (section.bullets && section.bullets.length) {
+      html += '<ul>' + section.bullets.map(function(item){ return '<li>' + escapeHtml(item) + '</li>'; }).join('') + '</ul>';
+    }
+    if (section.note) html += '<div class="help-note"><span data-icon="info"></span><p>' + escapeHtml(section.note) + '</p></div>';
+    return html + '</section>';
+  }
+  function openHelpArticle(id){
+    var article = helpArticleById(id);
+    var modal = document.querySelector('[data-help-modal]');
+    if (!article || !modal) return false;
+    setText('[data-help-detail="category"]', article.category);
+    setText('[data-help-detail="title"]', article.title);
+    setText('[data-help-detail="summary"]', article.summary);
+    setText('[data-help-detail="updated"]', article.updated);
+    var body = modal.querySelector('[data-help-detail="body"]');
+    if (body) body.innerHTML = (article.sections || []).map(renderHelpSection).join('');
+    var related = helpArticles.filter(function(item){ return item.id !== article.id && item.topic === article.topic; }).slice(0, 3);
+    var relatedWrap = modal.querySelector('[data-help-related-wrap]');
+    var relatedBody = modal.querySelector('[data-help-related]');
+    if (relatedWrap) relatedWrap.hidden = related.length === 0;
+    if (relatedBody) {
+      relatedBody.innerHTML = related.map(function(item){
+        return '<button data-help-related-id="' + escapeHtml(item.id) + '"><span data-icon="doc"></span><span><b>' + escapeHtml(item.title) + '</b><small>' + escapeHtml(item.category) + '</small></span><i>›</i></button>';
+      }).join('');
+      relatedBody.querySelectorAll('[data-help-related-id]').forEach(function(button){
+        button.addEventListener('click', function(){ openHelpArticle(button.getAttribute('data-help-related-id')); });
+      });
+    }
+    var modalBody = modal.querySelector('.help-article-body');
+    if (modalBody) modalBody.scrollTop = 0;
+    modal.hidden = false;
+    return true;
+  }
+  function closeHelpArticle(){
+    var modal = document.querySelector('[data-help-modal]');
+    if (modal) modal.hidden = true;
+  }
+  function focusHelpKnowledge(){
+    var card = document.querySelector('.knowledge-card');
+    if (card) card.scrollIntoView({behavior:'smooth', block:'start'});
+  }
+  function runHelpAction(action, source){
     if (action === 'release') {
       setPage('Über LohnMail');
       return;
@@ -1579,7 +1881,51 @@
       setPage('Dashboard');
       return;
     }
-    setInfoBanner(messages[action] || 'Hilfeaktion ausgewählt.', true);
+    if (action === 'topic') {
+      currentHelpTopic = (source && source.getAttribute('data-help-topic')) || 'all';
+      helpSearchQuery = '';
+      helpShowAll = true;
+      var search = document.querySelector('[data-help-search]');
+      if (search) search.value = '';
+      renderHelpKnowledge();
+      focusHelpKnowledge();
+      return;
+    }
+    if (action === 'search') {
+      var field = document.querySelector('[data-help-search]');
+      helpSearchQuery = field ? field.value.trim() : '';
+      currentHelpTopic = 'all';
+      helpShowAll = true;
+      renderHelpKnowledge();
+      focusHelpKnowledge();
+      return;
+    }
+    if (action === 'clear') {
+      currentHelpTopic = 'all';
+      helpSearchQuery = '';
+      helpShowAll = false;
+      var searchField = document.querySelector('[data-help-search]');
+      if (searchField) searchField.value = '';
+      renderHelpKnowledge();
+      return;
+    }
+    if (action === 'articles') {
+      currentHelpTopic = 'all';
+      helpSearchQuery = '';
+      helpShowAll = true;
+      renderHelpKnowledge();
+      focusHelpKnowledge();
+      return;
+    }
+    var articleActions = {
+      video: 'guided-tutorials', manual: 'manual', email: 'support-checklist', diagnostics: 'support-checklist',
+      remote: 'support-checklist', request: 'support-checklist'
+    };
+    if (articleActions[action]) {
+      openHelpArticle(articleActions[action]);
+      return;
+    }
+    setInfoBanner('Hilfeaktion konnte nicht geöffnet werden.', false);
   }
   var aboutLegalContent = {
     privacy: {
@@ -2851,9 +3197,31 @@
       bridge.chooseExcelInput(function(payload){ consumeProcessingPayload(payload, 'input'); });
       return;
     }
+    if (action === 'open-output' && bridge.openOutputFolder) {
+      bridge.openOutputFolder(function(payload){
+        try {
+          var result = JSON.parse(payload || '{}');
+          setInfoBanner(result.message || (result.ok ? 'Ausgabeordner geöffnet.' : 'Ausgabeordner konnte nicht geöffnet werden.'), !!result.ok);
+          pushProcessingLog(
+            result.ok ? 'ok' : 'error',
+            result.ok ? 'Ausgabeordner geöffnet' : 'Ausgabeordner nicht verfügbar',
+            result.path || result.message || '',
+            'open-output|' + String(result.ok) + '|' + (result.path || '')
+          );
+        } catch (error) {
+          setInfoBanner('Ausgabeordner konnte nicht geöffnet werden.', false);
+          pushProcessingLog('error', 'Ausgabeordner nicht verfügbar', 'Ungültige Antwort vom Bridge.', 'open-output|invalid');
+        }
+      });
+      return;
+    }
     if (action === 'show-log') {
       renderProcessingLog();
-      setInfoBanner('Aktivitätsprotokoll zeigt die aktuelle Sitzung.', true);
+      var logCard = document.querySelector('.page-processing .operation-log');
+      var logButton = document.querySelector('.page-processing [data-processing-action="show-log"]');
+      var expanded = !!(logCard && logCard.classList.toggle('expanded'));
+      if (logButton) logButton.textContent = expanded ? 'Weniger anzeigen' : 'Alle anzeigen';
+      setInfoBanner(expanded ? 'Aktivitätsprotokoll vollständig geöffnet.' : 'Aktivitätsprotokoll kompakt angezeigt.', true);
       return;
     }
     if (action === 'start-check' && bridge.startCheck) {
@@ -2917,6 +3285,7 @@
     updateCompactWorkflowTrackers(normalized);
   }
   window.addEventListener('DOMContentLoaded', function(){
+    renderHelpKnowledge();
     initBridge();
     document.addEventListener('click', function(event){
       var control = event.target.closest && event.target.closest('[data-processing-action]');
@@ -3130,7 +3499,30 @@
       button.addEventListener('click', function(event){
         event.preventDefault();
         event.stopImmediatePropagation();
-        runHelpAction(button.getAttribute('data-help-action'));
+        runHelpAction(button.getAttribute('data-help-action'), button);
+      });
+    });
+    var helpSearch = document.querySelector('[data-help-search]');
+    if (helpSearch) {
+      helpSearch.addEventListener('keydown', function(event){
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          runHelpAction('search', helpSearch);
+        }
+      });
+      helpSearch.addEventListener('input', function(){
+        if (!helpSearch.value.trim() && helpSearchQuery) {
+          helpSearchQuery = '';
+          currentHelpTopic = 'all';
+          helpShowAll = false;
+          renderHelpKnowledge();
+        }
+      });
+    }
+    document.querySelectorAll('[data-help-close]').forEach(function(button){
+      button.addEventListener('click', function(event){
+        event.preventDefault();
+        closeHelpArticle();
       });
     });
     document.querySelectorAll('[data-about-action]').forEach(function(button){
@@ -3195,6 +3587,7 @@
     document.addEventListener('keydown', function(event){
       if (event.key === 'Escape') {
         closeAboutLegalModal();
+        closeHelpArticle();
         closeCompanyCreateModal();
       }
     });
