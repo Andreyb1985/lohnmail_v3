@@ -482,10 +482,26 @@ input, input:focus, input:focus-visible {
 
 /* WebEngine Versand screen */
 .page-mailing {
-  padding-bottom: calc(var(--footer) + 76px) !important;
+  padding-bottom: calc(var(--footer) + 24px) !important;
 }
 .mailing-heading {
   margin-bottom: 14px;
+}
+.mailing-heading .shipping-primary-cta {
+  width: 286px;
+  min-width: 286px;
+  justify-content: center;
+}
+.mailing-heading .shipping-primary-cta.danger-send {
+  background: #dc2626;
+  box-shadow: 0 14px 28px rgba(220,38,38,.2);
+}
+.mailing-heading .shipping-primary-cta.danger-send:hover {
+  background: #b91c1c;
+}
+.mailing-heading .shipping-primary-cta.danger-send:disabled {
+  background: #dc2626;
+  opacity: .42;
 }
 .mailing-metrics {
   display: grid;
@@ -588,6 +604,35 @@ input, input:focus, input:focus-visible {
 .mailing-toolbar label:first-child {
   display: grid;
   place-items: center;
+}
+.shipping-selection-strip {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-bottom: 1px solid #edf2f7;
+  background: #fbfdff;
+  color: #475569;
+  font-size: 12px;
+}
+.shipping-selection-strip > span[data-icon] {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  color: #008357;
+}
+.shipping-selection-strip strong {
+  color: #0f172a;
+  white-space: nowrap;
+}
+.shipping-selection-strip [data-shipping="selection-message"] {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
 }
 .queue-chip {
   height: 36px;
@@ -853,52 +898,6 @@ input, input:focus, input:focus-visible {
   color: #334155;
   font-size: 17px;
 }
-.mailing-actionbar {
-  min-height: 64px;
-  margin-top: 16px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
-  gap: 14px;
-  align-items: center;
-}
-.mailing-actionbar > div > strong,
-.mailing-actionbar > div > span {
-  display: block;
-}
-.mailing-actionbar > div > strong {
-  font-size: 15px;
-}
-.mailing-actionbar > div > span {
-  color: #64748b;
-  margin-top: 5px;
-}
-.mailing-actionbar .primary,
-.mailing-actionbar .secondary-action {
-  min-width: 184px;
-  justify-content: center;
-}
-.mailing-actionbar .primary,
-.mailing-actionbar .primary span,
-.mailing-actionbar .primary span[data-icon] {
-  color: #fff;
-}
-.mailing-actionbar .primary.soft-disabled {
-  background: #008357;
-  color: #fff;
-  opacity: 1;
-}
-.mailing-actionbar .danger-send{
-  background:#dc2626;
-  box-shadow:0 14px 28px rgba(220,38,38,.2);
-}
-.mailing-actionbar .danger-send:hover{
-  background:#b91c1c;
-}
-.mailing-actionbar .danger-send.soft-disabled,
-.mailing-actionbar .danger-send:disabled{
-  background:#dc2626;
-  opacity:.42;
-}
 .mailing-toolbar .toolbar-btn,
 .mailing-toolbar .queue-chip {
   white-space: nowrap;
@@ -909,25 +908,14 @@ input, input:focus, input:focus-visible {
 .page-mailing button.primary span[data-icon]{
   color:#fff!important;
 }
-.page-mailing button.primary.soft-disabled,
-.page-mailing button.primary:disabled{
+.page-mailing button.primary.soft-disabled:not(.danger-send),
+.page-mailing button.primary:disabled:not(.danger-send){
   opacity:1;
   background:#008357;
   color:#fff!important;
 }
 .page-mailing button.primary:disabled{
   cursor:default;
-}
-.page-mailing .mailing-actionbar .danger-send{
-  background:#dc2626;
-}
-.page-mailing .mailing-actionbar .danger-send:hover{
-  background:#b91c1c;
-}
-.page-mailing .mailing-actionbar .danger-send.soft-disabled,
-.page-mailing .mailing-actionbar .danger-send:disabled{
-  background:#dc2626;
-  opacity:.42;
 }
 .page-mailing .toolbar-btn,
 .page-mailing .queue-chip,
@@ -1012,7 +1000,7 @@ input, input:focus, input:focus-visible {
   height:100%;
   min-height:0;
   display:grid;
-  grid-template-rows:52px auto minmax(220px,1fr) 58px;
+  grid-template-rows:52px auto 38px minmax(220px,1fr) 58px;
   overflow:hidden;
 }
 .mailing-table-scroll{
@@ -1089,8 +1077,6 @@ input, input:focus, input:focus-visible {
   .mailing-toolbar .toolbar-btn:nth-last-child(2),
   .mailing-toolbar .table-search { grid-column: span 2; }
   .mailing-toolbar .table-search { width: 100%; }
-  .mailing-actionbar { grid-template-columns: 1fr 1fr; }
-  .mailing-actionbar div { grid-column: 1 / -1; }
 }
 
 /* WebEngine Berichte screen */

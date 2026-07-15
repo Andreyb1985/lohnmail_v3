@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LohnMail v2 — Enterprise Edition</title>
-  <link rel="stylesheet" href="styles.css?v=help-center-20260713-001" />
+  <link rel="stylesheet" href="styles.css?v=shipping-cta-20260714-001" />
 </head>
 <body>
   <div class="app-shell">
@@ -499,7 +499,7 @@
               <h1>Versand</h1>
               <p>Lohnabrechnungen per E-Mail senden oder exportieren.</p>
             </div>
-            <button class="primary" data-shipping-action="start-dry-run"><span data-icon="send"></span><span data-shipping="start-label">Versand vorbereiten</span></button>
+            <button class="primary shipping-primary-cta" data-shipping-primary data-shipping-action="start-dry-run"><span data-icon="send"></span><span data-shipping="primary-label">Versand vorbereiten</span></button>
           </div>
 
           <section class="workflow-card global-workflow" data-global-workflow>
@@ -605,6 +605,12 @@
                 <label class="table-search"><input data-shipping="search" placeholder="In Liste suchen..." /><span data-icon="search"></span></label>
               </div>
 
+              <div class="shipping-selection-strip" aria-live="polite">
+                <span data-icon="check-circle"></span>
+                <strong data-shipping="selection-title">0 von 0 sendbaren Einträgen ausgewählt</strong>
+                <span data-shipping="selection-message">Empfänger auswählen und Versand vorbereiten.</span>
+              </div>
+
               <div class="mailing-table-scroll">
                 <table class="mailing-table">
                   <thead>
@@ -661,13 +667,6 @@
             </aside>
           </section>
 
-          <section class="mailing-actionbar">
-            <div><strong data-shipping="actionbar-title">0 Dokumente in Warteschlange</strong><span data-shipping="actionbar-subtitle">Dry-Run vorbereitet Anhänge und Bericht.</span></div>
-            <button class="secondary-action" data-shipping-action="export-report"><span data-icon="report"></span>Exportieren</button>
-            <button class="secondary-action" data-shipping-action="schedule-queue"><span data-icon="clock"></span>Warteschlange planen</button>
-            <button class="primary" data-shipping-action="start-dry-run"><span data-icon="send"></span><span data-shipping="actionbar-label">Versand vorbereiten</span></button>
-            <button class="primary danger-send" data-shipping-action="send-now"><span data-icon="mail"></span><span data-shipping="send-label">Jetzt senden</span></button>
-          </section>
         </section>
 
         <section class="page page-reports" data-page="Berichte">
@@ -1431,6 +1430,6 @@
   </div>
 
   <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
-  <script src="app.js?v=help-center-20260713-001"></script>
+  <script src="app.js?v=shipping-cta-20260714-001"></script>
 </body>
 </html>

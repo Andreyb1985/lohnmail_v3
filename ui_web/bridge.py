@@ -143,9 +143,15 @@ class WebBridge(QObject):
         self.worker: ProcessingWorker | MassMessageWorker | None = None
         self._processing_running = False
         self._processing_status = self._idle_processing_status()
+        self._processing_company_id = ""
+        self._processing_input_signature: tuple[str, str, str, str] | None = None
         self._validation_state = self._empty_validation_state()
+        self._validation_company_id = ""
+        self._validation_input_signature: tuple[str, str, str, str] | None = None
         self._shipping_running = False
         self._shipping_status = self._idle_shipping_status()
+        self._shipping_company_id = ""
+        self._shipping_input_signature: tuple[str, str, str, str] | None = None
         self._shipping_rows: list[dict] = []
         self._shipping_source_rows: list[dict] = []
         self._mass_message_running = False
@@ -174,13 +180,15 @@ class WebBridge(QObject):
         smtp_from = str(smtp_settings.get("from_email", "") or smtp_settings.get("username", "") or "").strip()
         mail_configured = bool(smtp_server and smtp_from)
 
-        reports = {
-            "audit": self._report_state("audit_check.xlsx"),
-            "missing": self._report_state("ohne_email_gesamt.pdf"),
-            "send": self._report_state("send_report.xlsx"),
-        }
+        reports = self._current_reports_state(settings)
 
-        processing_status = self._processing_status
+        active_company_id = self._active_company_id(settings)
+        processing_matches = bool(
+            active_company_id
+            and self._processing_company_id == active_company_id
+            and self._processing_input_signature == self._input_signature(settings)
+        )
+        processing_status = self._processing_status if processing_matches else self._idle_processing_status()
         payload = {
             "version": self.appVersion(),
             "company": get_company_name(settings),
@@ -192,7 +200,7 @@ class WebBridge(QObject):
             },
             "paths": {
                 "last_pdf_dir": str(ui_settings.get("last_pdf_dir", "") or ""),
-                "last_excel_file": str(ui_settings.get("last_excel_file", "") or ""),
+                "last_excel_file": str(get_company_email_excel_file(settings, active_company_id) or ""),
                 "output_dir": str(GESOB_DIR),
             },
             "metrics": {
@@ -221,6 +229,12 @@ class WebBridge(QObject):
 
     @Slot(result=str)
     def getValidationState(self) -> str:
+        settings = load_settings()
+        if (
+            self._validation_company_id != self._active_company_id(settings)
+            or self._validation_input_signature != self._input_signature(settings)
+        ):
+            return json.dumps(self._empty_validation_state(), ensure_ascii=False)
         return json.dumps(self._validation_state, ensure_ascii=False)
 
     @Slot(result=str)
@@ -634,17 +648,36 @@ class WebBridge(QObject):
             for company in settings.get("companies", [])
             if isinstance(company, dict)
         }
-        if requested_id in known_ids:
+        current_id = self._active_company_id(settings)
+        if requested_id not in known_ids:
+            payload = self._company_payload(settings)
+            payload.update({"ok": False, "message": "Der ausgewählte Mandant wurde nicht gefunden."})
+            return json.dumps(payload, ensure_ascii=False)
+        if requested_id != current_id and self._workflow_running():
+            payload = self._company_payload(settings)
+            payload.update(
+                {
+                    "ok": False,
+                    "message": "Mandant kann während einer laufenden Prüfung oder eines Versands nicht gewechselt werden.",
+                }
+            )
+            return json.dumps(payload, ensure_ascii=False)
+        if requested_id != current_id:
             settings["selected_company_id"] = requested_id
             save_settings(settings)
             settings = load_settings()
+            self._reset_workflow_state()
             self.processingStateChanged.emit(json.dumps(self._processing_payload(settings), ensure_ascii=False))
             self.shippingStateChanged.emit(json.dumps(self._shipping_payload(settings), ensure_ascii=False))
-        return json.dumps(self._company_payload(settings), ensure_ascii=False)
+        payload = self._company_payload(settings)
+        payload.update({"ok": True, "message": "Aktiver Mandant wurde gewechselt."})
+        return json.dumps(payload, ensure_ascii=False)
 
     @Slot(str, result=str)
     def createCompany(self, payload: str) -> str:
         try:
+            if self._workflow_running():
+                raise ValueError("Ein Mandant kann während einer laufenden Prüfung oder eines Versands nicht erstellt werden.")
             data = json.loads(payload or "{}")
             if not isinstance(data, dict):
                 raise ValueError("Ungültige Mandantendaten.")
@@ -678,6 +711,7 @@ class WebBridge(QObject):
             companies.append({"id": company_id, "name": name, "email_excel_file": "", "mail_settings": {"scope": "global"}})
             settings["selected_company_id"] = company_id
             save_settings(settings)
+            self._reset_workflow_state()
 
             if choose_excel:
                 self.chooseExcelInput()
@@ -760,7 +794,7 @@ class WebBridge(QObject):
         if not filename:
             return json.dumps({"ok": False, "message": "Unbekannter Bericht.", "path": ""}, ensure_ascii=False)
 
-        report = self._report_state(filename)
+        report = self._current_report_state(filename, load_settings())
         path = Path(str(report.get("path", "") or ""))
         if not report.get("exists") or not path.is_file():
             return json.dumps({"ok": False, "message": "Bericht wurde noch nicht erstellt.", "path": ""}, ensure_ascii=False)
@@ -778,6 +812,8 @@ class WebBridge(QObject):
     @Slot(result=str)
     def choosePdfInput(self) -> str:
         settings = load_settings()
+        if self._workflow_running():
+            return self._emit_processing_payload(settings)
         ui_settings = settings.get("ui", {})
         pdf_input_mode = self._pdf_input_mode(settings)
         start_path = self._dialog_start_path(str(ui_settings.get("last_pdf_dir", "") or ""))
@@ -800,28 +836,34 @@ class WebBridge(QObject):
             settings.setdefault("ui", {})["last_pdf_dir"] = selected
             settings["ui"]["last_pdf_input_mode"] = pdf_input_mode
             save_settings(settings)
-            self._processing_status = self._idle_processing_status()
+            self._reset_workflow_state()
 
         payload = self._processing_payload(load_settings())
         serialized = json.dumps(payload, ensure_ascii=False)
         self.processingStateChanged.emit(serialized)
+        self.shippingStateChanged.emit(json.dumps(self._shipping_payload(load_settings()), ensure_ascii=False))
         return serialized
 
     @Slot(str, result=str)
     def setPdfInputMode(self, mode: str) -> str:
-        resolved_mode = mode if mode in {"folder", "single_pdf"} else "folder"
         settings = load_settings()
+        if self._workflow_running():
+            return self._emit_processing_payload(settings)
+        resolved_mode = mode if mode in {"folder", "single_pdf"} else "folder"
         settings.setdefault("ui", {})["last_pdf_input_mode"] = resolved_mode
         save_settings(settings)
-        self._processing_status = self._idle_processing_status()
+        self._reset_workflow_state()
         payload = self._processing_payload(load_settings())
         serialized = json.dumps(payload, ensure_ascii=False)
         self.processingStateChanged.emit(serialized)
+        self.shippingStateChanged.emit(json.dumps(self._shipping_payload(load_settings()), ensure_ascii=False))
         return serialized
 
     @Slot(result=str)
     def chooseExcelInput(self) -> str:
         settings = load_settings()
+        if self._workflow_running():
+            return self._emit_processing_payload(settings)
         ui_settings = settings.get("ui", {})
         start_path = self._dialog_start_path(
             str(get_company_email_excel_file(settings) or ui_settings.get("last_excel_file", "") or "")
@@ -838,11 +880,12 @@ class WebBridge(QObject):
             self._set_company_excel_file(settings, selected)
             settings.setdefault("ui", {})["last_excel_file"] = selected
             save_settings(settings)
-            self._processing_status = self._idle_processing_status()
+            self._reset_workflow_state()
 
         payload = self._processing_payload(load_settings())
         serialized = json.dumps(payload, ensure_ascii=False)
         self.processingStateChanged.emit(serialized)
+        self.shippingStateChanged.emit(json.dumps(self._shipping_payload(load_settings()), ensure_ascii=False))
         return serialized
 
     @Slot(result=str)
@@ -862,9 +905,20 @@ class WebBridge(QObject):
             }
             return self._emit_processing_payload(settings)
 
+        company_id = self._active_company_id(settings)
+        if not company_id:
+            self._processing_status = {
+                **self._idle_processing_status(),
+                "can_check": False,
+                "current_step": "Mandant auswählen",
+                "warnings": 1,
+                "message": "Bitte zuerst einen Mandanten auswählen.",
+            }
+            return self._emit_processing_payload(settings)
+
         ui_settings = settings.get("ui", {})
         pdf_input = Path(str(ui_settings.get("last_pdf_dir", "") or "")).expanduser()
-        excel_path = Path(str(get_company_email_excel_file(settings) or ui_settings.get("last_excel_file", "") or "")).expanduser()
+        excel_path = Path(str(get_company_email_excel_file(settings, company_id) or "")).expanduser()
         pdf_expected = "pdf" if self._pdf_input_mode(settings) == "single_pdf" else "folder"
         pdf_state = self._path_state(str(pdf_input), expected=pdf_expected)
         excel_state = self._path_state(str(excel_path), expected="excel")
@@ -879,6 +933,9 @@ class WebBridge(QObject):
             }
             return self._emit_processing_payload(settings)
 
+        self._reset_validation_and_shipping()
+        self._processing_company_id = company_id
+        self._processing_input_signature = self._input_signature(settings)
         self._processing_running = True
         self._processing_status = {
             **self._idle_processing_status(),
@@ -889,6 +946,7 @@ class WebBridge(QObject):
             "message": "Prüfung läuft. Core-Verarbeitung wurde gestartet.",
         }
         self._emit_processing_payload(settings)
+        self.shippingStateChanged.emit(json.dumps(self._shipping_payload(settings), ensure_ascii=False))
 
         self.worker_thread = QThread(self)
         self.worker = ProcessingWorker(
@@ -932,11 +990,17 @@ class WebBridge(QObject):
 
     def _preview_shipping_send(self, selected_persnr: set[str] | None) -> str:
         settings = self._settings_with_company_mail(load_settings())
+        company_id = self._active_company_id(settings)
         rows = self._shipping_source_rows
         try:
             if self._shipping_running or self._processing_running or self._mass_message_running:
                 raise ValueError("Bitte warten, bis der aktuelle Lauf abgeschlossen ist.")
-            if not self._shipping_status.get("finished") or not rows:
+            if (
+                self._shipping_company_id != company_id
+                or self._shipping_input_signature != self._input_signature(settings)
+            ):
+                raise ValueError("Die Versandvorbereitung gehört nicht zum aktiven Mandanten. Bitte Versand erneut vorbereiten.")
+            if not self._shipping_status.get("finished") or self._shipping_status.get("dry_run") is not True or not rows:
                 raise ValueError("Bitte zuerst Versand vorbereiten.")
 
             from core.message_templates import (
@@ -1002,6 +1066,7 @@ class WebBridge(QObject):
             return self._emit_shipping_payload(self._settings_with_company_mail(load_settings()))
 
         settings = self._settings_with_company_mail(load_settings())
+        company_id = self._active_company_id(settings)
         allowed, license_state = LicenseManager(settings).require_action("shipping")
         if not allowed:
             self._shipping_status = {
@@ -1013,9 +1078,56 @@ class WebBridge(QObject):
             }
             return self._emit_shipping_payload(settings)
 
+        if not company_id:
+            self._shipping_status = {
+                **self._idle_shipping_status(),
+                "can_send": False,
+                "current_step": "Mandant auswählen",
+                "errors": 1,
+                "message": "Bitte zuerst einen Mandanten auswählen.",
+            }
+            return self._emit_shipping_payload(settings)
+
+        if self._validation_company_id != company_id or not self._validation_state.get("ready"):
+            self._shipping_status = {
+                **self._idle_shipping_status(),
+                "can_send": False,
+                "current_step": "Prüfung erforderlich",
+                "errors": 1,
+                "message": "Bitte zuerst die Prüfung für den aktiven Mandanten abschließen.",
+            }
+            return self._emit_shipping_payload(settings)
+
+        current_input_signature = self._input_signature(settings)
+        if self._validation_input_signature != current_input_signature:
+            self._shipping_status = {
+                **self._idle_shipping_status(),
+                "can_send": False,
+                "current_step": "Erneute Prüfung erforderlich",
+                "errors": 1,
+                "message": "PDF- oder Excel-Eingabe wurde seit der Prüfung geändert. Bitte den aktiven Mandanten erneut prüfen.",
+            }
+            return self._emit_shipping_payload(settings)
+
+        if not dry_run and (
+            self._shipping_company_id != company_id
+            or self._shipping_input_signature != current_input_signature
+            or not self._shipping_status.get("finished")
+            or self._shipping_status.get("dry_run") is not True
+            or not self._shipping_source_rows
+        ):
+            self._shipping_status = {
+                **self._idle_shipping_status(),
+                "can_send": False,
+                "current_step": "Vorbereitung erforderlich",
+                "errors": 1,
+                "message": "Bitte Versand für den aktiven Mandanten erneut vorbereiten.",
+            }
+            return self._emit_shipping_payload(settings)
+
         ui_settings = settings.get("ui", {})
         pdf_input = Path(str(ui_settings.get("last_pdf_dir", "") or "")).expanduser()
-        excel_path = Path(str(get_company_email_excel_file(settings) or ui_settings.get("last_excel_file", "") or "")).expanduser()
+        excel_path = Path(str(get_company_email_excel_file(settings, company_id) or "")).expanduser()
         pdf_expected = "pdf" if self._pdf_input_mode(settings) == "single_pdf" else "folder"
         pdf_state = self._path_state(str(pdf_input), expected=pdf_expected)
         excel_state = self._path_state(str(excel_path), expected="excel")
@@ -1030,6 +1142,11 @@ class WebBridge(QObject):
             }
             return self._emit_shipping_payload(settings)
 
+        if dry_run:
+            self._shipping_rows = []
+            self._shipping_source_rows = []
+        self._shipping_company_id = company_id
+        self._shipping_input_signature = current_input_signature
         self._shipping_running = True
         self._shipping_status = {
             **self._idle_shipping_status(),
@@ -1065,15 +1182,11 @@ class WebBridge(QObject):
 
     def _processing_payload(self, settings: dict) -> dict:
         ui_settings = settings.get("ui", {})
-
+        company_id = self._active_company_id(settings)
         pdf_input_mode = self._pdf_input_mode(settings)
 
         pdf_input = str(ui_settings.get("last_pdf_dir", "") or "").strip()
-        excel_file = str(
-            get_company_email_excel_file(settings)
-            or ui_settings.get("last_excel_file", "")
-            or ""
-        ).strip()
+        excel_file = str(get_company_email_excel_file(settings, company_id) or "").strip()
 
         pdf_state = self._path_state(
             pdf_input,
@@ -1096,7 +1209,7 @@ class WebBridge(QObject):
 
         return {
             "company": {
-                "id": str(settings.get("selected_company_id", "") or ""),
+                "id": company_id,
                 "name": get_company_name(settings),
             },
             "mode": pdf_input_mode,
@@ -1115,9 +1228,24 @@ class WebBridge(QObject):
         return serialized
 
     def _shipping_payload(self, settings: dict) -> dict:
-        rows = self._shipping_rows or self._shipping_rows_from_validation()
-        status = {**self._shipping_status}
+        company_id = self._active_company_id(settings)
+        current_input_signature = self._input_signature(settings)
+        shipping_matches = bool(
+            company_id
+            and self._shipping_company_id == company_id
+            and self._shipping_input_signature == current_input_signature
+        )
+        validation_matches = bool(
+            company_id
+            and self._validation_company_id == company_id
+            and self._validation_input_signature == current_input_signature
+        )
+        rows = self._shipping_rows if shipping_matches else []
+        if not rows and validation_matches:
+            rows = self._shipping_rows_from_validation()
+        status = {**(self._shipping_status if shipping_matches else self._idle_shipping_status())}
         inputs_ready = self._inputs_ready(settings)
+        validation_ready = bool(validation_matches and self._validation_state.get("ready"))
         ready_count = sum(1 for row in rows if row.get("status") in {"Bereit", "Dry-Run", "Gesendet"})
         sent_count = sum(1 for row in rows if row.get("status") == "Gesendet")
         dry_run_count = sum(1 for row in rows if row.get("status") == "Dry-Run")
@@ -1125,16 +1253,20 @@ class WebBridge(QObject):
         error_count = sum(1 for row in rows if row.get("status") == "Fehler")
 
         if not status.get("running"):
-            status["can_send"] = bool(inputs_ready)
+            status["can_send"] = bool(inputs_ready and validation_ready)
             if not status.get("finished") and not status.get("failed"):
-                status["current_step"] = "Bereit" if inputs_ready else "Eingaben prüfen"
+                status["current_step"] = "Bereit" if inputs_ready and validation_ready else "Prüfung erforderlich"
                 status["message"] = (
                     "Versand kann als Dry-Run vorbereitet werden."
-                    if inputs_ready
-                    else "Bitte PDF-Eingang und Excel-Datei in Verarbeitung auswählen."
+                    if inputs_ready and validation_ready
+                    else "Bitte zuerst die Prüfung für den aktiven Mandanten abschließen."
                 )
 
         return {
+            "company": {
+                "id": company_id,
+                "name": get_company_name(settings, company_id),
+            },
             "status": status,
             "metrics": {
                 "ready": ready_count,
@@ -1146,7 +1278,7 @@ class WebBridge(QObject):
                 "total": len(rows),
             },
             "rows": rows,
-            "reports": {"send": self._report_state("send_report.xlsx")},
+            "reports": {"send": self._current_report_state("send_report.xlsx", settings)},
         }
 
     @staticmethod
@@ -1173,6 +1305,53 @@ class WebBridge(QObject):
             if str(company.get("id", "") or "").strip() == selected_company_id:
                 return company
         return None
+
+    @staticmethod
+    def _active_company_id(settings: dict) -> str:
+        selected_company_id = str(settings.get("selected_company_id", "") or "").strip()
+        for company in settings.get("companies", []):
+            if not isinstance(company, dict):
+                continue
+            if str(company.get("id", "") or "").strip() == selected_company_id:
+                return selected_company_id
+        return ""
+
+    def _workflow_running(self) -> bool:
+        return bool(self._processing_running or self._shipping_running or self._mass_message_running)
+
+    def _reset_validation_and_shipping(self) -> None:
+        self._validation_company_id = ""
+        self._validation_input_signature = None
+        self._validation_state = self._empty_validation_state()
+        self._shipping_company_id = ""
+        self._shipping_input_signature = None
+        self._shipping_running = False
+        self._shipping_status = self._idle_shipping_status()
+        self._shipping_rows = []
+        self._shipping_source_rows = []
+
+    def _reset_workflow_state(self) -> None:
+        self._processing_company_id = ""
+        self._processing_input_signature = None
+        self._processing_running = False
+        self._processing_status = self._idle_processing_status()
+        self._reset_validation_and_shipping()
+        self._mass_message_status = self._idle_mass_message_status()
+        self._mass_message_preview = self._empty_mass_message_preview()
+
+    def _input_signature(self, settings: dict) -> tuple[str, str, str, str]:
+        company_id = self._active_company_id(settings)
+        ui_settings = settings.get("ui", {})
+        raw_pdf_input = str(ui_settings.get("last_pdf_dir", "") or "").strip()
+        raw_excel_input = str(get_company_email_excel_file(settings, company_id) or "").strip()
+        pdf_input = Path(raw_pdf_input).expanduser() if raw_pdf_input else None
+        excel_input = Path(raw_excel_input).expanduser() if raw_excel_input else None
+        return (
+            company_id,
+            self._pdf_input_mode(settings),
+            str(pdf_input.resolve(strict=False)) if pdf_input else "",
+            str(excel_input.resolve(strict=False)) if excel_input else "",
+        )
 
     @staticmethod
     def _company_mail_settings(company: dict | None) -> dict:
@@ -1521,11 +1700,7 @@ class WebBridge(QObject):
 
     def _mass_message_payload(self, settings: dict) -> dict:
         company_id = str(settings.get("selected_company_id", "") or "").strip()
-        excel_file = str(
-            get_company_email_excel_file(settings)
-            or settings.get("ui", {}).get("last_excel_file", "")
-            or ""
-        ).strip()
+        excel_file = str(get_company_email_excel_file(settings, company_id) or "").strip()
         preview_payload = {
             key: value
             for key, value in self._mass_message_preview.items()
@@ -1553,11 +1728,7 @@ class WebBridge(QObject):
 
         company_id = str(settings.get("selected_company_id", "") or "").strip()
         excel_path = Path(
-            str(
-                get_company_email_excel_file(settings, company_id)
-                or settings.get("ui", {}).get("last_excel_file", "")
-                or ""
-            )
+            str(get_company_email_excel_file(settings, company_id) or "")
         ).expanduser()
         subject_template = str(subject or "").strip()
         body_template = str(body or "")
@@ -1599,18 +1770,30 @@ class WebBridge(QObject):
 
     @Slot(str)
     def _on_processing_progress(self, message: str) -> None:
+        settings = load_settings()
+        if (
+            self._processing_company_id != self._active_company_id(settings)
+            or self._processing_input_signature != self._input_signature(settings)
+        ):
+            return
         self._processing_status["message"] = message
         self._processing_status["progress"] = min(92, int(self._processing_status.get("progress", 8)) + 14)
         self._processing_status["current_step"] = "Prüfung läuft"
-        serialized = self._emit_processing_payload(load_settings())
+        serialized = self._emit_processing_payload(settings)
         self.processingProgress.emit(serialized)
 
     @Slot(str)
     def _on_shipping_progress(self, message: str) -> None:
+        settings = self._settings_with_company_mail(load_settings())
+        if (
+            self._shipping_company_id != self._active_company_id(settings)
+            or self._shipping_input_signature != self._input_signature(settings)
+        ):
+            return
         self._shipping_status["message"] = message
         self._shipping_status["progress"] = min(92, int(self._shipping_status.get("progress", 8)) + 12)
         self._shipping_status["current_step"] = "Versand wird vorbereitet"
-        serialized = self._emit_shipping_payload(self._settings_with_company_mail(load_settings()))
+        serialized = self._emit_shipping_payload(settings)
         self.shippingProgress.emit(serialized)
 
     @Slot(str)
@@ -1623,6 +1806,15 @@ class WebBridge(QObject):
 
     @Slot(dict)
     def _on_processing_finished(self, result: dict) -> None:
+        settings = load_settings()
+        if (
+            self._processing_company_id != self._active_company_id(settings)
+            or self._processing_input_signature != self._input_signature(settings)
+        ):
+            self._processing_running = False
+            self._processing_status = self._idle_processing_status()
+            self._processing_input_signature = None
+            return
         summary = result.get("summary", {}) if isinstance(result, dict) else {}
         table_rows = result.get("table_rows", []) if isinstance(result, dict) else []
         employees_total = int(summary.get("unique_persnr_count", len(table_rows)) or 0)
@@ -1654,12 +1846,30 @@ class WebBridge(QObject):
                 "run_dir": str(result.get("run_dir") or ""),
             },
         }
-        self._validation_state = self._build_validation_state(result)
-        serialized = self._emit_processing_payload(load_settings())
+        self._validation_company_id = self._processing_company_id
+        self._validation_input_signature = self._processing_input_signature
+        self._validation_state = self._build_validation_state(result, settings)
+        self._shipping_company_id = ""
+        self._shipping_input_signature = None
+        self._shipping_status = self._idle_shipping_status()
+        self._shipping_rows = []
+        self._shipping_source_rows = []
+        serialized = self._emit_processing_payload(settings)
         self.processingFinished.emit(serialized)
 
     @Slot(dict)
     def _on_shipping_finished(self, result: dict) -> None:
+        settings = self._settings_with_company_mail(load_settings())
+        if (
+            self._shipping_company_id != self._active_company_id(settings)
+            or self._shipping_input_signature != self._input_signature(settings)
+        ):
+            self._shipping_running = False
+            self._shipping_status = self._idle_shipping_status()
+            self._shipping_input_signature = None
+            self._shipping_rows = []
+            self._shipping_source_rows = []
+            return
         summary = result.get("summary", {}) if isinstance(result, dict) else {}
         table_rows = result.get("table_rows", []) if isinstance(result, dict) else []
         dry_run = bool(summary.get("dry_run", True))
@@ -1684,7 +1894,7 @@ class WebBridge(QObject):
                 "run_dir": str(result.get("run_dir") or ""),
             },
         }
-        serialized = self._emit_shipping_payload(self._settings_with_company_mail(load_settings()))
+        serialized = self._emit_shipping_payload(settings)
         self.shippingFinished.emit(serialized)
 
     @Slot(dict)
@@ -1710,6 +1920,15 @@ class WebBridge(QObject):
 
     @Slot(str)
     def _on_processing_error(self, message: str) -> None:
+        settings = load_settings()
+        if (
+            self._processing_company_id != self._active_company_id(settings)
+            or self._processing_input_signature != self._input_signature(settings)
+        ):
+            self._processing_running = False
+            self._processing_status = self._idle_processing_status()
+            self._processing_input_signature = None
+            return
         self._processing_running = False
         self._processing_status = {
             **self._idle_processing_status(),
@@ -1720,11 +1939,20 @@ class WebBridge(QObject):
             "errors": 1,
             "message": f"Prüfung fehlgeschlagen: {message}",
         }
-        serialized = self._emit_processing_payload(load_settings())
+        serialized = self._emit_processing_payload(settings)
         self.processingError.emit(serialized)
 
     @Slot(str)
     def _on_shipping_error(self, message: str) -> None:
+        settings = self._settings_with_company_mail(load_settings())
+        if (
+            self._shipping_company_id != self._active_company_id(settings)
+            or self._shipping_input_signature != self._input_signature(settings)
+        ):
+            self._shipping_running = False
+            self._shipping_status = self._idle_shipping_status()
+            self._shipping_input_signature = None
+            return
         self._shipping_running = False
         self._shipping_status = {
             **self._idle_shipping_status(),
@@ -1735,7 +1963,7 @@ class WebBridge(QObject):
             "errors": 1,
             "message": f"Versand fehlgeschlagen: {message}",
         }
-        serialized = self._emit_shipping_payload(self._settings_with_company_mail(load_settings()))
+        serialized = self._emit_shipping_payload(settings)
         self.shippingError.emit(serialized)
 
     @Slot(str)
@@ -1832,6 +2060,7 @@ class WebBridge(QObject):
     def _empty_validation_state(self) -> dict:
         return {
             "ready": False,
+            "company": {"id": "", "name": ""},
             "summary": {
                 "critical": 0,
                 "warnings": 0,
@@ -1849,10 +2078,13 @@ class WebBridge(QObject):
             },
             "rows": [],
             "detail": None,
-            "reports": self._reports_state(),
+            "reports": {
+                "audit": self._empty_report_state("audit_check.xlsx"),
+                "missing": self._empty_report_state("ohne_email_gesamt.pdf"),
+            },
         }
 
-    def _build_validation_state(self, result: dict) -> dict:
+    def _build_validation_state(self, result: dict, settings: dict) -> dict:
         summary = result.get("summary", {}) if isinstance(result, dict) else {}
         table_rows = result.get("table_rows", []) if isinstance(result, dict) else []
         validation_rows = [self._validation_row(row) for row in table_rows if isinstance(row, dict)]
@@ -1865,6 +2097,10 @@ class WebBridge(QObject):
 
         return {
             "ready": True,
+            "company": {
+                "id": self._validation_company_id,
+                "name": get_company_name(settings, self._validation_company_id),
+            },
             "summary": {
                 "critical": critical,
                 "warnings": warnings,
@@ -1981,12 +2217,9 @@ class WebBridge(QObject):
 
     def _inputs_ready(self, settings: dict) -> bool:
         ui_settings = settings.get("ui", {})
+        company_id = self._active_company_id(settings)
         pdf_input = str(ui_settings.get("last_pdf_dir", "") or "").strip()
-        excel_file = str(
-            get_company_email_excel_file(settings)
-            or ui_settings.get("last_excel_file", "")
-            or ""
-        ).strip()
+        excel_file = str(get_company_email_excel_file(settings, company_id) or "").strip()
         pdf_expected = "pdf" if self._pdf_input_mode(settings) == "single_pdf" else "folder"
         return bool(
             self._path_state(pdf_input, expected=pdf_expected)["valid"]
@@ -2050,10 +2283,14 @@ class WebBridge(QObject):
                 return str(parent)
         return str(Path.home())
 
-    def _report_state(self, filename: str) -> dict[str, str | bool]:
-        path = self._latest_report_path(filename)
-        if path is None:
-            return {"name": filename, "exists": False, "label": "Nicht erstellt", "path": ""}
+    @staticmethod
+    def _empty_report_state(filename: str) -> dict[str, str | bool]:
+        return {"name": filename, "exists": False, "label": "Nicht erstellt", "path": ""}
+
+    def _report_state_from_path(self, raw_path: str, filename: str) -> dict[str, str | bool]:
+        path = Path(str(raw_path or "")).expanduser()
+        if not path.is_file():
+            return self._empty_report_state(filename)
         return {
             "name": filename,
             "exists": True,
@@ -2061,30 +2298,36 @@ class WebBridge(QObject):
             "path": str(path),
         }
 
-    def _reports_state(self) -> dict[str, dict[str, str | bool]]:
+    def _current_report_state(self, filename: str, settings: dict) -> dict[str, str | bool]:
+        company_id = self._active_company_id(settings)
+        input_signature = self._input_signature(settings)
+        if (
+            filename in {"audit_check.xlsx", "ohne_email_gesamt.pdf"}
+            and self._validation_company_id == company_id
+            and self._validation_input_signature == input_signature
+        ):
+            key = "audit" if filename == "audit_check.xlsx" else "missing"
+            report = self._validation_state.get("reports", {}).get(key, {})
+            return self._report_state_from_path(str(report.get("path", "") or ""), filename)
+        if (
+            filename == "send_report.xlsx"
+            and self._shipping_company_id == company_id
+            and self._shipping_input_signature == input_signature
+        ):
+            raw_path = self._shipping_status.get("reports", {}).get("send_report_path", "")
+            return self._report_state_from_path(str(raw_path or ""), filename)
+        return self._empty_report_state(filename)
+
+    def _current_reports_state(self, settings: dict) -> dict[str, dict[str, str | bool]]:
         return {
-            "audit": self._report_state("audit_check.xlsx"),
-            "missing": self._report_state("ohne_email_gesamt.pdf"),
-            "send": self._report_state("send_report.xlsx"),
+            "audit": self._current_report_state("audit_check.xlsx", settings),
+            "missing": self._current_report_state("ohne_email_gesamt.pdf", settings),
+            "send": self._current_report_state("send_report.xlsx", settings),
         }
 
     def _report_from_result(self, result: dict, key: str, filename: str) -> dict[str, str | bool]:
         raw_path = result.get(key) if isinstance(result, dict) else None
-        path = Path(str(raw_path or ""))
-        if path.is_file():
-            return {
-                "name": filename,
-                "exists": True,
-                "label": self._format_mtime(path),
-                "path": str(path),
-            }
-        return self._report_state(filename)
-
-    def _latest_report_path(self, filename: str) -> Path | None:
-        candidates = [path for path in GESOB_DIR.rglob(filename) if path.is_file()]
-        if not candidates:
-            return None
-        return max(candidates, key=lambda path: path.stat().st_mtime)
+        return self._report_state_from_path(str(raw_path or ""), filename)
 
     def _path_state(self, raw_path: str, expected: str) -> dict[str, str | bool]:
         raw_path = str(raw_path or "").strip()

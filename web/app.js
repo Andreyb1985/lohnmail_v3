@@ -15,6 +15,7 @@
   var currentShippingPage = 1;
   var shippingPageSize = 20;
   var selectedShippingPersnr = {};
+  var shippingSelectionDirty = false;
   var shippingPreviewZoom = 100;
   var reportsSearchQuery = '';
   var reportsTypeFilter = 'all';
@@ -80,7 +81,11 @@
     }
     if (bridge.shippingFinished) {
       bridge.shippingFinished.connect(function(payload){
-        consumeShippingPayload(payload);
+        var state = consumeShippingPayload(payload);
+        if (state && state.status && state.status.finished && state.status.dry_run !== false) {
+          shippingSelectionDirty = false;
+          updateShippingSelectionSummary();
+        }
         loadDashboardState();
       });
     }
@@ -523,6 +528,27 @@
   function setCompanyMessage(message){
     setText('[data-company="message"]', message);
   }
+  function activeCompanyId(){
+    return String((latestCompanyState && latestCompanyState.selected_company_id) || '').trim();
+  }
+  function workflowStateMatchesActiveCompany(state){
+    var activeId = activeCompanyId();
+    var stateId = String(state && state.company && state.company.id || '').trim();
+    return !activeId || !stateId || activeId === stateId;
+  }
+  function resetWorkflowUiForCompanyChange(){
+    latestProcessingState = null;
+    latestValidationState = null;
+    latestShippingState = null;
+    selectedShippingPersnr = {};
+    shippingSelectionDirty = false;
+    latestShippingSendPreview = null;
+    currentValidationPage = 1;
+    currentShippingPage = 1;
+    closeShippingSendModal();
+    applyValidationState({ ready: false, company: { id: '', name: '' }, summary: {}, filters: {}, rows: [], reports: {} });
+    applyShippingState({ company: { id: '', name: '' }, status: {}, metrics: {}, rows: [], reports: {} });
+  }
   function setCompanyCreateMessage(message, error){
     var node = document.querySelector('[data-company-create="message"]');
     if (!node) return;
@@ -722,7 +748,11 @@
         if (result.state) applyCompanyState(result.state);
         if (result.ok) {
           closeCompanyCreateModal();
+          resetWorkflowUiForCompanyChange();
           loadProcessingState();
+          loadValidationState();
+          loadShippingState();
+          loadMassMessageState();
           loadDashboardState();
           setCompanyMessage(result.message || 'Mandant wurde erstellt.');
         } else {
@@ -908,18 +938,33 @@
       return;
     }
     if (action === 'select-company' && bridge.selectCompany) {
+      var previousId = activeCompanyId();
       bridge.selectCompany(value || '', function(payload){
-        consumeCompanyPayload(payload);
+        var state = consumeCompanyPayload(payload);
+        if (!state || state.ok === false) {
+          setCompanyMessage((state && state.message) || 'Mandant konnte nicht gewechselt werden.');
+          return;
+        }
+        if (previousId !== String(state.selected_company_id || '').trim()) {
+          resetWorkflowUiForCompanyChange();
+        }
         loadProcessingState();
+        loadValidationState();
+        loadShippingState();
+        loadMassMessageState();
         loadDashboardState();
-        setCompanyMessage('Aktiver Mandant wurde gewechselt.');
+        setCompanyMessage(state.message || 'Aktiver Mandant wurde gewechselt.');
       });
       return;
     }
     if (action === 'choose-excel' && bridge.chooseCompanyExcelInput) {
       bridge.chooseCompanyExcelInput(function(payload){
         consumeCompanyPayload(payload);
+        resetWorkflowUiForCompanyChange();
         loadProcessingState();
+        loadValidationState();
+        loadShippingState();
+        loadMassMessageState();
         loadDashboardState();
         setCompanyMessage('Excel-Datei wurde aktualisiert.');
       });
@@ -2463,6 +2508,7 @@
     loadShippingState();
   }
   function applyValidationState(state){
+    if (!workflowStateMatchesActiveCompany(state)) return;
     latestValidationState = state || null;
     var summary = (state && state.summary) || {};
     var filters = (state && state.filters) || {};
@@ -2570,21 +2616,66 @@
       .filter(function(row){ return shippingRowSelectable(row) && selectedShippingPersnr[String(row.persnr || '')] !== false; })
       .map(function(row){ return String(row.persnr || ''); });
   }
+  function shippingPreparationReady(){
+    var status = (latestShippingState && latestShippingState.status) || {};
+    var metrics = (latestShippingState && latestShippingState.metrics) || {};
+    return !shippingSelectionDirty &&
+      !!status.finished &&
+      Number(metrics.exported || 0) > 0 &&
+      Number(metrics.ready || 0) > Number(metrics.sent || 0);
+  }
+  function updateShippingPrimaryAction(){
+    var button = document.querySelector('[data-shipping-primary]');
+    if (!button) return;
+    var label = button.querySelector('[data-shipping="primary-label"]');
+    var status = (latestShippingState && latestShippingState.status) || {};
+    var selected = selectedShippingList().length;
+    var prepared = shippingPreparationReady();
+    var realSendRunning = !!status.running && status.dry_run === false;
+    var action = prepared ? 'send-now' : 'start-dry-run';
+    var text = prepared ? 'Jetzt senden' : 'Versand vorbereiten';
+    var title = prepared ? 'Ausgewählte E-Mails prüfen und senden' : 'Versand für ausgewählte Empfänger vorbereiten';
+
+    if (status.running) {
+      text = realSendRunning ? 'Versand läuft...' : 'Vorbereitung läuft...';
+      title = realSendRunning ? 'E-Mails werden versendet' : 'Versand wird vorbereitet';
+    } else if (!selected) {
+      title = 'Bitte mindestens einen sendbaren Mitarbeiter auswählen';
+    } else if (!status.can_send) {
+      title = 'PDF-, Excel- und E-Mail-Einstellungen prüfen';
+    }
+
+    button.setAttribute('data-shipping-action', action);
+    button.classList.toggle('danger-send', prepared || realSendRunning);
+    button.disabled = !!status.running || !status.can_send || selected < 1;
+    button.classList.toggle('soft-disabled', button.disabled);
+    button.title = title;
+    if (label) label.textContent = text;
+  }
+  function invalidateShippingPreparation(){
+    if (shippingPreparationReady()) {
+      shippingSelectionDirty = true;
+      closeShippingSendModal();
+    }
+  }
   function updateShippingSelectionSummary(){
     var selected = selectedShippingList().length;
     var selectable = ((latestShippingState && latestShippingState.rows) || []).filter(shippingRowSelectable).length;
     var status = (latestShippingState && latestShippingState.status) || {};
-    var metrics = (latestShippingState && latestShippingState.metrics) || {};
-    var prepared = Number(metrics.exported || 0);
-    var baseDisabled = !!status.running || !status.can_send || !status.finished || prepared < 1 || Number(metrics.ready || 0) <= Number(metrics.sent || 0);
     var title = selected + ' von ' + selectable + ' sendbaren Einträgen ausgewählt';
-    setText('[data-shipping="actionbar-title"]', title);
-    document.querySelectorAll('[data-shipping-action="send-now"]').forEach(function(button){
-      button.disabled = baseDisabled || selected < 1;
-      button.classList.toggle('soft-disabled', button.disabled);
-      if (selected < 1) button.title = 'Bitte mindestens einen sendbaren Mitarbeiter auswählen';
-      else if (!button.disabled) button.title = 'E-Mails an ausgewählte Mitarbeiter senden';
-    });
+    setText('[data-shipping="selection-title"]', title);
+    if (shippingSelectionDirty) {
+      setText('[data-shipping="selection-message"]', 'Auswahl geändert. Versand erneut vorbereiten.');
+    } else if (status.running) {
+      setText('[data-shipping="selection-message"]', status.dry_run === false ? 'E-Mails werden versendet.' : 'Anhänge und Empfänger werden geprüft.');
+    } else if (shippingPreparationReady()) {
+      setText('[data-shipping="selection-message"]', 'Vorbereitung abgeschlossen. Versand kann geprüft werden.');
+    } else if (!selected) {
+      setText('[data-shipping="selection-message"]', 'Mindestens einen sendbaren Empfänger auswählen.');
+    } else {
+      setText('[data-shipping="selection-message"]', status.message || 'Empfänger ausgewählt. Versand kann vorbereitet werden.');
+    }
+    updateShippingPrimaryAction();
   }
   function shippingFilterCounts(){
     var rows = (latestShippingState && latestShippingState.rows) || [];
@@ -2694,8 +2785,10 @@
     }).join('');
     tbody.querySelectorAll('[data-shipping-select]').forEach(function(input){
       input.addEventListener('change', function(event){
+        invalidateShippingPreparation();
         var persnr = input.getAttribute('data-shipping-select') || '';
         if (persnr) selectedShippingPersnr[persnr] = !!input.checked;
+        updateShippingSelectionMaster(shippingRows());
         updateShippingSelectionSummary();
         event.stopPropagation();
       });
@@ -2717,6 +2810,7 @@
     updateShippingSelectionSummary();
   }
   function applyShippingState(state){
+    if (!workflowStateMatchesActiveCompany(state)) return;
     latestShippingState = state || null;
     syncShippingSelectionDefaults();
     var metrics = (state && state.metrics) || {};
@@ -2743,8 +2837,6 @@
     setText('[data-shipping="queue-tab"]', 'Warteschlange (' + queued + ')');
     setText('[data-shipping="sent-tab"]', 'Gesendet (' + sent + ')');
     setText('[data-shipping="error-tab"]', 'Fehler (' + errors + ')');
-    setText('[data-shipping="actionbar-title"]', total + ' Einträge in Versandliste');
-    setText('[data-shipping="actionbar-subtitle"]', status.message || 'Dry-Run vorbereitet Anhänge und Bericht.');
     updateShippingFilterControls();
 
     var readyTrack = document.querySelector('[data-shipping="ready-track"]');
@@ -2754,24 +2846,6 @@
     if (sentTrack) sentTrack.style.width = sentPercent + '%';
     if (queuedTrack) queuedTrack.style.width = queuedPercent + '%';
 
-    document.querySelectorAll('[data-shipping-action="start-dry-run"]').forEach(function(button){
-      button.disabled = !!status.running;
-      button.classList.toggle('soft-disabled', !status.can_send && !status.running);
-      button.title = status.running ? 'Versand-Dry-Run läuft' : (status.can_send ? 'Versand vorbereiten' : 'PDF- und Excel-Pfade prüfen');
-    });
-    document.querySelectorAll('[data-shipping-action="send-now"]').forEach(function(button){
-      var prepared = Number(metrics.exported || 0);
-      var sendable = !!status.finished && prepared > 0 && Number(metrics.ready || 0) > Number(metrics.sent || 0);
-      button.disabled = !!status.running || !status.can_send || !sendable;
-      button.classList.toggle('soft-disabled', button.disabled);
-      button.title = status.running ? 'Versand läuft' : (sendable ? 'E-Mails jetzt wirklich senden' : 'Erst Versand vorbereiten, dann senden');
-    });
-    document.querySelectorAll('[data-shipping="start-label"], [data-shipping="actionbar-label"]').forEach(function(label){
-      label.textContent = status.running ? (status.dry_run === false ? 'Versand läuft' : 'Dry-Run läuft') : (status.finished ? 'Erneut vorbereiten' : 'Versand vorbereiten');
-    });
-    document.querySelectorAll('[data-shipping="send-label"]').forEach(function(label){
-      label.textContent = status.running ? 'Versand läuft' : 'Jetzt senden';
-    });
     document.querySelectorAll('.mailing-tabs [data-shipping-action]').forEach(function(button){
       var action = button.getAttribute('data-shipping-action');
       var active = (
@@ -2813,11 +2887,15 @@
   function startShippingDryRun(){
     var bridge = window.lohnmailBridge;
     if (!bridge || !bridge.startShippingDryRun) {
-      setText('[data-shipping="actionbar-subtitle"]', 'Bridge ist noch nicht bereit.');
+      setShippingMessage('Bridge ist noch nicht bereit.');
       return;
     }
     bridge.startShippingDryRun(function(payload){
-      consumeShippingPayload(payload);
+      var state = consumeShippingPayload(payload);
+      if (state && state.status && state.status.finished && state.status.dry_run !== false) {
+        shippingSelectionDirty = false;
+        updateShippingSelectionSummary();
+      }
     });
   }
   function setShippingPreviewText(key, value){
@@ -2921,7 +2999,7 @@
     });
   }
   function setShippingMessage(message){
-    setText('[data-shipping="actionbar-subtitle"]', message);
+    setText('[data-shipping="selection-message"]', message);
   }
   function runShippingAction(action){
     if (action === 'start-dry-run') {
@@ -2961,26 +3039,6 @@
     }
     if (action === 'preview') {
       setShippingMessage('Vorschau zeigt den aktuell markierten Eintrag.');
-      return;
-    }
-    if (action === 'export-report') {
-      var bridge = window.lohnmailBridge;
-      if (!bridge || !bridge.openReport) {
-        setShippingMessage('Bericht öffnen ist im Bridge nicht verfügbar.');
-        return;
-      }
-      bridge.openReport('send', function(payload){
-        try {
-          var result = JSON.parse(payload || '{}');
-          setShippingMessage(result.ok ? 'Versandbericht wurde geöffnet.' : (result.message || 'Versandbericht wurde noch nicht erstellt.'));
-        } catch (error) {
-          setShippingMessage('Versandbericht konnte nicht geöffnet werden.');
-        }
-      });
-      return;
-    }
-    if (action === 'schedule-queue') {
-      setShippingMessage('Planung ist noch nicht aktiviert. Aktuell kann der Versand als Dry-Run vorbereitet werden.');
       return;
     }
     if (action === 'page-prev') {
@@ -3123,6 +3181,7 @@
   function consumeProcessingPayload(payload, eventType){
     try {
       var state = JSON.parse(payload || '{}');
+      if (!workflowStateMatchesActiveCompany(state)) return null;
       latestProcessingState = state;
       appendProcessingLogFromState(state, eventType);
       applyProcessingState(state);
@@ -3190,11 +3249,22 @@
       return;
     }
     if (action === 'choose-pdf' && bridge.choosePdfInput) {
-      bridge.choosePdfInput(function(payload){ consumeProcessingPayload(payload, 'input'); });
+      bridge.choosePdfInput(function(payload){
+        consumeProcessingPayload(payload, 'input');
+        loadValidationState();
+        loadShippingState();
+        loadDashboardState();
+      });
       return;
     }
     if (action === 'choose-excel' && bridge.chooseExcelInput) {
-      bridge.chooseExcelInput(function(payload){ consumeProcessingPayload(payload, 'input'); });
+      bridge.chooseExcelInput(function(payload){
+        consumeProcessingPayload(payload, 'input');
+        loadValidationState();
+        loadShippingState();
+        loadMassMessageState();
+        loadDashboardState();
+      });
       return;
     }
     if (action === 'open-output' && bridge.openOutputFolder) {
@@ -3225,7 +3295,12 @@
       return;
     }
     if (action === 'start-check' && bridge.startCheck) {
-      if (latestProcessingState && latestProcessingState.status && latestProcessingState.status.finished) {
+      if (
+        latestProcessingState &&
+        workflowStateMatchesActiveCompany(latestProcessingState) &&
+        latestProcessingState.status &&
+        latestProcessingState.status.finished
+      ) {
         setPage('Prüfung');
         return;
       }
@@ -3238,6 +3313,9 @@
       pushProcessingLog('info', 'Prüfung gestartet', 'PDF und Excel werden validiert.', 'start-check|' + Date.now());
       bridge.startCheck(function(payload){
         consumeProcessingPayload(payload, 'progress');
+        loadValidationState();
+        loadShippingState();
+        loadDashboardState();
       });
       return;
     }
@@ -3350,6 +3428,7 @@
     var shippingSelectVisible = document.querySelector('[data-shipping="select-visible"]');
     if (shippingSelectVisible) {
       shippingSelectVisible.addEventListener('change', function(){
+        invalidateShippingPreparation();
         var checked = !!shippingSelectVisible.checked;
         shippingRows().forEach(function(row){
           if (shippingRowSelectable(row)) {
@@ -3357,7 +3436,9 @@
           }
         });
         renderShippingRows();
-        setShippingMessage(checked ? 'Gefilterte sendbare Einträge wurden markiert.' : 'Gefilterte sendbare Einträge wurden abgewählt.');
+        setShippingMessage(shippingSelectionDirty
+          ? 'Auswahl geändert. Versand erneut vorbereiten.'
+          : (checked ? 'Gefilterte sendbare Einträge wurden markiert.' : 'Gefilterte sendbare Einträge wurden abgewählt.'));
       });
     }
     var shippingPageSizeSelect = document.querySelector('[data-shipping="page-size"]');
@@ -3645,6 +3726,9 @@
         }
         bridge.setPdfInputMode(button.getAttribute('data-pdf-mode'), function(payload){
           consumeProcessingPayload(payload, 'input');
+          loadValidationState();
+          loadShippingState();
+          loadDashboardState();
         });
       });
     });
