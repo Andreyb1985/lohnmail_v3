@@ -16,6 +16,7 @@
   var shippingPageSize = 20;
   var selectedShippingPersnr = {};
   var shippingSelectionDirty = false;
+  var shippingTerminalState = null;
   var shippingPreviewZoom = 100;
   var reportsSearchQuery = '';
   var reportsTypeFilter = 'all';
@@ -23,7 +24,11 @@
   var reportsReadyOnly = false;
   var reportsPage = 1;
   var reportsPageSize = 10;
-  var selectedReportKind = 'audit';
+  var reportsPeriodFilter = 'latest';
+  var reportsChartMode = 'all';
+  var selectedReportKind = '';
+  var selectedReportId = '';
+  var latestReportsState = null;
   var latestCompanyState = null;
   var companySwitchSearchQuery = '';
   var latestLicenseState = null;
@@ -50,6 +55,7 @@
       loadProcessingState();
       loadValidationState();
       loadShippingState();
+      loadReportsState();
       loadMassMessageState();
     });
   }
@@ -68,6 +74,7 @@
         consumeProcessingPayload(payload, 'finished');
         loadDashboardState();
         loadValidationState();
+        loadReportsState();
       });
     }
     if (bridge.processingError) {
@@ -87,6 +94,7 @@
           updateShippingSelectionSummary();
         }
         loadDashboardState();
+        loadReportsState();
       });
     }
     if (bridge.shippingError) {
@@ -108,6 +116,25 @@
   function setText(selector, value){
     var node = document.querySelector(selector);
     if (node && value !== undefined && value !== null) node.textContent = String(value);
+  }
+  function setPathText(selector, value){
+    var node = document.querySelector(selector);
+    if (!node || value === undefined || value === null) return;
+    var path = String(value || '-');
+    node.title = path === '-' ? '' : path;
+    node.textContent = '';
+    var separatorIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+    if (path === '-' || separatorIndex < 0) {
+      node.textContent = path;
+      return;
+    }
+    var directory = document.createElement('span');
+    directory.className = 'company-path-directory';
+    directory.textContent = path.slice(0, separatorIndex);
+    var filename = document.createElement('span');
+    filename.className = 'company-path-filename';
+    filename.textContent = path.slice(separatorIndex);
+    node.append(directory, filename);
   }
   function setLabeledIconText(selector, value){
     var node = document.querySelector(selector);
@@ -178,125 +205,203 @@
   }
   function reportMap(){
     var result = {};
+    var latest = (latestReportsState && latestReportsState.latest) || {};
+    Object.keys(latest).forEach(function(key){ result[key] = latest[key]; });
     [latestDashboardState, latestValidationState, latestShippingState].forEach(function(state){
       var reports = (state && state.reports) || {};
       Object.keys(reports).forEach(function(key){
-        if (reports[key] && typeof reports[key] === 'object') result[key] = reports[key];
+        if (!result[key] || !result[key].exists) result[key] = reports[key];
       });
     });
     return result;
   }
-  function reportMetricValues(){
-    var validationSummary = (latestValidationState && latestValidationState.summary) || {};
-    var validationFilters = (latestValidationState && latestValidationState.filters) || {};
-    var shippingMetrics = (latestShippingState && latestShippingState.metrics) || {};
-    var processingStatus = (latestProcessingState && latestProcessingState.status) || {};
-    var reports = reportMap();
-    var exported = ['audit', 'missing', 'send'].filter(function(kind){ return reports[kind] && reports[kind].exists; }).length;
-    var processed = Number(validationSummary.checked || processingStatus.processed || processingStatus.employees_total || 0);
-    var sent = Number(shippingMetrics.sent || 0);
-    var delivered = Math.max(0, sent - Number(shippingMetrics.errors || 0));
-    var failed = Number(shippingMetrics.errors || processingStatus.errors || validationSummary.critical || 0);
-    var warnings = Number(validationSummary.warnings || validationFilters.warnings || processingStatus.warnings || 0);
-    var employees = Number(validationSummary.total || processingStatus.employees_total || shippingMetrics.total || 0);
+  function reportIcon(type, kind){
+    if (type === 'pdf') return 'doc';
+    if (kind === 'send') return 'report';
+    return 'table';
+  }
+  function reportDate(value){
+    if (!value) return '-';
+    var date = new Date(value);
+    return isNaN(date.getTime()) ? String(value) : date.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+  }
+  function reportSize(value){
+    var bytes = Number(value || 0);
+    if (!bytes) return '-';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1).replace('.', ',') + ' KB';
+    return (bytes / 1048576).toFixed(1).replace('.', ',') + ' MB';
+  }
+  function normalizeReportMetrics(value){
+    value = value || {};
     return {
-      processed: processed,
-      sent: sent,
-      delivered: delivered,
-      failed: failed,
-      warnings: warnings,
-      employees: employees,
-      exported: exported
+      employees: Number(value.employees || 0),
+      missing_email: Number(value.missing_email || 0),
+      processed: Number(value.processed || 0),
+      warnings: Number(value.warnings || 0),
+      errors: Number(value.errors || 0),
+      sent: Number(value.sent || 0),
+      delivered: Number(value.delivered || 0),
+      failed: Number(value.failed || 0),
+      prepared: Number(value.prepared || 0)
     };
   }
   function reportRows(){
-    var reports = reportMap();
-    var metrics = reportMetricValues();
-    var defs = [
-      { kind: 'audit', type: 'xls', icon: 'table', title: 'audit_check.xlsx', subtitle: 'Prüfbericht / Excel', validation: metrics.failed + ' Fehler, ' + metrics.warnings + ' Warnungen', shipping: metrics.sent + ' gesendet' },
-      { kind: 'missing', type: 'pdf', icon: 'doc', title: 'ohne_email_gesamt.pdf', subtitle: 'Mitarbeiter ohne E-Mail / PDF', validation: metrics.warnings + ' ohne E-Mail', shipping: 'Nicht versendet' },
-      { kind: 'send', type: 'xls', icon: 'report', title: 'send_report.xlsx', subtitle: 'Versandbericht / Excel', validation: metrics.employees + ' geprüft', shipping: metrics.sent + ' gesendet' }
-    ];
-    return defs.map(function(def){
-      var report = reports[def.kind] || {};
-      var exists = !!report.exists;
+    var records = (latestReportsState && latestReportsState.records) || [];
+    return records.map(function(record){
+      var metrics = normalizeReportMetrics(record.metrics);
+      var exists = !!record.exists;
+      var type = String(record.type || 'file').toLowerCase();
+      var employees = Math.max(metrics.employees, metrics.processed);
+      var validation = metrics.errors || metrics.warnings ? metrics.errors + ' Fehler, ' + metrics.warnings + ' Warnungen' : '-';
+      var shipping = metrics.sent ? metrics.sent + ' gesendet' : (metrics.prepared ? metrics.prepared + ' vorbereitet' : '-');
       return {
-        kind: def.kind,
-        type: def.type,
-        icon: def.icon,
-        title: def.title,
-        subtitle: def.subtitle,
-        status: exists ? 'Abgeschlossen' : 'Nicht erstellt',
+        id: String(record.id || ''),
+        kind: String(record.kind || 'other'),
+        type: type,
+        icon: reportIcon(type, record.kind),
+        title: String(record.filename || record.title || 'Bericht'),
+        subtitle: String(record.operation || record.subtitle || 'LohnMail'),
+        status: exists ? 'Abgeschlossen' : 'Nicht gefunden',
+        statusKey: exists ? 'ready' : 'missing',
         exists: exists,
-        created: report.label || '-',
-        path: report.path || '',
-        processing: metrics.processed + ' / ' + metrics.employees,
-        validation: def.validation,
-        shipping: def.shipping,
-        owner: 'LohnMail',
+        createdAt: String(record.created_at || ''),
+        created: reportDate(record.created_at),
+        path: String(record.path || ''),
+        runId: String(record.run_id || ''),
+        operation: String(record.operation || ''),
+        dryRun: record.dry_run === true ? true : (record.dry_run === false ? false : null),
+        processing: employees ? metrics.processed + ' / ' + employees : '-',
+        validation: validation,
+        shipping: shipping,
+        owner: String(record.owner || 'LohnMail'),
+        size: reportSize(record.size),
         metrics: metrics
       };
     });
   }
-  function filteredReportRows(){
+  function isRealSendReport(row){
+    return row.operation === 'Versand' && row.dryRun !== true && (row.dryRun === false || row.metrics.sent > 0);
+  }
+  function reportRowsForPeriod(){
     var rows = reportRows();
-    if (reportsTypeFilter !== 'all') {
-      rows = rows.filter(function(row){ return row.type === reportsTypeFilter; });
+    if (reportsPeriodFilter === 'latest') {
+      var latestSend = rows.filter(isRealSendReport).sort(function(a, b){
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      })[0];
+      if (!latestSend) return [];
+      var latestRunId = latestSend.runId || latestSend.id;
+      return rows.filter(function(row){ return (row.runId || row.id) === latestRunId; });
     }
-    if (reportsStatusFilter === 'ready') rows = rows.filter(function(row){ return row.exists; });
-    if (reportsStatusFilter === 'missing') rows = rows.filter(function(row){ return !row.exists; });
+    if (reportsPeriodFilter === 'all') return rows;
+    var now = new Date();
+    var threshold = new Date(now);
+    if (reportsPeriodFilter === '7d') threshold.setDate(now.getDate() - 7);
+    if (reportsPeriodFilter === '30d') threshold.setDate(now.getDate() - 30);
+    if (reportsPeriodFilter === 'month') threshold = new Date(now.getFullYear(), now.getMonth(), 1);
+    return rows.filter(function(row){
+      var date = new Date(row.createdAt);
+      return !isNaN(date.getTime()) && date >= threshold;
+    });
+  }
+  function filteredReportRows(){
+    var rows = reportRowsForPeriod();
+    if (reportsTypeFilter !== 'all') rows = rows.filter(function(row){ return row.type === reportsTypeFilter; });
+    if (reportsStatusFilter !== 'all') rows = rows.filter(function(row){ return row.statusKey === reportsStatusFilter; });
     if (reportsReadyOnly) rows = rows.filter(function(row){ return row.exists; });
     if (reportsSearchQuery) {
       var query = reportsSearchQuery.toLowerCase();
       rows = rows.filter(function(row){
-        return [row.title, row.subtitle, row.status, row.created, row.path, row.processing, row.validation, row.shipping]
-          .join(' ')
-          .toLowerCase()
-          .indexOf(query) !== -1;
+        return [row.title, row.subtitle, row.status, row.created, row.path, row.runId, row.processing, row.validation, row.shipping]
+          .join(' ').toLowerCase().indexOf(query) !== -1;
       });
     }
     return rows;
   }
-  function setReportsDetailText(key, value){
-    setText('[data-reports-detail="' + key + '"]', value);
+  function reportRunMetrics(rows){
+    var runs = {};
+    rows.forEach(function(row){
+      var key = row.runId || row.id;
+      if (!runs[key]) runs[key] = { key: key, date: row.createdAt, metrics: normalizeReportMetrics() };
+      Object.keys(runs[key].metrics).forEach(function(metric){
+        runs[key].metrics[metric] = Math.max(runs[key].metrics[metric], Number(row.metrics[metric] || 0));
+      });
+      if (!runs[key].date || row.createdAt < runs[key].date) runs[key].date = row.createdAt;
+    });
+    return Object.keys(runs).map(function(key){ return runs[key]; });
+  }
+  function reportMetricValues(){
+    var rows = reportRowsForPeriod().filter(isRealSendReport);
+    var totals = { sent: 0, missingEmail: 0, employees: 0, failed: 0, rate: 0, hasData: false };
+    reportRunMetrics(rows).forEach(function(run){
+      totals.hasData = true;
+      totals.sent += run.metrics.sent;
+      totals.missingEmail += run.metrics.missing_email;
+      totals.failed += run.metrics.failed;
+      totals.employees += run.metrics.employees;
+    });
+    totals.rate = totals.employees ? Math.round((totals.sent / totals.employees) * 100) : 0;
+    return totals;
+  }
+  function setReportsDetailText(key, value){ setText('[data-reports-detail="' + key + '"]', value); }
+  function selectedReportRow(){
+    return reportRows().filter(function(row){ return row.id === selectedReportId; })[0] || null;
   }
   function applyReportDetail(row){
-    row = row || reportRows()[0] || null;
-    selectedReportKind = row ? row.kind : 'audit';
+    var detail = document.querySelector('.report-details');
+    var reportsGrid = document.querySelector('.reports-grid');
+    if (row && detail) {
+      detail.hidden = false;
+      if (reportsGrid) reportsGrid.classList.remove('detail-hidden');
+    }
+    selectedReportId = row ? row.id : '';
+    selectedReportKind = row ? row.kind : '';
     var statusNode = document.querySelector('[data-reports-detail="status"]');
     var iconNode = document.querySelector('[data-reports-detail="icon"]');
-    if (iconNode && row) iconNode.setAttribute('data-icon', row.icon || 'doc');
+    if (iconNode) iconNode.setAttribute('data-icon', row ? row.icon : 'doc');
     if (statusNode) {
-      statusNode.textContent = row ? row.status : 'Nicht erstellt';
+      statusNode.textContent = row ? row.status : 'Nicht ausgewählt';
       statusNode.className = 'state ' + (row && row.exists ? 'ready' : 'warning');
     }
     setReportsDetailText('title', row ? row.title : 'Kein Bericht ausgewählt');
     setReportsDetailText('subtitle', row ? row.subtitle : 'Bitte einen Eintrag wählen.');
-    setReportsDetailText('id', row ? row.kind.toUpperCase() : '-');
-    setReportsDetailText('period', 'Aktuelle Sitzung');
+    setReportsDetailText('id', row ? row.id.toUpperCase() : '-');
+    setReportsDetailText('period', row ? (row.runId || '-') : '-');
     setReportsDetailText('created', row ? row.created : '-');
     setReportsDetailText('owner', row ? row.owner : 'LohnMail');
     setReportsDetailText('path', row && row.path ? row.path : '-');
-    var metrics = (row && row.metrics) || reportMetricValues();
-    setReportsDetailText('employees', metrics.employees || 0);
-    setReportsDetailText('errors', metrics.failed || 0);
-    setReportsDetailText('warnings', metrics.warnings || 0);
-    setReportsDetailText('sent', metrics.sent || 0);
-    setReportsDetailText('delivered', metrics.delivered || 0);
-    setReportsDetailText('failed', metrics.failed || 0);
+    var metrics = row ? row.metrics : normalizeReportMetrics();
+    setReportsDetailText('employees', Math.max(metrics.employees, metrics.processed));
+    setReportsDetailText('errors', metrics.errors);
+    setReportsDetailText('warnings', metrics.warnings);
+    setReportsDetailText('sent', metrics.sent);
+    setReportsDetailText('delivered', metrics.delivered);
+    setReportsDetailText('failed', metrics.failed);
     document.querySelectorAll('[data-reports-action="open-selected"]').forEach(function(button){
       button.disabled = !(row && row.exists);
-      button.title = row && row.exists ? row.path : 'Bericht wurde noch nicht erstellt.';
+      button.title = row && row.exists ? row.path : 'Kein Bericht ausgewählt.';
     });
-    var reports = reportMap();
     document.querySelectorAll('[data-reports-action="open-pdf"]').forEach(function(button){
-      button.disabled = !(reports.missing && reports.missing.exists);
-      button.title = reports.missing && reports.missing.exists ? reports.missing.path : 'PDF ohne E-Mail wurde noch nicht erstellt.';
+      button.disabled = !(row && row.exists && row.type === 'pdf');
+      button.title = button.disabled ? 'Der ausgewählte Bericht ist keine PDF-Datei.' : row.path;
     });
     document.querySelectorAll('[data-reports-action="open-excel"]').forEach(function(button){
-      var excelReport = selectedReportKind === 'send' ? reports.send : reports.audit;
-      button.disabled = !(excelReport && excelReport.exists);
-      button.title = excelReport && excelReport.exists ? excelReport.path : 'Excel-Bericht wurde noch nicht erstellt.';
+      button.disabled = !(row && row.exists && (row.type === 'xlsx' || row.type === 'xls'));
+      button.title = button.disabled ? 'Der ausgewählte Bericht ist keine Excel-Datei.' : row.path;
+    });
+  }
+  function openReportEntry(row){
+    row = row || selectedReportRow();
+    var bridge = window.lohnmailBridge;
+    if (!row || !row.exists) return setReportsMessage('Bitte einen vorhandenen Bericht auswählen.');
+    if (!bridge || !bridge.openReportEntry) return openReport(row.kind);
+    bridge.openReportEntry(row.id, function(payload){
+      try {
+        var result = JSON.parse(payload || '{}');
+        setReportsMessage(result.ok ? 'Bericht geöffnet: ' + result.path : (result.message || 'Bericht konnte nicht geöffnet werden.'));
+      } catch (error) {
+        setReportsMessage('Bericht konnte nicht geöffnet werden.');
+      }
     });
   }
   function renderReportsTable(){
@@ -314,16 +419,16 @@
       applyReportDetail(null);
     } else {
       tbody.innerHTML = pageRows.map(function(row, index){
-        return '<tr data-reports-row="' + index + '" class="' + (row.kind === selectedReportKind ? 'selected' : '') + '">' +
+        return '<tr data-reports-row="' + index + '" class="' + (row.id === selectedReportId ? 'selected' : '') + '">' +
           '<td>' + escapeHtml(row.created) + '</td>' +
           '<td><span class="file-dot ' + escapeHtml(row.type) + '"><span data-icon="' + escapeHtml(row.icon) + '"></span></span></td>' +
           '<td><b>' + escapeHtml(row.title) + '</b><small>' + escapeHtml(row.subtitle) + '</small></td>' +
           '<td><span class="state ' + (row.exists ? 'ready' : 'warning') + '">' + escapeHtml(row.status) + '</span></td>' +
-          '<td><b>' + escapeHtml(row.processing) + '</b><small>Aktuell</small></td>' +
+          '<td><b>' + escapeHtml(row.processing) + '</b><small>' + escapeHtml(row.size) + '</small></td>' +
           '<td><b>' + escapeHtml(row.validation) + '</b><small>Prüfung</small></td>' +
           '<td><b>' + escapeHtml(row.shipping) + '</b><small>Versand</small></td>' +
           '<td>' + escapeHtml(row.owner) + '</td>' +
-          '<td><button data-reports-open-kind="' + escapeHtml(row.kind) + '" ' + (row.exists ? '' : 'disabled') + '><span data-icon="arrow-up-right"></span></button><button data-reports-action="row-details">...</button></td>' +
+          '<td><button data-reports-open-entry ' + (row.exists ? '' : 'disabled') + '><span data-icon="arrow-up-right"></span></button><button data-reports-action="row-details">...</button></td>' +
         '</tr>';
       }).join('');
       tbody.querySelectorAll('[data-reports-row]').forEach(function(tr){
@@ -333,70 +438,116 @@
           tbody.querySelectorAll('tr').forEach(function(node){ node.classList.remove('selected'); });
           tr.classList.add('selected');
           applyReportDetail(row);
-          var openButton = event.target.closest && event.target.closest('[data-reports-open-kind]');
-          if (openButton && !openButton.disabled) openReport(row.kind);
+          var openButton = event.target.closest && event.target.closest('[data-reports-open-entry]');
+          if (openButton && !openButton.disabled) openReportEntry(row);
         });
       });
-      var selected = pageRows.filter(function(row){ return row.kind === selectedReportKind; })[0] || pageRows[0];
+      var selected = pageRows.filter(function(row){ return row.id === selectedReportId; })[0] || pageRows[0];
       applyReportDetail(selected);
       setReportsMessage('Zeige ' + (start + 1) + ' bis ' + end + ' von ' + rows.length + ' Einträgen');
     }
     setText('[data-reports="page-current"]', String(reportsPage));
+    setText('[data-reports="page-size-label"]', reportsPageSize + ' pro Seite⌄');
     var prev = document.querySelector('[data-reports-action="page-prev"]');
     var next = document.querySelector('[data-reports-action="page-next"]');
     if (prev) prev.disabled = reportsPage <= 1;
     if (next) next.disabled = reportsPage >= totalPages;
   }
+  function chartPath(values, area, scaleMax){
+    values = values.length ? values.slice() : [0, 0];
+    if (values.length === 1) values.push(values[0]);
+    var max = Math.max(1, Number(scaleMax || 0));
+    var points = values.map(function(value, index){
+      var x = index * (760 / (values.length - 1));
+      var y = 176 - (Number(value || 0) / max) * 148;
+      return [Math.round(x * 10) / 10, Math.round(y * 10) / 10];
+    });
+    var line = points.map(function(point, index){ return (index ? 'L' : 'M') + point[0] + ' ' + point[1]; }).join(' ');
+    return area ? line + ' L760 190 L0 190 Z' : line;
+  }
+  function updateReportsChart(){
+    var runs = reportRunMetrics(reportRowsForPeriod()).sort(function(a, b){ return String(a.date).localeCompare(String(b.date)); });
+    var series = {
+      processed: runs.map(function(run){ return run.metrics.processed; }),
+      sent: runs.map(function(run){ return run.metrics.sent; }),
+      delivered: runs.map(function(run){ return run.metrics.delivered; }),
+      failed: runs.map(function(run){ return Math.max(run.metrics.failed, run.metrics.errors); })
+    };
+    var maxValue = Math.max.apply(Math, series.processed.concat(series.sent, series.delivered, series.failed, [1]));
+    [['processed-area', series.processed, true], ['processed-line', series.processed, false], ['sent-area', series.sent, true], ['sent-line', series.sent, false], ['delivered-line', series.delivered, false], ['failed-line', series.failed, false]].forEach(function(def){
+      var path = document.querySelector('[data-reports-chart="' + def[0] + '"]');
+      if (path) path.setAttribute('d', chartPath(def[1], def[2], maxValue));
+    });
+    var y = document.querySelector('[data-reports="chart-y"]');
+    if (y) y.innerHTML = [maxValue, Math.round(maxValue * .75), Math.round(maxValue * .5), Math.round(maxValue * .25), 0].map(function(value){ return '<span>' + value.toLocaleString('de-DE') + '</span>'; }).join('');
+    var x = document.querySelector('[data-reports="chart-x"]');
+    if (x) {
+      var labels = runs.map(function(run){ var date = new Date(run.date); return isNaN(date.getTime()) ? '-' : date.toLocaleDateString('de-DE', { day: '2-digit', month: 'short' }); });
+      if (!labels.length) labels = ['Keine Daten'];
+      labels = labels.slice(-7);
+      x.style.gridTemplateColumns = 'repeat(' + labels.length + ', minmax(0, 1fr))';
+      x.innerHTML = labels.map(function(label){ return '<span>' + escapeHtml(label) + '</span>'; }).join('');
+    }
+    var processingVisible = reportsChartMode !== 'shipping';
+    var shippingVisible = reportsChartMode !== 'processing';
+    document.querySelectorAll('[data-reports-chart^="processed-"]').forEach(function(node){ node.style.opacity = processingVisible ? '' : '0'; });
+    ['sent-area', 'sent-line', 'delivered-line', 'failed-line'].forEach(function(name){
+      var node = document.querySelector('[data-reports-chart="' + name + '"]');
+      if (node) node.style.opacity = shippingVisible ? '' : '0';
+    });
+  }
+  function reportPeriodLabel(){
+    return { latest: 'Letzter Versand', month: 'Dieser Monat', '7d': 'Letzte 7 Tage', '30d': 'Letzte 30 Tage', all: 'Gesamter Zeitraum' }[reportsPeriodFilter];
+  }
   function updateReportsScreen(){
     var metrics = reportMetricValues();
-    setText('[data-reports-metric="processed"]', metrics.processed);
+    var periodLabel = reportPeriodLabel();
+    var periodRows = reportRowsForPeriod();
+    var metricRows = periodRows.filter(isRealSendReport);
+    var latestRunDate = metricRows.length ? reportDate(metricRows[0].createdAt) : '';
+    var contextLabel = reportsPeriodFilter === 'latest' && latestRunDate ? periodLabel + ' · ' + latestRunDate : periodLabel;
     setText('[data-reports-metric="sent"]', metrics.sent);
-    setText('[data-reports-metric="delivered"]', metrics.delivered);
+    setText('[data-reports-metric="missing-email"]', metrics.missingEmail);
+    setText('[data-reports-metric="employees"]', metrics.employees);
     setText('[data-reports-metric="failed"]', metrics.failed);
-    setText('[data-reports-metric="exported"]', metrics.exported);
-    setText('[data-reports-metric="processed-label"]', metrics.employees ? 'Von ' + metrics.employees + ' Mitarbeitern' : 'Aktuelle Sitzung');
-    setText('[data-reports-metric="sent-label"]', metrics.sent ? 'Versanddaten vorhanden' : 'Noch nicht versendet');
-    setText('[data-reports-metric="delivered-label"]', metrics.sent ? 'Ohne bekannte Fehler' : 'Noch nicht versendet');
+    setText('[data-reports-metric="rate"]', metrics.rate + '%');
+    setText('[data-reports-metric="sent-label"]', metrics.hasData ? contextLabel : 'Noch kein Versand durchgeführt');
+    setText('[data-reports-metric="missing-email-label"]', metrics.hasData ? (metrics.missingEmail ? 'Nicht versandfähig' : 'Keine fehlenden Adressen') : 'Keine Versanddaten');
+    setText('[data-reports-metric="employees-label"]', metrics.hasData ? contextLabel : 'Keine Versanddaten');
     setText('[data-reports-metric="failed-label"]', metrics.failed ? 'Bitte prüfen' : 'Keine Fehler');
-    setText('[data-reports-metric="exported-label"]', metrics.exported + ' von 3 Berichten');
+    setText('[data-reports-metric="rate-label"]', metrics.hasData ? metrics.sent + ' von ' + metrics.employees : 'Keine Versanddaten');
+    setText('[data-reports="period-label"]', periodLabel);
     setText('[data-reports="type-label"]', reportsTypeFilter === 'all' ? 'Alle Typen' : reportsTypeFilter.toUpperCase());
-    setText('[data-reports="status-label"]', reportsStatusFilter === 'all' ? 'Alle Status' : (reportsStatusFilter === 'ready' ? 'Erstellt' : 'Nicht erstellt'));
-    setText('[data-reports="filter-label"]', reportsReadyOnly ? 'Filter: Erstellt' : 'Filter');
-    document.querySelectorAll('[data-reports-action="type"]').forEach(function(button){
-      button.classList.toggle('active', reportsTypeFilter !== 'all');
-    });
-    document.querySelectorAll('[data-reports-action="status"]').forEach(function(button){
-      button.classList.toggle('active', reportsStatusFilter !== 'all');
-    });
-    document.querySelectorAll('[data-reports-action="toggle-ready"]').forEach(function(button){
-      button.classList.toggle('active', reportsReadyOnly);
-    });
+    setText('[data-reports="status-label"]', reportsStatusFilter === 'all' ? 'Alle Status' : (reportsStatusFilter === 'ready' ? 'Erstellt' : 'Nicht gefunden'));
+    setText('[data-reports="filter-label"]', reportsReadyOnly ? 'Nur erstellt' : 'Filter');
+    setText('[data-reports="chart-mode-label"]', { all: 'Alle', processing: 'Verarbeitung', shipping: 'Versand' }[reportsChartMode] + '⌄');
+    document.querySelectorAll('[data-reports-action="period"]').forEach(function(button){ button.classList.toggle('active', reportsPeriodFilter !== 'all'); });
+    document.querySelectorAll('[data-reports-action="type"]').forEach(function(button){ button.classList.toggle('active', reportsTypeFilter !== 'all'); });
+    document.querySelectorAll('[data-reports-action="status"]').forEach(function(button){ button.classList.toggle('active', reportsStatusFilter !== 'all'); });
+    document.querySelectorAll('[data-reports-action="toggle-ready"]').forEach(function(button){ button.classList.toggle('active', reportsReadyOnly); });
     var reports = reportMap();
     updateReport('audit', reports.audit);
     updateReport('missing', reports.missing);
     updateReport('send', reports.send);
+    updateReportsChart();
     renderReportsTable();
   }
-  function exportReportsCsv(){
-    var rows = filteredReportRows();
-    var headers = ['Bericht', 'Typ', 'Status', 'Erstellt', 'Verarbeitung', 'Pruefung', 'Versand', 'Pfad'];
-    var csvRows = [headers].concat(rows.map(function(row){
-      return [row.title, row.type.toUpperCase(), row.status, row.created, row.processing, row.validation, row.shipping, row.path || ''];
-    }));
+  function exportReportsCsv(includeAll){
+    var rows = includeAll ? reportRows() : filteredReportRows();
+    var headers = ['Bericht', 'Typ', 'Status', 'Erstellt', 'Verarbeitung', 'Pruefung', 'Versand', 'Groesse', 'Pfad'];
+    var csvRows = [headers].concat(rows.map(function(row){ return [row.title, row.type.toUpperCase(), row.status, row.created, row.processing, row.validation, row.shipping, row.size, row.path]; }));
     var csv = csvRows.map(function(row){
-      return row.map(function(cell){
-        return '"' + String(cell === undefined || cell === null ? '' : cell).replace(/"/g, '""') + '"';
-      }).join(';');
+      return row.map(function(cell){ return '"' + String(cell === undefined || cell === null ? '' : cell).replace(/"/g, '""') + '"'; }).join(';');
     }).join('\n');
-    var filename = 'lohnmail_berichte_' + new Date().toISOString().slice(0, 10) + '.csv';
-    if (window.lohnmailBridge && window.lohnmailBridge.exportValidationCsv) {
-      window.lohnmailBridge.exportValidationCsv(csv, filename, function(payload){
+    var companyId = latestReportsState && latestReportsState.company && latestReportsState.company.id || 'mandant';
+    var filename = 'lohnmail_berichte_' + String(companyId).replace(/[^a-zA-Z0-9_-]/g, '_') + '_' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.csv';
+    var bridge = window.lohnmailBridge;
+    if (bridge && bridge.exportReportsCsv) {
+      bridge.exportReportsCsv(csv, filename, function(payload){
         try {
           var result = JSON.parse(payload || '{}');
-          setReportsMessage(result.ok ? 'Export gespeichert: ' + result.path : 'Export fehlgeschlagen');
-        } catch (error) {
-          setReportsMessage('Export fehlgeschlagen');
-        }
+          setReportsMessage(result.ok ? 'Export gespeichert: ' + result.path : (result.message || 'Export fehlgeschlagen'));
+        } catch (error) { setReportsMessage('Export fehlgeschlagen'); }
       });
       return;
     }
@@ -411,56 +562,48 @@
     setReportsMessage('Export wurde heruntergeladen.');
   }
   function runReportsAction(action){
-    if (action === 'export-csv') {
-      exportReportsCsv();
-      return;
-    }
+    if (action === 'export-csv' || action === 'export-all-csv') return exportReportsCsv(action === 'export-all-csv');
     if (action === 'type') {
-      reportsTypeFilter = reportsTypeFilter === 'all' ? 'pdf' : (reportsTypeFilter === 'pdf' ? 'xls' : 'all');
+      reportsTypeFilter = { all: 'pdf', pdf: 'xlsx', xlsx: 'all' }[reportsTypeFilter] || 'all';
       reportsPage = 1;
-      updateReportsScreen();
-      return;
+      return updateReportsScreen();
     }
     if (action === 'status') {
-      reportsStatusFilter = reportsStatusFilter === 'all' ? 'ready' : (reportsStatusFilter === 'ready' ? 'missing' : 'all');
+      reportsStatusFilter = { all: 'ready', ready: 'missing', missing: 'all' }[reportsStatusFilter] || 'all';
       reportsPage = 1;
-      updateReportsScreen();
-      return;
+      return updateReportsScreen();
     }
     if (action === 'toggle-ready') {
       reportsReadyOnly = !reportsReadyOnly;
       reportsPage = 1;
-      updateReportsScreen();
-      return;
+      return updateReportsScreen();
     }
-    if (action === 'period' || action === 'chart-mode') {
-      setReportsMessage('Berichte zeigen aktuell die laufende Sitzung und vorhandene Ausgabedateien.');
-      return;
+    if (action === 'period') {
+      reportsPeriodFilter = { latest: 'month', month: '7d', '7d': '30d', '30d': 'all', all: 'latest' }[reportsPeriodFilter] || 'latest';
+      reportsPage = 1;
+      return updateReportsScreen();
+    }
+    if (action === 'chart-mode') {
+      reportsChartMode = { all: 'processing', processing: 'shipping', shipping: 'all' }[reportsChartMode] || 'all';
+      return updateReportsScreen();
     }
     if (action === 'page-prev' || action === 'page-next') {
       reportsPage += action === 'page-next' ? 1 : -1;
-      renderReportsTable();
-      return;
+      return renderReportsTable();
     }
     if (action === 'page-size') {
-      setReportsMessage('Seitengröße ist aktuell auf 10 Einträge gesetzt.');
-      return;
+      reportsPageSize = { 10: 20, 20: 50, 50: 100, 100: 10 }[reportsPageSize] || 10;
+      reportsPage = 1;
+      return renderReportsTable();
     }
     if (action === 'detail-close') {
-      setReportsMessage('Detailansicht ist read-only und bleibt für den ausgewählten Bericht sichtbar.');
+      var detail = document.querySelector('.report-details');
+      var reportsGrid = document.querySelector('.reports-grid');
+      if (detail) detail.hidden = true;
+      if (reportsGrid) reportsGrid.classList.add('detail-hidden');
       return;
     }
-    if (action === 'open-pdf') {
-      openReport('missing');
-      return;
-    }
-    if (action === 'open-excel') {
-      openReport(selectedReportKind === 'send' ? 'send' : 'audit');
-      return;
-    }
-    if (action === 'open-selected') {
-      openReport(selectedReportKind);
-    }
+    if (action === 'open-pdf' || action === 'open-excel' || action === 'open-selected') return openReportEntry();
   }
   function companyInitials(name){
     var parts = String(name || '').replace(/-/g, ' ').split(/\s+/).filter(Boolean);
@@ -540,8 +683,12 @@
     latestProcessingState = null;
     latestValidationState = null;
     latestShippingState = null;
+    latestReportsState = null;
+    selectedReportId = '';
+    selectedReportKind = '';
     selectedShippingPersnr = {};
     shippingSelectionDirty = false;
+    shippingTerminalState = null;
     latestShippingSendPreview = null;
     currentValidationPage = 1;
     currentShippingPage = 1;
@@ -765,10 +912,22 @@
   }
   function formatCompanyPeriod(period){
     period = period || {};
-    var month = Number(period.month || 0);
-    var year = Number(period.year || 0);
-    if (!month || !year) return 'Automatisch';
-    return String(month).padStart(2, '0') + '.' + year;
+    var mode = String(period.mode || 'automatic_current_month');
+    var date = new Date();
+    var label = 'Automatisch';
+    var month;
+    var year;
+    if (mode === 'manual') {
+      label = 'Manuell';
+      month = Number(period.month || 0);
+      year = Number(period.year || 0);
+      if (!month || !year) return label;
+    } else {
+      if (mode === 'automatic_previous_month') date.setMonth(date.getMonth() - 1);
+      month = date.getMonth() + 1;
+      year = date.getFullYear();
+    }
+    return label + ' · ' + String(month).padStart(2, '0') + '.' + year;
   }
   function renderCompanyList(companies){
     var list = document.querySelector('[data-company="company-list"]');
@@ -871,17 +1030,12 @@
     setText('[data-company="excel-updated"]', selectedExcel.updated || '--');
     setText('[data-company="smtp-status"]', smtp.label || 'Nicht konfiguriert');
     setText('[data-company="smtp-from"]', smtp.from || smtp.server || '-');
-    setText('[data-company="license-status"]', license.label || 'Nicht registriert');
     setText('[data-company="detail-name"]', state.selected_company_name || '-');
     setText('[data-company="detail-id"]', state.selected_company_id || '-');
-    setText('[data-company="detail-excel"]', selectedExcel.path || '-');
-    setText('[data-company="detail-output"]', output.path || '-');
+    setPathText('[data-company="detail-excel"]', selectedExcel.path || '-');
+    setPathText('[data-company="detail-output"]', output.path || '-');
     setText('[data-company="detail-period"]', formatCompanyPeriod(state.period));
     setText('[data-company="detail-mail-mode"]', (smtp.scope === 'custom' ? 'Eigene SMTP' : ('Global ' + (smtp.mode || 'smtp'))));
-    setText('[data-company="status-excel"]', selectedExcel.valid ? 'Bereit' : 'Offen');
-    setText('[data-company="status-output"]', output.valid ? 'Bereit' : 'Offen');
-    setText('[data-company="status-smtp"]', smtp.configured ? 'Bereit' : 'Offen');
-    setText('[data-company="status-license"]', license.label || 'Nicht registriert');
     applyCompanyEditState(state);
     renderCompanyList(state.companies || []);
     renderCompanySwitcher(state);
@@ -897,6 +1051,12 @@
     });
     document.querySelectorAll('[data-company-action="save-company"]').forEach(function(button){
       button.disabled = !state.selected_company_id;
+    });
+    document.querySelectorAll('[data-company-action="delete-company"]').forEach(function(button){
+      button.disabled = !state.selected_company_id || (state.companies || []).length <= 1;
+      button.title = button.disabled
+        ? 'Der letzte Mandant kann nicht gelöscht werden.'
+        : 'Aktiven Mandant löschen';
     });
     updateCompanyMailEditVisibility();
   }
@@ -953,6 +1113,7 @@
         loadShippingState();
         loadMassMessageState();
         loadDashboardState();
+        loadReportsState();
         setCompanyMessage(state.message || 'Aktiver Mandant wurde gewechselt.');
       });
       return;
@@ -966,6 +1127,7 @@
         loadShippingState();
         loadMassMessageState();
         loadDashboardState();
+        loadReportsState();
         setCompanyMessage('Excel-Datei wurde aktualisiert.');
       });
       return;
@@ -983,6 +1145,38 @@
         } catch (error) {
           setCompanyMessage('Mandant konnte nicht gespeichert werden.');
         }
+      });
+      return;
+    }
+    if (action === 'delete-company' && bridge.deleteCompany) {
+      var companyId = activeCompanyId();
+      var companyName = latestCompanyState && latestCompanyState.selected_company_name
+        ? latestCompanyState.selected_company_name
+        : companyId;
+      if (!companyId) {
+        setCompanyMessage('Bitte zuerst einen Mandant auswählen.');
+        return;
+      }
+      if (!window.confirm('Mandant "' + companyName + '" wirklich löschen?\n\nExcel- und Ausgabedateien auf dem Datenträger bleiben erhalten.')) {
+        setCompanyMessage('Löschen wurde abgebrochen.');
+        return;
+      }
+      setCompanyMessage('Mandant wird gelöscht...');
+      bridge.deleteCompany(companyId, function(payload){
+        var state = consumeCompanyPayload(payload);
+        if (!state || state.ok === false) {
+          setCompanyMessage((state && state.message) || 'Mandant konnte nicht gelöscht werden.');
+          return;
+        }
+        resetWorkflowUiForCompanyChange();
+        loadProcessingState();
+        loadValidationState();
+        loadShippingState();
+        loadMassMessageState();
+        loadDashboardState();
+        loadReportsState();
+        loadSettingsState();
+        setCompanyMessage(state.message || 'Mandant wurde gelöscht.');
       });
       return;
     }
@@ -1274,6 +1468,12 @@
   }
   function setSettingsTemplatesMessage(message){
     setText('[data-settings="templates-message"]', message);
+  }
+  function mailTextToHtml(value){
+    var text = String(value === undefined || value === null ? '' : value)
+      .replace(/\r\n?/g, '\n');
+    if (!text) return '';
+    return '<div>' + escapeHtml(text).replace(/\n/g, '<br>') + '</div>';
   }
   function getNestedValue(source, path){
     return path.split('.').reduce(function(current, key){
@@ -2629,9 +2829,11 @@
     if (!button) return;
     var label = button.querySelector('[data-shipping="primary-label"]');
     var status = (latestShippingState && latestShippingState.status) || {};
+    var metrics = (latestShippingState && latestShippingState.metrics) || {};
     var selected = selectedShippingList().length;
     var prepared = shippingPreparationReady();
     var realSendRunning = !!status.running && status.dry_run === false;
+    var realSendFinished = !status.running && !!status.finished && status.dry_run === false && Number(metrics.sent || 0) > 0;
     var action = prepared ? 'send-now' : 'start-dry-run';
     var text = prepared ? 'Jetzt senden' : 'Versand vorbereiten';
     var title = prepared ? 'Ausgewählte E-Mails prüfen und senden' : 'Versand für ausgewählte Empfänger vorbereiten';
@@ -2639,6 +2841,9 @@
     if (status.running) {
       text = realSendRunning ? 'Versand läuft...' : 'Vorbereitung läuft...';
       title = realSendRunning ? 'E-Mails werden versendet' : 'Versand wird vorbereitet';
+    } else if (realSendFinished) {
+      text = 'Versand abgeschlossen';
+      title = status.message || 'E-Mail Versand wurde abgeschlossen';
     } else if (!selected) {
       title = 'Bitte mindestens einen sendbaren Mitarbeiter auswählen';
     } else if (!status.can_send) {
@@ -2647,7 +2852,7 @@
 
     button.setAttribute('data-shipping-action', action);
     button.classList.toggle('danger-send', prepared || realSendRunning);
-    button.disabled = !!status.running || !status.can_send || selected < 1;
+    button.disabled = !!status.running || realSendFinished || !status.can_send || selected < 1;
     button.classList.toggle('soft-disabled', button.disabled);
     button.title = title;
     if (label) label.textContent = text;
@@ -2668,6 +2873,8 @@
       setText('[data-shipping="selection-message"]', 'Auswahl geändert. Versand erneut vorbereiten.');
     } else if (status.running) {
       setText('[data-shipping="selection-message"]', status.dry_run === false ? 'E-Mails werden versendet.' : 'Anhänge und Empfänger werden geprüft.');
+    } else if (status.finished && status.dry_run === false) {
+      setText('[data-shipping="selection-message"]', status.message || 'E-Mail Versand wurde abgeschlossen.');
     } else if (shippingPreparationReady()) {
       setText('[data-shipping="selection-message"]', 'Vorbereitung abgeschlossen. Versand kann geprüft werden.');
     } else if (!selected) {
@@ -2760,12 +2967,19 @@
     var start = (currentShippingPage - 1) * shippingPageSize;
     var visibleRows = rows.slice(start, start + shippingPageSize);
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="8">Keine Versanddaten vorhanden. Erst Prüfung ausführen oder Versand vorbereiten.</td></tr>';
+      var emptyMessages = {
+        queue: 'Keine Einträge in der Warteschlange.',
+        sent: 'Noch keine E-Mails gesendet.',
+        error: 'Keine Versandfehler vorhanden.',
+        drafts: 'Keine Entwürfe vorhanden.'
+      };
+      tbody.innerHTML = '<tr><td colspan="8">' + escapeHtml(emptyMessages[shippingViewFilter] || 'Keine Versanddaten vorhanden.') + '</td></tr>';
       setText('[data-shipping="table-footer"]', 'Zeige 0 Einträge');
       setText('[data-shipping="page-current"]', '1');
       updateShippingPagination(0, 1);
       updateShippingSelectionMaster(rows);
       applyShippingDetail(null);
+      updateShippingSelectionSummary();
       return;
     }
     tbody.innerHTML = visibleRows.map(function(row, index){
@@ -2811,16 +3025,48 @@
   }
   function applyShippingState(state){
     if (!workflowStateMatchesActiveCompany(state)) return;
-    latestShippingState = state || null;
-    syncShippingSelectionDefaults();
     var metrics = (state && state.metrics) || {};
     var status = (state && state.status) || {};
+    var companyId = String(state && state.company && state.company.id || '');
     var total = Number(metrics.total || 0);
     var ready = Number(metrics.ready || 0);
     var sent = Number(metrics.sent || 0);
     var queued = Number(metrics.queued || 0);
     var errors = Number(metrics.errors || 0);
     var exported = Number(metrics.exported || 0);
+
+    if (
+      status.running &&
+      shippingTerminalState &&
+      shippingTerminalState.companyId === companyId
+    ) {
+      return;
+    }
+
+    // Sent/error rows only arrive after the worker has completed. Normalize a
+    // stale running payload in case its terminal signal reached WebChannel first.
+    if (status.running && total > 0 && queued === 0 && exported === 0 && (sent > 0 || errors > 0)) {
+      status = Object.assign({}, status, {
+        running: false,
+        finished: true,
+        dry_run: false,
+        current_step: 'Versand abgeschlossen',
+        progress: 100,
+        message: 'Versand abgeschlossen. ' + sent + ' E-Mails wurden gesendet.'
+      });
+      state = Object.assign({}, state, { status: status });
+    }
+
+    if (!status.running && (status.finished || status.failed)) {
+      shippingTerminalState = {
+        companyId: companyId,
+        failed: !!status.failed,
+        dryRun: status.dry_run !== false
+      };
+    }
+
+    latestShippingState = state || null;
+    syncShippingSelectionDefaults();
     var readyPercent = total ? Math.round((ready / total) * 100) : 0;
     var sentPercent = total ? Math.round((sent / total) * 100) : 0;
     var queuedPercent = total ? Math.round((queued / total) * 100) : 0;
@@ -2879,10 +3125,26 @@
     });
   }
   function loadReportsState(){
-    loadDashboardState();
-    loadValidationState();
-    loadShippingState();
-    updateReportsScreen();
+    var bridge = window.lohnmailBridge;
+    if (!bridge || !bridge.getReportsState) {
+      updateReportsScreen();
+      return;
+    }
+    bridge.getReportsState(function(payload){
+      try {
+        var state = JSON.parse(payload || '{}');
+        if (!workflowStateMatchesActiveCompany(state)) return;
+        latestReportsState = state;
+        if (selectedReportId && !reportRows().some(function(row){ return row.id === selectedReportId; })) {
+          selectedReportId = '';
+          selectedReportKind = '';
+        }
+        updateReportsScreen();
+      } catch (error) {
+        console.warn('Berichte state konnte nicht verarbeitet werden', error);
+        setReportsMessage('Berichte konnten nicht geladen werden.');
+      }
+    });
   }
   function startShippingDryRun(){
     var bridge = window.lohnmailBridge;
@@ -2890,12 +3152,11 @@
       setShippingMessage('Bridge ist noch nicht bereit.');
       return;
     }
+    shippingTerminalState = null;
     bridge.startShippingDryRun(function(payload){
-      var state = consumeShippingPayload(payload);
-      if (state && state.status && state.status.finished && state.status.dry_run !== false) {
-        shippingSelectionDirty = false;
-        updateShippingSelectionSummary();
-      }
+      // State updates arrive through shippingStateChanged/shippingFinished.
+      // Applying this start response can overwrite a fast finished signal.
+      void payload;
     });
   }
   function setShippingPreviewText(key, value){
@@ -2988,12 +3249,16 @@
     }
     var confirmButton = document.querySelector('[data-shipping-send-action="confirm"]');
     if (confirmButton) confirmButton.disabled = true;
+    shippingTerminalState = null;
     setShippingMessage('E-Mail Versand wird gestartet...');
     setShippingPreviewText('message', 'E-Mail Versand wird gestartet...');
     bridge.startSelectedShippingSend(JSON.stringify(selected), function(payload){
       if (confirmButton) confirmButton.disabled = false;
       closeShippingSendModal();
-      consumeShippingPayload(payload);
+      // The bridge already emitted this state. A short send can finish before
+      // this callback runs, so reapplying the start payload would restore
+      // running=true after shippingFinished.
+      void payload;
       loadDashboardState();
       loadReportsState();
     });
@@ -3561,6 +3826,13 @@
         });
       });
     });
+    var mailTextField = document.querySelector('[data-settings-field="mail_text.body"]');
+    var mailHtmlField = document.querySelector('[data-settings-field="mail_text.body_html"]');
+    if (mailTextField && mailHtmlField) {
+      mailTextField.addEventListener('input', function(){
+        mailHtmlField.value = mailTextToHtml(mailTextField.value);
+      });
+    }
     document.querySelectorAll('[data-mass-action]').forEach(function(button){
       button.addEventListener('click', function(event){
         event.preventDefault();

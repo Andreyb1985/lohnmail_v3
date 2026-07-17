@@ -158,6 +158,34 @@ class LicenseManager:
         response = self.purchase_session(email=email, company_name=company_name)
         return str(response.get("url") or "")
 
+    def update_licensee(
+        self,
+        name: str = "",
+        email: str = "",
+        address: str = "",
+        company_number: str = "",
+    ) -> dict:
+        state = self.load_state()
+        license_key = str(state.get("license_key") or "").strip()
+        if not license_key:
+            raise RuntimeError("Keine Serverlizenz zum Synchronisieren vorhanden.")
+        response = self._post(
+            "/api/license/check",
+            {
+                "action": "update_licensee",
+                "license_key": license_key,
+                "machine_id": state["machine_id"],
+                "app_version": self.app_version(),
+                "licensee_name": name,
+                "licensee_email": email,
+                "licensee_address": address,
+                "licensee_company_number": company_number,
+            },
+        )
+        state = self._merge_server_response(state, response)
+        self._save_state(state)
+        return state
+
     def portal_url(self) -> str:
         state = self.load_state()
         response = self._post(

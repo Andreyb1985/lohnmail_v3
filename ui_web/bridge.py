@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from copy import deepcopy
 from datetime import datetime
@@ -135,6 +136,7 @@ class WebBridge(QObject):
         "missing": "ohne_email_gesamt.pdf",
         "send": "send_report.xlsx",
     }
+    REPORT_INDEX_PATH = GESOB_DIR / "lohnmail_reports_index.json"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -242,6 +244,10 @@ class WebBridge(QObject):
         return json.dumps(self._shipping_payload(load_settings()), ensure_ascii=False)
 
     @Slot(result=str)
+    def getReportsState(self) -> str:
+        return json.dumps(self._reports_payload(load_settings()), ensure_ascii=False)
+
+    @Slot(result=str)
     def getMassMessageState(self) -> str:
         return json.dumps(self._mass_message_payload(self._settings_with_company_mail(load_settings())), ensure_ascii=False)
 
@@ -310,8 +316,34 @@ class WebBridge(QObject):
                 raise ValueError("Bitte eine gültige E-Mail-Adresse eingeben.")
             save_settings(settings)
             settings = load_settings()
+            manager = LicenseManager(settings)
+            license_state = manager.load_state()
+            if license_state.get("license_key"):
+                try:
+                    license_state = manager.update_licensee(
+                        name=str(licensee.get("name") or ""),
+                        email=str(licensee.get("email") or ""),
+                        address=str(licensee.get("address") or ""),
+                        company_number=str(licensee.get("company_number") or ""),
+                    )
+                except Exception as exc:
+                    return json.dumps(
+                        {
+                            "ok": False,
+                            "local_saved": True,
+                            "message": f"Lokal gespeichert, aber nicht mit dem Lizenzserver synchronisiert: {exc}",
+                            "state": self._license_payload(settings, state=license_state),
+                        },
+                        ensure_ascii=False,
+                    )
             return json.dumps(
-                {"ok": True, "message": "Lizenznehmer wurde gespeichert.", "state": self._license_payload(settings)},
+                {
+                    "ok": True,
+                    "message": "Lizenznehmer wurde gespeichert und mit dem Lizenzserver synchronisiert."
+                    if license_state.get("license_key")
+                    else "Lizenznehmer wurde lokal gespeichert.",
+                    "state": self._license_payload(settings, state=license_state),
+                },
                 ensure_ascii=False,
             )
         except Exception as exc:
@@ -737,6 +769,60 @@ class WebBridge(QObject):
                 ensure_ascii=False,
             )
 
+    @Slot(str, result=str)
+    def deleteCompany(self, company_id: str) -> str:
+        try:
+            if self._workflow_running():
+                raise ValueError("Ein Mandant kann während einer laufenden Prüfung oder eines Versands nicht gelöscht werden.")
+
+            requested_id = str(company_id or "").strip()
+            settings = load_settings()
+            companies = [
+                company
+                for company in settings.get("companies", [])
+                if isinstance(company, dict)
+            ]
+            if len(companies) <= 1:
+                raise ValueError("Der letzte Mandant kann nicht gelöscht werden.")
+
+            delete_index = next(
+                (
+                    index
+                    for index, company in enumerate(companies)
+                    if str(company.get("id", "") or "").strip() == requested_id
+                ),
+                -1,
+            )
+            if delete_index < 0:
+                raise ValueError("Der ausgewählte Mandant wurde nicht gefunden.")
+
+            deleted_company = companies.pop(delete_index)
+            settings["companies"] = companies
+            if str(settings.get("selected_company_id", "") or "").strip() == requested_id:
+                next_index = min(delete_index, len(companies) - 1)
+                settings["selected_company_id"] = str(companies[next_index].get("id", "") or "").strip()
+
+            save_settings(settings)
+            settings = load_settings()
+            self._reset_workflow_state()
+            self.processingStateChanged.emit(json.dumps(self._processing_payload(settings), ensure_ascii=False))
+            self.shippingStateChanged.emit(json.dumps(self._shipping_payload(settings), ensure_ascii=False))
+            self.massMessageStateChanged.emit(
+                json.dumps(self._mass_message_payload(self._settings_with_company_mail(settings)), ensure_ascii=False)
+            )
+            payload = self._company_payload(settings)
+            payload.update(
+                {
+                    "ok": True,
+                    "message": f"Mandant '{deleted_company.get('name', requested_id)}' wurde gelöscht.",
+                }
+            )
+            return json.dumps(payload, ensure_ascii=False)
+        except Exception as exc:
+            payload = self._company_payload(load_settings())
+            payload.update({"ok": False, "message": f"Mandant konnte nicht gelöscht werden: {exc}"})
+            return json.dumps(payload, ensure_ascii=False)
+
     @Slot(result=str)
     def chooseCompanyExcelInput(self) -> str:
         self.chooseExcelInput()
@@ -788,6 +874,26 @@ class WebBridge(QObject):
         export_path.write_text(csv_text, encoding="utf-8-sig")
         return json.dumps({"ok": True, "path": str(export_path)}, ensure_ascii=False)
 
+    @Slot(str, str, result=str)
+    def exportReportsCsv(self, csv_text: str, filename: str) -> str:
+        allowed, state = LicenseManager(load_settings()).require_action("export")
+        if not allowed:
+            return json.dumps({"ok": False, "message": state.get("last_message", "Lizenz erforderlich."), "path": ""}, ensure_ascii=False)
+
+        settings = load_settings()
+        company_id = self._active_company_id(settings)
+        if not company_id:
+            return json.dumps({"ok": False, "message": "Bitte zuerst einen Mandanten auswählen.", "path": ""}, ensure_ascii=False)
+
+        safe_name = "".join(ch for ch in filename if ch.isalnum() or ch in {"-", "_", "."}).strip()
+        if not safe_name.lower().endswith(".csv"):
+            safe_name = f"{safe_name or 'lohnmail_berichte'}.csv"
+        export_dir = GESOB_DIR / "exports" / self._normalize_company_id(company_id)
+        export_dir.mkdir(parents=True, exist_ok=True)
+        export_path = export_dir / safe_name
+        export_path.write_text(csv_text, encoding="utf-8-sig")
+        return json.dumps({"ok": True, "path": str(export_path)}, ensure_ascii=False)
+
     @Slot(str, result=str)
     def openReport(self, kind: str) -> str:
         filename = self.REPORT_FILES.get(str(kind or "").strip())
@@ -799,6 +905,33 @@ class WebBridge(QObject):
         if not report.get("exists") or not path.is_file():
             return json.dumps({"ok": False, "message": "Bericht wurde noch nicht erstellt.", "path": ""}, ensure_ascii=False)
 
+        opened = QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        return json.dumps(
+            {
+                "ok": bool(opened),
+                "message": "Bericht geöffnet." if opened else "Bericht konnte nicht geöffnet werden.",
+                "path": str(path),
+            },
+            ensure_ascii=False,
+        )
+
+    @Slot(str, result=str)
+    def openReportEntry(self, report_id: str) -> str:
+        settings = load_settings()
+        target = next(
+            (
+                item
+                for item in self._reports_payload(settings).get("records", [])
+                if str(item.get("id", "") or "") == str(report_id or "")
+            ),
+            None,
+        )
+        if not target:
+            return json.dumps({"ok": False, "message": "Bericht gehört nicht zum aktiven Mandanten.", "path": ""}, ensure_ascii=False)
+
+        path = Path(str(target.get("path", "") or "")).expanduser()
+        if not target.get("exists") or not path.is_file() or not self._is_report_path_safe(path):
+            return json.dumps({"ok": False, "message": "Berichtsdatei wurde nicht gefunden.", "path": str(path)}, ensure_ascii=False)
         opened = QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
         return json.dumps(
             {
@@ -1251,6 +1384,16 @@ class WebBridge(QObject):
         dry_run_count = sum(1 for row in rows if row.get("status") == "Dry-Run")
         skipped_count = sum(1 for row in rows if row.get("status") in {"Keine E-Mail", "Keine Dateien"})
         error_count = sum(1 for row in rows if row.get("status") == "Fehler")
+
+        # Never expose a stale running flag after the worker has stopped.
+        if status.get("running") and not self._shipping_running:
+            status["running"] = False
+            if sent_count > 0 and ready_count == sent_count:
+                status["finished"] = True
+                status["dry_run"] = False
+                status["current_step"] = "Versand abgeschlossen"
+                status["progress"] = 100
+                status["message"] = f"Versand abgeschlossen. {sent_count} E-Mails wurden gesendet."
 
         if not status.get("running"):
             status["can_send"] = bool(inputs_ready and validation_ready)
@@ -1849,6 +1992,7 @@ class WebBridge(QObject):
         self._validation_company_id = self._processing_company_id
         self._validation_input_signature = self._processing_input_signature
         self._validation_state = self._build_validation_state(result, settings)
+        self._register_result_reports(result, settings, "Prüfung")
         self._shipping_company_id = ""
         self._shipping_input_signature = None
         self._shipping_status = self._idle_shipping_status()
@@ -1874,6 +2018,20 @@ class WebBridge(QObject):
         table_rows = result.get("table_rows", []) if isinstance(result, dict) else []
         dry_run = bool(summary.get("dry_run", True))
         completed_count = int(summary.get("prepared_or_sent_count", 0) or 0)
+        if not dry_run and self._shipping_source_rows:
+            source_rows = [row for row in self._shipping_source_rows if isinstance(row, dict)]
+            source_persnr = {str(row.get("PersNr", "") or "").strip() for row in source_rows}
+            summary = {
+                **summary,
+                "unique_persnr_count": max(
+                    int(summary.get("unique_persnr_count", 0) or 0),
+                    len(source_persnr - {""}),
+                ),
+                "missing_email_count": sum(
+                    1 for row in source_rows if str(row.get("Status", "") or "") == "Keine E-Mail"
+                ),
+            }
+            result = {**result, "summary": summary}
         self._shipping_running = False
         self._shipping_source_rows = [row for row in table_rows if isinstance(row, dict)]
         self._shipping_rows = [self._shipping_row(row) for row in table_rows if isinstance(row, dict)]
@@ -1894,6 +2052,7 @@ class WebBridge(QObject):
                 "run_dir": str(result.get("run_dir") or ""),
             },
         }
+        self._register_result_reports(result, settings, "Versand")
         serialized = self._emit_shipping_payload(settings)
         self.shippingFinished.emit(serialized)
 
@@ -2287,6 +2446,256 @@ class WebBridge(QObject):
     def _empty_report_state(filename: str) -> dict[str, str | bool]:
         return {"name": filename, "exists": False, "label": "Nicht erstellt", "path": ""}
 
+    @staticmethod
+    def _safe_report_source_name(value: str) -> str:
+        safe = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in str(value or "").strip())
+        return safe.strip("_") or "PDF_Ordner"
+
+    @staticmethod
+    def _report_kind_for_path(path: Path) -> str:
+        for kind, filename in WebBridge.REPORT_FILES.items():
+            if path.name.lower() == filename.lower():
+                return kind
+        return "other"
+
+    @staticmethod
+    def _report_type_for_path(path: Path) -> str:
+        suffix = path.suffix.lower().lstrip(".")
+        return "xlsx" if suffix in {"xlsx", "xls"} else (suffix or "file")
+
+    @staticmethod
+    def _report_timestamp(path: Path) -> str:
+        try:
+            return datetime.fromtimestamp(path.stat().st_mtime).astimezone().isoformat(timespec="seconds")
+        except OSError:
+            return ""
+
+    @staticmethod
+    def _report_size(path: Path) -> int:
+        try:
+            return int(path.stat().st_size)
+        except OSError:
+            return 0
+
+    @staticmethod
+    def _report_id(company_id: str, path: Path) -> str:
+        raw = f"{company_id}|{path.expanduser().absolute()}".encode("utf-8", errors="ignore")
+        return hashlib.sha256(raw).hexdigest()[:20]
+
+    @staticmethod
+    def _empty_report_metrics() -> dict[str, int]:
+        return {
+            "employees": 0,
+            "missing_email": 0,
+            "processed": 0,
+            "warnings": 0,
+            "errors": 0,
+            "sent": 0,
+            "delivered": 0,
+            "failed": 0,
+            "prepared": 0,
+        }
+
+    def _is_report_path_safe(self, path: Path) -> bool:
+        try:
+            resolved = path.expanduser().resolve()
+            root = GESOB_DIR.resolve()
+            return resolved.is_relative_to(root) and resolved.name in set(self.REPORT_FILES.values())
+        except (OSError, RuntimeError, ValueError):
+            return False
+
+    def _load_report_index(self) -> list[dict]:
+        if not self.REPORT_INDEX_PATH.is_file():
+            return []
+        try:
+            data = json.loads(self.REPORT_INDEX_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return []
+        records = data.get("records", []) if isinstance(data, dict) else []
+        return [item for item in records if isinstance(item, dict)]
+
+    def _save_report_index(self, records: list[dict]) -> None:
+        self.REPORT_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
+        payload = {"version": 1, "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"), "records": records}
+        temporary = self.REPORT_INDEX_PATH.with_suffix(".tmp")
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(self.REPORT_INDEX_PATH)
+
+    def _report_record(
+        self,
+        path: Path,
+        company_id: str,
+        company_name: str,
+        *,
+        run_id: str = "",
+        operation: str = "Importiert",
+        source: str = "folder",
+        metrics: dict | None = None,
+        dry_run: bool | None = None,
+    ) -> dict:
+        path = path.expanduser().absolute()
+        exists = path.is_file()
+        kind = self._report_kind_for_path(path)
+        titles = {
+            "audit": "Prüfbericht",
+            "missing": "PDF ohne E-Mail",
+            "send": "Versandbericht",
+            "other": path.stem,
+        }
+        return {
+            "id": self._report_id(company_id, path),
+            "company_id": company_id,
+            "company_name": company_name,
+            "run_id": run_id or path.parent.name,
+            "run_dir": str(path.parent),
+            "kind": kind,
+            "type": self._report_type_for_path(path),
+            "title": titles.get(kind, path.stem),
+            "filename": path.name,
+            "subtitle": operation,
+            "operation": operation,
+            "path": str(path),
+            "exists": exists,
+            "status": "ready" if exists else "missing",
+            "created_at": self._report_timestamp(path),
+            "size": self._report_size(path),
+            "owner": "LohnMail",
+            "source": source,
+            "dry_run": dry_run,
+            "metrics": {**self._empty_report_metrics(), **(metrics or {})},
+        }
+
+    def _legacy_run_matches_company(self, run_dir: Path, settings: dict) -> bool:
+        ui_settings = settings.get("ui", {}) if isinstance(settings, dict) else {}
+        raw_pdf_input = str(ui_settings.get("last_pdf_dir", "") or "").strip()
+        if not raw_pdf_input:
+            return False
+        pdf_input = Path(raw_pdf_input).expanduser()
+        source_name = self._safe_report_source_name(pdf_input.name)
+        match = re.match(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_(?:check_)?(.+)$", run_dir.name)
+        return bool(match and match.group(1) == source_name)
+
+    def _discover_report_records(self, settings: dict, records: list[dict]) -> tuple[list[dict], bool]:
+        company_id = self._active_company_id(settings)
+        if not company_id:
+            return records, False
+        company_name = get_company_name(settings, company_id)
+        companies = [item for item in settings.get("companies", []) if isinstance(item, dict)]
+        indexed_paths = {str(Path(str(item.get("path", "") or "")).expanduser().absolute()) for item in records}
+        changed = False
+
+        for filename in self.REPORT_FILES.values():
+            for path in GESOB_DIR.glob(f"*/{filename}"):
+                absolute = str(path.expanduser().absolute())
+                if absolute in indexed_paths or not path.is_file():
+                    continue
+                if len(companies) > 1 and not self._legacy_run_matches_company(path.parent, settings):
+                    continue
+                operation = "Versand" if path.name == "send_report.xlsx" else "Prüfung"
+                records.append(
+                    self._report_record(
+                        path,
+                        company_id,
+                        company_name,
+                        operation=operation,
+                        source="folder",
+                    )
+                )
+                indexed_paths.add(absolute)
+                changed = True
+        return records, changed
+
+    def _register_result_reports(self, result: dict, settings: dict, operation: str) -> None:
+        company_id = self._active_company_id(settings)
+        if not company_id or not isinstance(result, dict):
+            return
+        company_name = get_company_name(settings, company_id)
+        summary = result.get("summary", {}) if isinstance(result.get("summary"), dict) else {}
+        table_rows = result.get("table_rows", []) if isinstance(result.get("table_rows"), list) else []
+        dry_run = bool(summary.get("dry_run", False))
+        sent = 0 if dry_run else int(summary.get("prepared_or_sent_count", 0) or 0)
+        failed = int(summary.get("failed_count", 0) or 0)
+        metrics = {
+            "employees": int(summary.get("unique_persnr_count", len(table_rows)) or 0),
+            "missing_email": int(summary.get("missing_email_count", 0) or 0),
+            "processed": len(table_rows),
+            "warnings": int(summary.get("missing_email_count", 0) or 0) + int(summary.get("missing_files_count", 0) or 0),
+            "errors": int(summary.get("invalid_pdf_files", 0) or 0) + int(summary.get("unreadable_pdf_files", 0) or 0) + failed,
+            "sent": sent,
+            "delivered": max(0, sent - failed),
+            "failed": failed,
+            "prepared": int(summary.get("prepared_or_sent_count", 0) or 0) if dry_run else 0,
+        }
+        run_id = str(result.get("run_id", "") or "")
+        candidates = {
+            "audit_path": result.get("audit_path"),
+            "missing_pdf_path": result.get("missing_pdf_path"),
+            "send_report_path": result.get("send_report_path"),
+        }
+        records = self._load_report_index()
+        by_id = {str(item.get("id", "") or ""): item for item in records}
+        for raw_path in candidates.values():
+            path = Path(str(raw_path or "")).expanduser()
+            if not path.is_file() or not self._is_report_path_safe(path):
+                continue
+            record = self._report_record(
+                path,
+                company_id,
+                company_name,
+                run_id=run_id,
+                operation=operation,
+                source="workflow",
+                metrics=metrics,
+                dry_run=dry_run if operation == "Versand" else None,
+            )
+            by_id[record["id"]] = record
+        self._save_report_index(list(by_id.values()))
+
+    def _reports_payload(self, settings: dict) -> dict:
+        company_id = self._active_company_id(settings)
+        records = self._load_report_index()
+        records, changed = self._discover_report_records(settings, records)
+        if changed:
+            self._save_report_index(records)
+
+        active_records = []
+        for item in records:
+            if str(item.get("company_id", "") or "") != company_id:
+                continue
+            path = Path(str(item.get("path", "") or "")).expanduser()
+            normalized = {**item}
+            normalized["exists"] = bool(path.is_file() and self._is_report_path_safe(path))
+            normalized["status"] = "ready" if normalized["exists"] else "missing"
+            normalized["size"] = self._report_size(path) if normalized["exists"] else int(item.get("size", 0) or 0)
+            raw_metrics = item.get("metrics", {}) if isinstance(item.get("metrics"), dict) else {}
+            normalized["metrics"] = {**self._empty_report_metrics(), **raw_metrics}
+            if item.get("operation") == "Versand" and "missing_email" not in raw_metrics:
+                normalized["metrics"]["missing_email"] = int(raw_metrics.get("warnings", 0) or 0)
+            active_records.append(normalized)
+        active_records.sort(key=lambda item: str(item.get("created_at", "") or ""), reverse=True)
+
+        latest = {}
+        for kind in self.REPORT_FILES:
+            record = next((item for item in active_records if item.get("kind") == kind and item.get("exists")), None)
+            latest[kind] = (
+                {
+                    "name": record.get("filename", self.REPORT_FILES[kind]),
+                    "exists": True,
+                    "label": self._format_mtime(Path(str(record.get("path", "") or ""))),
+                    "path": record.get("path", ""),
+                    "id": record.get("id", ""),
+                }
+                if record
+                else self._empty_report_state(self.REPORT_FILES[kind])
+            )
+        return {
+            "company": {"id": company_id, "name": get_company_name(settings, company_id)},
+            "output_dir": str(GESOB_DIR),
+            "records": active_records,
+            "latest": latest,
+            "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        }
+
     def _report_state_from_path(self, raw_path: str, filename: str) -> dict[str, str | bool]:
         path = Path(str(raw_path or "")).expanduser()
         if not path.is_file():
@@ -2316,6 +2725,10 @@ class WebBridge(QObject):
         ):
             raw_path = self._shipping_status.get("reports", {}).get("send_report_path", "")
             return self._report_state_from_path(str(raw_path or ""), filename)
+        kind = self._report_kind_for_path(Path(filename))
+        archived = self._reports_payload(settings).get("latest", {}).get(kind, {})
+        if archived.get("exists"):
+            return archived
         return self._empty_report_state(filename)
 
     def _current_reports_state(self, settings: dict) -> dict[str, dict[str, str | bool]]:

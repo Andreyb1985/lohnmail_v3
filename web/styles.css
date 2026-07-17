@@ -721,7 +721,8 @@ input, input:focus, input:focus-visible {
   height: 14px;
 }
 .file-dot.pdf { background: #feecec; color: #ef4444; }
-.file-dot.xls { background: #e3f8ea; color: #008357; }
+.file-dot.xls,
+.file-dot.xlsx { background: #e3f8ea; color: #008357; }
 .state {
   display: inline-flex;
   align-items: center;
@@ -1149,7 +1150,10 @@ input, input:focus, input:focus-visible {
 .report-metric.processed > span[data-icon] { background: #dcfce7; color: #16a34a; }
 .report-metric.mailed > span[data-icon] { background: #dbeafe; color: #1d6bed; }
 .report-metric.delivered > span[data-icon] { background: #ede9fe; color: #7c3aed; }
+.report-metric.missing-email > span[data-icon] { background: #fff4db; color: #f59e0b; }
+.report-metric.employees > span[data-icon] { background: #dcfce7; color: #16a34a; }
 .report-metric.failed > span[data-icon] { background: #fff4db; color: #f59e0b; }
+.report-metric.rate > span[data-icon] { background: #ede9fe; color: #7c3aed; }
 .report-metric.exported > span[data-icon] { background: #eaf3ff; color: #1d6bed; }
 .reports-toolbar {
   display: grid;
@@ -1166,6 +1170,9 @@ input, input:focus, input:focus-visible {
   grid-template-columns: minmax(0, 1fr) 390px;
   gap: 16px;
   align-items: stretch;
+}
+.reports-grid.detail-hidden {
+  grid-template-columns: minmax(0, 1fr);
 }
 .reports-main {
   display: grid;
@@ -1219,6 +1226,9 @@ input, input:focus, input:focus-visible {
 .report-chart .line {
   fill: none;
   stroke-width: 2.4;
+}
+.report-chart path {
+  transition: opacity .18s ease;
 }
 .report-chart .green { stroke: #16a34a; fill: #16a34a; }
 .report-chart .blue { stroke: #1d6bed; fill: #1d6bed; }
@@ -1371,6 +1381,9 @@ input, input:focus, input:focus-visible {
   display: flex;
   flex-direction: column;
 }
+.report-details[hidden] {
+  display: none;
+}
 .report-detail-scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -1500,6 +1513,16 @@ input, input:focus, input:focus-visible {
   color: #008357;
 }
 @media (max-width: 1480px) {
+  .report-metric {
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 10px;
+    padding: 14px;
+  }
+  .report-metric > span[data-icon] {
+    width: 44px;
+    height: 44px;
+  }
+  .report-metric small { font-size: 11px; }
   .reports-grid { grid-template-columns: minmax(0, 1fr) 350px; }
   .report-details { width: 350px; min-width: 350px; max-width: 350px; }
   .reports-table th:nth-child(1), .reports-table td:nth-child(1) { width: 100px; }
@@ -1514,7 +1537,7 @@ input, input:focus, input:focus-visible {
 @media (max-width: 1320px) {
   .report-metrics { grid-template-columns: repeat(3, 1fr); }
   .reports-toolbar { grid-template-columns: 1fr 1fr; }
-  .reports-toolbar span { display: none; }
+  .reports-toolbar > span:empty { display: none; }
   .reports-toolbar .table-search,
   .reports-toolbar .secondary-action { width: 100%; }
   .reports-grid { grid-template-columns: 1fr; }
@@ -1952,7 +1975,7 @@ input, input:focus, input:focus-visible {
 }
 .company-metrics{
   display:grid;
-  grid-template-columns:repeat(4,minmax(0,1fr));
+  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
   gap:14px;
   margin-bottom:16px;
 }
@@ -1978,7 +2001,6 @@ input, input:focus, input:focus-visible {
 .company-metric.active>span[data-icon]{background:#dcfce7;color:#16a34a}
 .company-metric.excel>span[data-icon]{background:#dbeafe;color:#1d6bed}
 .company-metric.mail>span[data-icon]{background:#fff4db;color:#f59e0b}
-.company-metric.license>span[data-icon]{background:#ede9fe;color:#7c3aed}
 .company-metric small,
 .company-metric strong,
 .company-metric em{
@@ -2010,9 +2032,15 @@ input, input:focus, input:focus-visible {
   align-items:start;
 }
 .company-list-card,
-.company-settings-card,
-.company-status-card{
+.company-settings-card{
   min-width:0;
+}
+.company-list-card{
+  grid-row:1 / span 2;
+}
+.company-settings-card,
+.company-edit-card{
+  grid-column:2;
 }
 .company-title-actions{
   display:flex;
@@ -2112,35 +2140,49 @@ input, input:focus, input:focus-visible {
   padding:0 12px;
   font-size:13px;
 }
-.company-field-grid,
-.company-status-list{
+.company-field-grid{
   display:grid;
   gap:10px;
 }
-.company-field-grid div,
-.company-status-list div{
+.company-field-grid div{
   min-height:42px;
   display:grid;
-  grid-template-columns:20px minmax(120px,.55fr) minmax(0,1fr);
+  grid-template-columns:20px minmax(160px,180px) minmax(0,1fr);
   gap:10px;
   align-items:center;
   border-bottom:1px solid #edf2f7;
   color:#64748b;
 }
-.company-field-grid span[data-icon],
-.company-status-list span[data-icon]{
+.company-field-grid span[data-icon]{
   width:17px;
   height:17px;
   color:#008357;
 }
-.company-field-grid b,
-.company-status-list b{
+.company-field-grid b{
   color:#334155;
   min-width:0;
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
-  text-align:right;
+  text-align:left;
+}
+.company-field-grid .company-path-value{
+  display:flex;
+  align-items:center;
+  overflow:hidden;
+}
+.company-path-directory{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.company-path-filename{
+  flex:0 0 auto;
+  max-width:62%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
 }
 .company-actions{
   display:grid;
@@ -2224,6 +2266,22 @@ input, input:focus, input:focus-visible {
 .company-mail-edit .secondary-action{
   justify-self:start;
   height:38px;
+}
+.company-delete-action{
+  margin-top:14px;
+  padding-top:14px;
+  border-top:1px solid #edf2f7;
+  display:flex;
+  justify-content:flex-end;
+}
+.company-delete-action .danger-outline{
+  width:auto;
+  min-width:168px;
+  padding:0 16px;
+}
+.company-delete-action .danger-outline:disabled{
+  opacity:.45;
+  cursor:default;
 }
 .company-modal[hidden]{
   display:none;
@@ -2597,9 +2655,10 @@ input, input:focus, input:focus-visible {
   color:#fff;
 }
 @media(max-width:1320px){
-  .company-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
   .company-grid{grid-template-columns:1fr}
-  .company-list-card{grid-row:auto}
+  .company-list-card,
+  .company-settings-card,
+  .company-edit-card{grid-column:auto;grid-row:auto}
 }
 @media(max-width:760px){
   .company-metrics{grid-template-columns:1fr}
@@ -2613,10 +2672,8 @@ input, input:focus, input:focus-visible {
   .shipping-send-notes{grid-template-columns:1fr}
   .shipping-send-modal-actions{justify-content:stretch}
   .shipping-send-modal-actions button{flex:1 1 100%}
-  .company-field-grid div,
-  .company-status-list div{grid-template-columns:20px minmax(0,1fr)}
-  .company-field-grid b,
-  .company-status-list b{grid-column:2;text-align:left}
+  .company-field-grid div{grid-template-columns:20px minmax(0,1fr)}
+  .company-field-grid b{grid-column:2;text-align:left}
 }
 
 /* WebEngine Lizenzen screen */

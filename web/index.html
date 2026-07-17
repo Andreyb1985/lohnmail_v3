@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LohnMail v2 — Enterprise Edition</title>
-  <link rel="stylesheet" href="styles.css?v=shipping-cta-20260714-001" />
+  <link rel="stylesheet" href="styles.css?v=company-config-20260717-002" />
 </head>
 <body>
   <div class="app-shell">
@@ -675,34 +675,34 @@
               <h1>Berichte</h1>
               <p>Übersicht und Analyse Ihrer Verarbeitung und Versandaktivitäten.</p>
             </div>
-            <button class="secondary-action" data-reports-action="export-csv"><span data-icon="report"></span>Export</button>
+            <button class="secondary-action" data-reports-action="export-all-csv"><span data-icon="report"></span>Export</button>
           </div>
 
           <section class="report-metrics">
-            <article class="report-metric processed">
-              <span data-icon="doc"></span>
-              <div><small>Verarbeitungen</small><strong data-reports-metric="processed">0</strong><em data-reports-metric="processed-label">Aktuelle Sitzung</em></div>
-            </article>
             <article class="report-metric mailed">
               <span data-icon="send"></span>
-              <div><small>Gesendete E-Mails</small><strong data-reports-metric="sent">0</strong><em data-reports-metric="sent-label">Aktuelle Sitzung</em></div>
+              <div><small>Versendete Abrechnungen</small><strong data-reports-metric="sent">0</strong><em data-reports-metric="sent-label">Noch kein Versand durchgeführt</em></div>
             </article>
-            <article class="report-metric delivered">
-              <span data-icon="checkcircle"></span>
-              <div><small>Erfolgreich zugestellt</small><strong data-reports-metric="delivered">0</strong><em data-reports-metric="delivered-label">Noch nicht versendet</em></div>
+            <article class="report-metric missing-email">
+              <span data-icon="warning"></span>
+              <div><small>Mitarbeiter ohne E-Mail</small><strong data-reports-metric="missing-email">0</strong><em data-reports-metric="missing-email-label">Keine Versanddaten</em></div>
+            </article>
+            <article class="report-metric employees">
+              <span data-icon="users"></span>
+              <div><small>Mitarbeiter gesamt</small><strong data-reports-metric="employees">0</strong><em data-reports-metric="employees-label">Keine Versanddaten</em></div>
             </article>
             <article class="report-metric failed">
               <span data-icon="warning"></span>
               <div><small>Fehlgeschlagen</small><strong data-reports-metric="failed">0</strong><em data-reports-metric="failed-label">Keine Fehler</em></div>
             </article>
-            <article class="report-metric exported">
-              <span data-icon="arrow-up-right"></span>
-              <div><small>Exportierte Dateien</small><strong data-reports-metric="exported">0</strong><em data-reports-metric="exported-label">Berichte</em></div>
+            <article class="report-metric rate">
+              <span data-icon="checkcircle"></span>
+              <div><small>Versandquote</small><strong data-reports-metric="rate">0%</strong><em data-reports-metric="rate-label">Keine Versanddaten</em></div>
             </article>
           </section>
 
           <section class="reports-toolbar">
-            <button class="toolbar-btn" data-reports-action="period"><span data-icon="clock"></span><span data-reports="period-label">Aktuelle Sitzung</span></button>
+            <button class="toolbar-btn active" data-reports-action="period"><span data-icon="clock"></span><span data-reports="period-label">Letzter Versand</span></button>
             <button class="toolbar-btn" data-reports-action="type"><span data-reports="type-label">Alle Typen</span>⌄</button>
             <button class="toolbar-btn" data-reports-action="status"><span data-reports="status-label">Alle Status</span>⌄</button>
             <label class="table-search"><input data-reports="search" placeholder="In Berichten suchen..." /><span data-icon="search"></span></label>
@@ -723,7 +723,7 @@
           <section class="reports-grid">
             <div class="reports-main">
               <article class="card report-chart-card">
-                <div class="card-title-row"><h2>Verarbeitung & Versand Verlauf</h2><button data-reports-action="chart-mode">Sitzung⌄</button></div>
+                <div class="card-title-row"><h2>Verarbeitung & Versand Verlauf</h2><button data-reports-action="chart-mode" data-reports="chart-mode-label">Alle⌄</button></div>
                 <div class="chart-legend">
                   <span class="green-line">Verarbeitungen</span>
                   <span class="blue-line">Gesendete E-Mails</span>
@@ -733,15 +733,15 @@
                 <div class="report-chart">
                   <div class="chart-gridlines"><i></i><i></i><i></i><i></i></div>
                   <svg viewBox="0 0 760 190" preserveAspectRatio="none" aria-hidden="true">
-                    <path class="area green" d="M0 150 C40 138 60 126 92 116 S160 88 204 102 S278 128 320 94 S390 82 430 62 S520 98 560 72 S636 118 680 104 S730 78 760 86 L760 190 L0 190 Z"></path>
-                    <path class="line green" d="M0 150 C40 138 60 126 92 116 S160 88 204 102 S278 128 320 94 S390 82 430 62 S520 98 560 72 S636 118 680 104 S730 78 760 86"></path>
-                    <path class="area blue" d="M0 170 C48 158 72 142 112 132 S178 122 220 138 S278 148 318 116 S388 106 432 98 S506 132 548 102 S632 126 674 142 S724 122 760 126 L760 190 L0 190 Z"></path>
-                    <path class="line blue" d="M0 170 C48 158 72 142 112 132 S178 122 220 138 S278 148 318 116 S388 106 432 98 S506 132 548 102 S632 126 674 142 S724 122 760 126"></path>
-                    <path class="line purple" d="M0 184 C46 178 76 170 112 164 S178 166 218 174 S276 180 318 162 S386 166 430 146 S506 166 548 154 S632 168 674 176 S724 160 760 158"></path>
-                    <path class="line orange" d="M0 188 C80 186 134 188 198 188 S306 186 374 188 S474 190 544 184 S646 188 760 186"></path>
+                    <path class="area green" data-reports-chart="processed-area" d="M0 176 L760 176 L760 190 L0 190 Z"></path>
+                    <path class="line green" data-reports-chart="processed-line" d="M0 176 L760 176"></path>
+                    <path class="area blue" data-reports-chart="sent-area" d="M0 176 L760 176 L760 190 L0 190 Z"></path>
+                    <path class="line blue" data-reports-chart="sent-line" d="M0 176 L760 176"></path>
+                    <path class="line purple" data-reports-chart="delivered-line" d="M0 176 L760 176"></path>
+                    <path class="line orange" data-reports-chart="failed-line" d="M0 176 L760 176"></path>
                   </svg>
-                  <div class="chart-y"><span>1.000</span><span>750</span><span>500</span><span>250</span><span>0</span></div>
-                  <div class="chart-x"><span>15 Apr</span><span>20 Apr</span><span>25 Apr</span><span>30 Apr</span><span>05 Mai</span><span>10 Mai</span><span>15 Mai</span></div>
+                  <div class="chart-y" data-reports="chart-y"><span>1</span><span>1</span><span>1</span><span>0</span><span>0</span></div>
+                  <div class="chart-x" data-reports="chart-x"><span>Keine Daten</span></div>
                 </div>
               </article>
 
@@ -752,14 +752,10 @@
                     <tr><th>Datum</th><th>Typ</th><th>Titel</th><th>Status</th><th>Verarbeitung</th><th>Prüfung</th><th>Versand</th><th>Erstellt von</th><th>Aktionen</th></tr>
                   </thead>
                   <tbody data-reports="table-body">
-                    <tr class="selected"><td>15.05.2025 10:24</td><td><span class="file-dot xls"><span data-icon="doc"></span></span></td><td><b>Lohnabrechnung Mai 2025</b><small>Standard Verarbeitung</small></td><td><span class="state ready">Abgeschlossen</span></td><td><b>842 / 842</b><small>100%</small></td><td><b class="ok-text">0 Fehler</b><small>842 geprüft</small></td><td><b>842 / 842</b><small>100%</small></td><td>Max Admin</td><td><button><span data-icon="arrow-up-right"></span></button><button>...</button></td></tr>
-                    <tr><td>08.05.2025 09:18</td><td><span class="file-dot pdf"><span data-icon="send"></span></span></td><td><b>Lohnabrechnung April 2025</b><small>Standard Verarbeitung</small></td><td><span class="state ready">Abgeschlossen</span></td><td><b>815 / 815</b><small>100%</small></td><td><b class="warn-text">2 Warnungen</b><small>815 geprüft</small></td><td><b>813 / 815</b><small>99,8%</small></td><td>Max Admin</td><td><button><span data-icon="arrow-up-right"></span></button><button>...</button></td></tr>
-                    <tr><td>30.04.2025 14:32</td><td><span class="file-dot xls"><span data-icon="report"></span></span></td><td><b>Lohnabrechnung April 2025</b><small>Korrektur Verarbeitung</small></td><td><span class="state ready">Abgeschlossen</span></td><td><b>815 / 815</b><small>100%</small></td><td><b>0 Fehler</b><small>815 geprüft</small></td><td><b>815 / 815</b><small>100%</small></td><td>Max Admin</td><td><button><span data-icon="arrow-up-right"></span></button><button>...</button></td></tr>
-                    <tr><td>22.04.2025 11:05</td><td><span class="file-dot xls"><span data-icon="doc"></span></span></td><td><b>Lohnabrechnung März 2025</b><small>Standard Verarbeitung</small></td><td><span class="state ready">Abgeschlossen</span></td><td><b>798 / 798</b><small>100%</small></td><td><b class="warn-text">1 Warnung</b><small>798 geprüft</small></td><td><b>797 / 798</b><small>99,9%</small></td><td>Max Admin</td><td><button><span data-icon="arrow-up-right"></span></button><button>...</button></td></tr>
-                    <tr><td>15.04.2025 09:42</td><td><span class="file-dot pdf"><span data-icon="warning"></span></span></td><td><b>Lohnabrechnung März 2025</b><small>Test Verarbeitung</small></td><td><span class="state failed">Fehlgeschlagen</span></td><td><b>798 / 798</b><small>100%</small></td><td><b class="error-text">12 Fehler</b><small>798 geprüft</small></td><td><b class="error-text">0 / 798</b><small>0%</small></td><td>Max Admin</td><td><button><span data-icon="arrow-up-right"></span></button><button>...</button></td></tr>
+                    <tr><td colspan="9">Berichte werden geladen...</td></tr>
                   </tbody>
                 </table>
-                <div class="table-footer"><span data-reports="table-footer">Zeige 0 Einträge</span><div class="pagination"><button data-reports-action="page-prev" disabled>‹</button><button class="active" data-reports="page-current">1</button><button data-reports-action="page-next" disabled>›</button></div><button data-reports-action="page-size">10 pro Seite⌄</button></div>
+                <div class="table-footer"><span data-reports="table-footer">Zeige 0 Einträge</span><div class="pagination"><button data-reports-action="page-prev" disabled>‹</button><button class="active" data-reports="page-current">1</button><button data-reports-action="page-next" disabled>›</button></div><button data-reports-action="page-size" data-reports="page-size-label">10 pro Seite⌄</button></div>
               </article>
             </div>
 
@@ -822,10 +818,6 @@
               <span data-icon="mail"></span>
               <div><small>SMTP</small><strong data-company="smtp-status">Nicht konfiguriert</strong><em data-company="smtp-from">-</em></div>
             </article>
-            <article class="company-metric license">
-              <span data-icon="key"></span>
-              <div><small>Lizenz</small><strong data-company="license-status">Nicht registriert</strong><em>Lokale Konfiguration</em></div>
-            </article>
           </section>
 
           <section class="company-grid">
@@ -846,9 +838,9 @@
               <div class="company-field-grid">
                 <div><span data-icon="building"></span><span>Mandant</span><b data-company="detail-name">-</b></div>
                 <div><span data-icon="key"></span><span>Mandanten-ID</span><b data-company="detail-id">-</b></div>
-                <div><span data-icon="table"></span><span>Excel-Datei</span><b data-company="detail-excel">-</b></div>
-                <div><span data-icon="report"></span><span>Ausgabeordner</span><b data-company="detail-output">-</b></div>
-                <div><span data-icon="clock"></span><span>Abrechnungsperiode</span><b data-company="detail-period">-</b></div>
+                <div><span data-icon="table"></span><span>Excel-Datei</span><b class="company-path-value" data-company="detail-excel">-</b></div>
+                <div><span data-icon="report"></span><span>Ausgabeordner</span><b class="company-path-value" data-company="detail-output">-</b></div>
+                <div><span data-icon="clock"></span><span>Abrechnungsperiode (global)</span><b data-company="detail-period">-</b></div>
                 <div><span data-icon="mail"></span><span>Mail-Modus</span><b data-company="detail-mail-mode">-</b></div>
               </div>
               <div class="company-actions">
@@ -879,17 +871,11 @@
                 </div>
                 <button class="secondary-action" data-company-action="test-company-mail"><span data-icon="mail"></span>Mandant SMTP testen</button>
               </div>
-            </article>
-
-            <article class="card company-status-card">
-              <h2>Systemstatus für Mandant</h2>
-              <div class="company-status-list">
-                <div><span data-icon="table"></span><span>Stammdaten-Datei</span><b data-company="status-excel">Offen</b></div>
-                <div><span data-icon="report"></span><span>Ausgabeordner</span><b data-company="status-output">Bereit</b></div>
-                <div><span data-icon="mail"></span><span>SMTP Absender</span><b data-company="status-smtp">Offen</b></div>
-                <div><span data-icon="key"></span><span>Lizenzstatus</span><b data-company="status-license">Nicht registriert</b></div>
+              <div class="company-delete-action">
+                <button class="danger-outline" data-company-action="delete-company"><span data-icon="x"></span>Mandant löschen</button>
               </div>
             </article>
+
           </section>
         </section>
 
@@ -1430,6 +1416,6 @@
   </div>
 
   <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
-  <script src="app.js?v=shipping-cta-20260714-001"></script>
+  <script src="app.js?v=company-config-20260717-002"></script>
 </body>
 </html>
