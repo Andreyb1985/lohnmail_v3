@@ -130,6 +130,115 @@ def _dedup_pdf_paths(pdf_files: list[Path]) -> list[Path]:
     return result
 
 
+def _pdf_visual_page_hashes(pdf_path: Path) -> list[str]:
+    """
+    Rendert jede PDF-Seite und bildet einen Hash der sichtbaren Pixel.
+
+    Ein reiner Seitenzaehler erkennt vertauschte Ressourcen, Schriften oder
+    Inhalte nicht. Der visuelle Hash stellt sicher, dass die zusammengefuehrte
+    Seite wirklich der jeweiligen Eingangsseite entspricht.
+    """
+    try:
+        doc = fitz.open(str(pdf_path))
+    except Exception as exc:
+        raise ValueError(f"PDF kann nicht fuer die Inhaltspruefung geoeffnet werden: {exc}") from exc
+
+    hashes: list[str] = []
+    try:
+        if doc.needs_pass:
+            raise ValueError("Passwortgeschuetzte PDF kann nicht zusammengefuehrt werden.")
+        if doc.page_count <= 0:
+            raise ValueError("PDF enthaelt keine Seiten.")
+
+        for page in doc:
+            pixmap = page.get_pixmap(
+                matrix=fitz.Matrix(1.0, 1.0),
+                colorspace=fitz.csGRAY,
+                alpha=False,
+                annots=True,
+            )
+            digest = hashlib.sha256()
+            digest.update(f"{pixmap.width}:{pixmap.height}:{pixmap.n}:".encode("ascii"))
+            digest.update(pixmap.samples)
+            hashes.append(digest.hexdigest())
+    except Exception as exc:
+        if isinstance(exc, ValueError):
+            raise
+        raise ValueError(f"PDF-Inhalt kann nicht geprueft werden: {exc}") from exc
+    finally:
+        doc.close()
+
+    return hashes
+
+
+def _merge_pdf_files_verified(pdf_files: list[Path], out_pdf: Path) -> dict:
+    """
+    Fuegt PDFs zusammen und veroeffentlicht das Ergebnis erst nach Inhaltspruefung.
+
+    Die PdfReader-Instanzen muessen bis nach writer.write() referenziert bleiben.
+    PyPDF2 verwaltet geklonte Objekte anhand der Reader-Identitaet; wird ein
+    Reader vorher freigegeben, kann Python dessen ID wiederverwenden und dadurch
+    Ressourcen einer frueheren Seite in eine spaetere Seite einsetzen.
+    """
+    _require_pdf_support()
+
+    files = _dedup_pdf_paths(pdf_files)
+    if not files:
+        raise ValueError("Keine PDF-Dateien zum Zusammenfuehren vorhanden.")
+
+    expected_hashes: list[str] = []
+    for pdf_path in files:
+        try:
+            expected_hashes.extend(_pdf_visual_page_hashes(pdf_path))
+        except Exception as exc:
+            raise ValueError(f"{pdf_path.name}: {exc}") from exc
+
+    writer = PdfWriter()
+    readers: list = []
+    for pdf_path in files:
+        reader = PdfReader(str(pdf_path))
+        readers.append(reader)
+        for page in reader.pages:
+            writer.add_page(page)
+
+    out_pdf.parent.mkdir(parents=True, exist_ok=True)
+    temp_pdf = out_pdf.with_name(f".{out_pdf.stem}.lohnmail-tmp{out_pdf.suffix}")
+    temp_pdf.unlink(missing_ok=True)
+
+    try:
+        with temp_pdf.open("wb") as f:
+            writer.write(f)
+
+        actual_hashes = _pdf_visual_page_hashes(temp_pdf)
+        max_pages = max(len(expected_hashes), len(actual_hashes))
+        mismatch_pages = [
+            index + 1
+            for index in range(max_pages)
+            if index >= len(expected_hashes)
+            or index >= len(actual_hashes)
+            or expected_hashes[index] != actual_hashes[index]
+        ]
+        if mismatch_pages:
+            page_list = ", ".join(str(page) for page in mismatch_pages[:20])
+            if len(mismatch_pages) > 20:
+                page_list += ", ..."
+            raise RuntimeError(
+                "PDF-Inhaltspruefung fehlgeschlagen. "
+                f"Abweichende Seite(n): {page_list}."
+            )
+
+        temp_pdf.replace(out_pdf)
+        return {
+            "expected_page_count": len(expected_hashes),
+            "merged_page_count": len(actual_hashes),
+            "content_check_ok": True,
+            "content_mismatch_pages": [],
+        }
+    finally:
+        temp_pdf.unlink(missing_ok=True)
+        readers.clear()
+
+
 def _email_map_from_records(email_records: dict[str, dict[str, str]]) -> dict[str, str]:
     return {
         persnr: str(record.get("Email", "") or "")
@@ -284,30 +393,21 @@ def build_missing_email_bundle(
             "duplicate_pdf_file_count": 0,
             "expected_page_count": 0,
             "merged_page_count": 0,
+            "content_check_ok": True,
+            "content_mismatch_pages": [],
             "details": details,
         }
 
-    writer = PdfWriter()
-    expected_page_count = 0
-
-    for _persnr, pdf_path, pages, _hash in file_rows:
-        reader = PdfReader(str(pdf_path))
-        expected_page_count += pages
-        for page in reader.pages:
-            writer.add_page(page)
-
-    out_pdf.parent.mkdir(parents=True, exist_ok=True)
-    with out_pdf.open("wb") as f:
-        writer.write(f)
-
-    merged_page_count = _count_pdf_pages(out_pdf)
+    merge_stats = _merge_pdf_files_verified(
+        [pdf_path for _persnr, pdf_path, _pages, _hash in file_rows],
+        out_pdf,
+    )
     duplicate_count = sum(1 for row in details if row.get("included") == "Nein")
 
     return {
         "pdf_file_count": len(file_rows),
         "duplicate_pdf_file_count": duplicate_count,
-        "expected_page_count": expected_page_count,
-        "merged_page_count": merged_page_count,
+        **merge_stats,
         "details": details,
     }
 
@@ -348,22 +448,7 @@ def _write_audit_compat(
 
 
 def _merge_employee_pdfs(pdf_files: list[Path], out_pdf: Path) -> None:
-    _require_pdf_support()
-
-    if not pdf_files:
-        raise ValueError("Keine PDF-Dateien zum Zusammenführen vorhanden.")
-
-    pdf_files = _dedup_pdf_paths(pdf_files)
-
-    writer = PdfWriter()
-    for pdf_path in pdf_files:
-        reader = PdfReader(str(pdf_path))
-        for page in reader.pages:
-            writer.add_page(page)
-
-    out_pdf.parent.mkdir(parents=True, exist_ok=True)
-    with out_pdf.open("wb") as f:
-        writer.write(f)
+    _merge_pdf_files_verified(pdf_files, out_pdf)
 
 
 def _encrypt_pdf(in_pdf: Path, out_pdf: Path, password: str) -> None:
@@ -471,7 +556,14 @@ def action_check(pdf_input: Path, excel_path: Path, progress_cb: ProgressCb = No
         "duplicate_bundle_pdf_files": bundle_stats["duplicate_pdf_file_count"],
         "expected_bundle_pages": bundle_stats["expected_page_count"],
         "actual_bundle_pages": bundle_stats["merged_page_count"],
-        "page_check_ok": bundle_stats["expected_page_count"] == bundle_stats["merged_page_count"],
+        "content_check_ok": bundle_stats["content_check_ok"],
+        "content_mismatch_pages": ", ".join(
+            str(page) for page in bundle_stats["content_mismatch_pages"]
+        ),
+        "page_check_ok": (
+            bundle_stats["expected_page_count"] == bundle_stats["merged_page_count"]
+            and bundle_stats["content_check_ok"]
+        ),
     }
 
     _p(progress_cb, "Audit-Datei wird erstellt…")
@@ -540,6 +632,7 @@ def action_check(pdf_input: Path, excel_path: Path, progress_cb: ProgressCb = No
         "duplicate_bundle_pdf_files": bundle_stats["duplicate_pdf_file_count"],
         "expected_bundle_pages": bundle_stats["expected_page_count"],
         "actual_bundle_pages": bundle_stats["merged_page_count"],
+        "content_check_ok": bundle_stats["content_check_ok"],
         "page_check_ok": validation["page_check_ok"],
     }
 
@@ -679,7 +772,14 @@ def action_send(
         "duplicate_bundle_pdf_files": bundle_stats["duplicate_pdf_file_count"],
         "expected_bundle_pages": bundle_stats["expected_page_count"],
         "actual_bundle_pages": bundle_stats["merged_page_count"],
-        "page_check_ok": bundle_stats["expected_page_count"] == bundle_stats["merged_page_count"],
+        "content_check_ok": bundle_stats["content_check_ok"],
+        "content_mismatch_pages": ", ".join(
+            str(page) for page in bundle_stats["content_mismatch_pages"]
+        ),
+        "page_check_ok": (
+            bundle_stats["expected_page_count"] == bundle_stats["merged_page_count"]
+            and bundle_stats["content_check_ok"]
+        ),
     }
     _write_audit_compat(
         out_path=audit_path,
@@ -807,6 +907,7 @@ def action_send(
         "duplicate_bundle_pdf_files": bundle_stats["duplicate_pdf_file_count"],
         "expected_bundle_pages": bundle_stats["expected_page_count"],
         "actual_bundle_pages": bundle_stats["merged_page_count"],
+        "content_check_ok": bundle_stats["content_check_ok"],
         "page_check_ok": validation["page_check_ok"],
         "prepared_or_sent_count": sent_count,
         "failed_count": failed_count,

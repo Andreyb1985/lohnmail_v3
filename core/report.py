@@ -102,6 +102,8 @@ def write_audit_check_xlsx(
             "duplicate_bundle_pdf_files",
             "expected_bundle_pages",
             "actual_bundle_pages",
+            "content_check_ok",
+            "content_mismatch_pages",
             "page_check_ok",
         ]
         labels = {
@@ -115,7 +117,9 @@ def write_audit_check_xlsx(
             "duplicate_bundle_pdf_files": "Exakte PDF-Duplikate im Sammel-PDF ausgeschlossen",
             "expected_bundle_pages": "Seiten im Sammel-PDF erwartet",
             "actual_bundle_pages": "Seiten im Sammel-PDF tatsächlich",
-            "page_check_ok": "Seitenprüfung OK",
+            "content_check_ok": "Visuelle Inhaltsprüfung OK",
+            "content_mismatch_pages": "Abweichende Seiten",
+            "page_check_ok": "Gesamtprüfung OK",
         }
         for key in order:
             ws5.append([labels[key], validation.get(key)])
