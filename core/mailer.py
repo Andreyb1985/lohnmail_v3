@@ -50,13 +50,21 @@ def _run_osascript(script: str, args: list[str]) -> None:
     except subprocess.CalledProcessError as exc:
         details = (exc.stderr or exc.stdout or "").strip()
         if details:
-            raise RuntimeError(f"Outlook-AppleScript fehlgeschlagen: {details}") from exc
-        raise RuntimeError("Outlook-AppleScript fehlgeschlagen.") from exc
+            raise RuntimeError(
+                f"Outlook-AppleScript fehlgeschlagen: {details}. "
+                "Unter macOS ist eine Outlook-Version mit AppleScript-Unterstützung erforderlich."
+            ) from exc
+        raise RuntimeError(
+            "Outlook-AppleScript fehlgeschlagen. Unter macOS ist eine Outlook-Version "
+            "mit AppleScript-Unterstützung erforderlich."
+        ) from exc
 
 
 def _ensure_outlook_supported() -> None:
     if sys.platform not in {"darwin", "win32"}:
-        raise RuntimeError("Outlook-Versand wird derzeit nur unter macOS oder Windows unterstützt.")
+        raise RuntimeError(
+            "Outlook-Classic-Versand wird derzeit nur unter macOS oder Windows unterstützt."
+        )
 
 
 def _with_windows_com(action) -> None:
@@ -64,7 +72,7 @@ def _with_windows_com(action) -> None:
         import pythoncom
     except ImportError as exc:
         raise RuntimeError(
-            "Für Outlook-Versand unter Windows wird das Paket 'pywin32' benötigt."
+            "Für Outlook Classic unter Windows wird das Paket 'pywin32' benötigt."
         ) from exc
 
     pythoncom.CoInitialize()
@@ -79,20 +87,24 @@ def _get_windows_outlook_app():
         import win32com.client
     except ImportError as exc:
         raise RuntimeError(
-            "Für Outlook-Versand unter Windows wird das Paket 'pywin32' benötigt."
+            "Für Outlook Classic unter Windows wird das Paket 'pywin32' benötigt."
         ) from exc
 
     try:
         return win32com.client.DispatchEx("Outlook.Application")
     except Exception as exc:
-        raise RuntimeError("Microsoft Outlook konnte unter Windows nicht gestartet werden.") from exc
+        raise RuntimeError(
+            "Microsoft Outlook Classic konnte unter Windows nicht gestartet werden. "
+            "Das neue Outlook für Windows wird nicht unterstützt. Öffnen Sie Outlook Classic "
+            "und prüfen Sie das aktive Profil."
+        ) from exc
 
 
 def _get_windows_mapi_namespace(outlook):
     try:
         namespace = outlook.GetNamespace("MAPI")
     except Exception as exc:
-        raise RuntimeError("Outlook-MAPI konnte nicht initialisiert werden.") from exc
+        raise RuntimeError("Outlook-Classic-MAPI konnte nicht initialisiert werden.") from exc
 
     try:
         namespace.Logon("", "", False, False)
@@ -165,7 +177,7 @@ def _find_windows_outlook_account(namespace, from_email: str):
             return account
 
     raise RuntimeError(
-        f"Das Outlook-Absenderkonto '{from_email}' wurde im aktiven Profil nicht gefunden."
+        f"Das Outlook-Classic-Absenderkonto '{from_email}' wurde im aktiven Profil nicht gefunden."
     )
 
 
@@ -187,7 +199,7 @@ def _assign_windows_outlook_account(message, account, from_email: str) -> None:
             pass
 
     raise RuntimeError(
-        "Outlook konnte das gewÃ¤hlte Absenderkonto nicht auf die Nachricht anwenden."
+        "Outlook Classic konnte das gewählte Absenderkonto nicht auf die Nachricht anwenden."
     )
 
 
@@ -340,8 +352,8 @@ def send_outlook_email(
                 message.Send()
             except Exception as exc:
                 raise RuntimeError(
-                    "Outlook konnte die Nachricht nicht senden. "
-                    "PrÃƒÂ¼fen Sie, ob Outlook geÃƒÂ¶ffnet ist, ein Profil geladen ist "
+                    "Outlook Classic konnte die Nachricht nicht senden. "
+                    "Prüfen Sie, ob Outlook Classic geöffnet ist, ein Profil geladen ist "
                     "und das Absenderkonto im aktiven Profil vorhanden ist."
                 ) from exc
 
@@ -397,8 +409,8 @@ def send_outlook_email_with_attachment(
                 message.Send()
             except Exception as exc:
                 raise RuntimeError(
-                    "Outlook konnte die Nachricht nicht senden. "
-                    "Prüfen Sie, ob Outlook geöffnet ist, ein Profil geladen ist "
+                    "Outlook Classic konnte die Nachricht nicht senden. "
+                    "Prüfen Sie, ob Outlook Classic geöffnet ist, ein Profil geladen ist "
                     "und das Absenderkonto im aktiven Profil vorhanden ist."
                 ) from exc
 

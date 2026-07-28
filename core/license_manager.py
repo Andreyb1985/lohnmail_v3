@@ -20,7 +20,7 @@ SUBSCRIPTION_OFFLINE_GRACE = timedelta(days=7)
 LIFETIME_OFFLINE_GRACE = timedelta(days=30)
 
 ACTIVE_STATUSES = {"trialing", "active", "expiring_soon"}
-BLOCKED_STATUSES = {"expired", "unpaid", "canceled", "refunded", "disputed", "revoked", "invalid"}
+BLOCKED_STATUSES = {"past_due", "expired", "unpaid", "canceled", "refunded", "disputed", "revoked", "invalid"}
 
 
 def _now() -> datetime:
@@ -157,6 +157,31 @@ class LicenseManager:
     def purchase_url(self, email: str = "", company_name: str = "") -> str:
         response = self.purchase_session(email=email, company_name=company_name)
         return str(response.get("url") or "")
+
+    def purchase_invoice_subscription(
+        self,
+        email: str = "",
+        company_name: str = "",
+        address: str = "",
+        company_number: str = "",
+    ) -> dict:
+        state = self.load_state()
+        response = self._post(
+            "/api/stripe/create-invoice-subscription",
+            {
+                "email": email,
+                "company_name": company_name,
+                "licensee_name": company_name,
+                "licensee_email": email,
+                "licensee_address": address,
+                "licensee_company_number": company_number,
+                "machine_id": state["machine_id"],
+            },
+        )
+        if response.get("license"):
+            state = self._merge_server_response(state, response["license"])
+            self._save_state(state)
+        return response
 
     def update_licensee(
         self,
@@ -372,7 +397,7 @@ class LicenseManager:
     def block_message(status: str) -> str:
         messages = {
             "expired": "Ihre kostenlose Testphase ist abgelaufen. Bitte aktivieren Sie eine Lizenz, um LohnMail weiter zu nutzen.",
-            "past_due": "Die Zahlung ist überfällig. Bitte aktualisieren Sie Ihre Zahlungsdaten.",
+            "past_due": "Die Zahlung ist überfällig. Bitte begleichen Sie die offene Rechnung oder aktualisieren Sie Ihre Zahlungsdaten.",
             "unpaid": "Die Lizenz ist wegen offener Zahlung gesperrt.",
             "refunded": "Die Zahlung wurde erstattet. Die Lizenz ist gesperrt.",
             "disputed": "Die Zahlung wurde angefochten. Die Lizenz ist gesperrt.",

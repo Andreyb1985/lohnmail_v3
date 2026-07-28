@@ -165,6 +165,25 @@ class WebBridge(QObject):
     def navigate(self, page: str) -> None:
         self.pageChanged.emit(page)
 
+    @Slot(str, result=str)
+    def openProductContact(self, action: str) -> str:
+        contacts = {
+            "website": ("https://lohn-mail.de", "Website wurde geöffnet."),
+            "email": ("mailto:support@lohn-mail.de", "E-Mail-Programm wurde geöffnet."),
+        }
+        contact = contacts.get(str(action or "").strip().lower())
+        if not contact:
+            return json.dumps({"ok": False, "message": "Unbekannter Produktkontakt."}, ensure_ascii=False)
+        url, success_message = contact
+        opened = QDesktopServices.openUrl(QUrl(url))
+        return json.dumps(
+            {
+                "ok": bool(opened),
+                "message": success_message if opened else "Kontakt konnte nicht geöffnet werden.",
+            },
+            ensure_ascii=False,
+        )
+
     @Slot(result=str)
     def appVersion(self) -> str:
         return "v2.0.0-web-poc"
@@ -173,16 +192,24 @@ class WebBridge(QObject):
     def getDashboardState(self) -> str:
         settings = load_settings()
         ui_settings = settings.get("ui", {})
-        smtp_settings = settings.get("smtp", {})
+        effective_settings = self._settings_with_company_mail(settings)
+        smtp_settings = effective_settings.get("smtp", {})
         license_payload = self._license_payload(settings, refresh=True)
-        license_status = str(license_payload.get("status", "") or "unregistered").strip().lower()
         license_active = bool(license_payload.get("active"))
 
+        mail_mode = str(effective_settings.get("mail_mode", "smtp") or "smtp").strip().lower()
         smtp_server = str(smtp_settings.get("server", "") or "").strip()
         smtp_from = str(smtp_settings.get("from_email", "") or smtp_settings.get("username", "") or "").strip()
-        mail_configured = bool(smtp_server and smtp_from)
+        mail_configured = bool(smtp_from and (mail_mode == "outlook" or smtp_server))
+        mail_label = "Outlook Classic" if mail_configured and mail_mode == "outlook" else (
+            "Konfiguriert" if mail_configured else "Nicht konfiguriert"
+        )
 
-        reports = self._current_reports_state(settings)
+        reports_payload = self._reports_payload(settings)
+        reports = self._current_reports_state(settings, reports_payload)
+        runs = self._dashboard_runs(reports_payload.get("records", []))
+        last_run = runs[0] if runs else None
+        metrics = {**self._empty_report_metrics(), **((last_run or {}).get("metrics", {}))}
 
         active_company_id = self._active_company_id(settings)
         processing_matches = bool(
@@ -191,14 +218,21 @@ class WebBridge(QObject):
             and self._processing_input_signature == self._input_signature(settings)
         )
         processing_status = self._processing_status if processing_matches else self._idle_processing_status()
+        processing_payload = self._processing_payload(settings)
+        inputs = processing_payload.get("inputs", {})
+        pdf_ready = bool(inputs.get("pdf", {}).get("valid"))
+        excel_ready = bool(inputs.get("excel", {}).get("valid"))
+        output_ready = bool(inputs.get("output", {}).get("valid"))
+        has_company = bool(active_company_id)
+        system_ready = bool(has_company and pdf_ready and excel_ready and output_ready and mail_configured and license_active)
         payload = {
             "version": self.appVersion(),
             "company": get_company_name(settings),
             "license": license_payload,
             "mail": {
-                "mode": str(settings.get("mail_mode", "smtp") or "smtp"),
+                "mode": mail_mode,
                 "configured": mail_configured,
-                "label": "Konfiguriert" if mail_configured else "Nicht konfiguriert",
+                "label": mail_label,
             },
             "paths": {
                 "last_pdf_dir": str(ui_settings.get("last_pdf_dir", "") or ""),
@@ -206,23 +240,44 @@ class WebBridge(QObject):
                 "output_dir": str(GESOB_DIR),
             },
             "metrics": {
-                "employees": int(processing_status.get("employees_total", 0) or 0),
-                "sent": 0,
-                "missing_email": int(processing_status.get("missing_email", 0) or 0),
-                "errors": int(processing_status.get("errors", 0) or 0),
+                "employees": int(metrics.get("employees", 0) or metrics.get("processed", 0) or 0),
+                "sent": int(metrics.get("sent", 0) or 0),
+                "missing_email": int(metrics.get("missing_email", 0) or 0),
+                "errors": int(metrics.get("errors", 0) or metrics.get("failed", 0) or 0),
             },
             "system": {
-                "ready": True,
-                "processing": "Läuft" if processing_status.get("running") else "Bereit",
-                "pdf": "Bereit",
-                "excel": "Bereit",
+                "ready": system_ready,
+                "processing": "Fehler" if processing_status.get("failed") else (
+                    "Läuft" if processing_status.get("running") else "Bereit"
+                ),
+                "pdf": "Bereit" if pdf_ready else "Offen",
+                "excel": "Bereit" if excel_ready else "Offen",
                 "mail": "Bereit" if mail_configured else "Offen",
                 "license": "Bereit" if license_active else "Offen",
-                "filesystem": "Bereit" if GESOB_DIR.exists() else "Offen",
+                "filesystem": "Bereit" if output_ready else "Offen",
             },
             "reports": reports,
+            "last_run": last_run,
+            "activity": runs[:4],
         }
         return json.dumps(payload, ensure_ascii=False)
+
+    @Slot(result=str)
+    def startNewRun(self) -> str:
+        if self._workflow_running():
+            return json.dumps(
+                {"ok": False, "message": "Ein Vorgang läuft bereits und kann nicht zurückgesetzt werden."},
+                ensure_ascii=False,
+            )
+        settings = load_settings()
+        self._reset_workflow_state()
+        state = self._processing_payload(settings)
+        serialized_state = json.dumps(state, ensure_ascii=False)
+        self.processingStateChanged.emit(serialized_state)
+        return json.dumps(
+            {"ok": True, "message": "Neuer Lauf wurde vorbereitet.", "state": state},
+            ensure_ascii=False,
+        )
 
     @Slot(result=str)
     def getProcessingState(self) -> str:
@@ -300,6 +355,56 @@ class WebBridge(QObject):
             )
         except Exception as exc:
             return json.dumps({"ok": False, "message": str(exc), "state": self._license_payload(settings)}, ensure_ascii=False)
+
+    @Slot(result=str)
+    def buyLicenseByInvoice(self) -> str:
+        settings = load_settings()
+        manager = LicenseManager(settings)
+        try:
+            licensee = self._licensee_settings(settings)
+            if not licensee.get("name") or not licensee.get("email"):
+                raise ValueError("Bitte zuerst Lizenznehmer mit Firma und E-Mail speichern.")
+            if not licensee.get("address"):
+                raise ValueError("Für den Rechnungskauf ist eine vollständige Rechnungsanschrift erforderlich.")
+            response = manager.purchase_invoice_subscription(
+                email=licensee.get("email", ""),
+                company_name=licensee.get("name", ""),
+                address=licensee.get("address", ""),
+                company_number=licensee.get("company_number", ""),
+            )
+            if response.get("already_active"):
+                state = manager.load_state()
+                return json.dumps(
+                    {
+                        "ok": True,
+                        "message": response.get(
+                            "message",
+                            "Für diese Installation ist bereits eine aktive oder offene Subscription vorhanden.",
+                        ),
+                        "state": self._license_payload(settings, state=state),
+                    },
+                    ensure_ascii=False,
+                )
+            invoice_url = str(response.get("invoice_url") or "")
+            if invoice_url:
+                QDesktopServices.openUrl(QUrl(invoice_url))
+            state = manager.refresh(force=True, start_trial=False)
+            return json.dumps(
+                {
+                    "ok": True,
+                    "message": response.get(
+                        "message",
+                        "Rechnungszahlung wurde eingerichtet. Die Rechnung wird per E-Mail versendet.",
+                    ),
+                    "state": self._license_payload(settings, state=state),
+                },
+                ensure_ascii=False,
+            )
+        except Exception as exc:
+            return json.dumps(
+                {"ok": False, "message": str(exc), "state": self._license_payload(settings)},
+                ensure_ascii=False,
+            )
 
     @Slot(str, result=str)
     def saveLicenseeState(self, payload: str) -> str:
@@ -481,7 +586,7 @@ class WebBridge(QObject):
                 from core.mailer import test_outlook_connection
 
                 test_outlook_connection(str(smtp_settings.get("from_email", "") or "").strip())
-                return json.dumps({"ok": True, "message": "Outlook-Verbindung ist bereit."}, ensure_ascii=False)
+                return json.dumps({"ok": True, "message": "Outlook-Classic-Verbindung ist bereit."}, ensure_ascii=False)
 
             from core.mailer import test_smtp_connection
 
@@ -500,7 +605,7 @@ class WebBridge(QObject):
                 from core.mailer import test_outlook_connection
 
                 test_outlook_connection(str(smtp_settings.get("from_email", "") or "").strip())
-                return json.dumps({"ok": True, "message": "Mandant-Outlook-Verbindung ist bereit."}, ensure_ascii=False)
+                return json.dumps({"ok": True, "message": "Mandant-Outlook-Classic-Verbindung ist bereit."}, ensure_ascii=False)
 
             from core.mailer import test_smtp_connection
 
@@ -1715,7 +1820,7 @@ class WebBridge(QObject):
         if status == "expiring_soon":
             return "Läuft bald ab"
         if status == "past_due":
-            return "Zahlung fehlgeschlagen"
+            return "Zahlung überfällig"
         if status == "unpaid":
             return "Zahlung offen"
         if status == "canceled":
@@ -1736,9 +1841,9 @@ class WebBridge(QObject):
 
     @staticmethod
     def _license_status_level(status: str, active: bool, server_url: str) -> str:
-        if status in {"expired", "unpaid", "canceled", "refunded", "disputed", "revoked", "invalid"}:
+        if status in {"past_due", "expired", "unpaid", "canceled", "refunded", "disputed", "revoked", "invalid"}:
             return "error"
-        if status in {"past_due", "expiring_soon", "no_connection"}:
+        if status in {"expiring_soon", "no_connection"}:
             return "warning"
         if active:
             return "ready"
@@ -1750,7 +1855,7 @@ class WebBridge(QObject):
             "trialing": "Testphase aktiv. LohnMail kann während der Testphase genutzt werden.",
             "active": "Lizenz aktiv. Alle freigeschalteten Aktionen sind verfügbar.",
             "expiring_soon": "Lizenz läuft bald ab. Bitte prüfen Sie die Verlängerung.",
-            "past_due": "Zahlung überfällig. Bitte Zahlungsdaten im Kundenportal aktualisieren.",
+            "past_due": "Zahlung überfällig. Bitte offene Rechnung begleichen oder Zahlungsdaten im Kundenportal aktualisieren.",
             "unpaid": "Lizenz wegen offener Zahlung gesperrt.",
             "canceled": "Lizenz gekündigt. Nutzung ist nach Ablauf der Periode gesperrt.",
             "expired": "Lizenz oder Testphase abgelaufen.",
@@ -1903,7 +2008,7 @@ class WebBridge(QObject):
             "body_preview": body_preview,
             "total_count": len(recipients),
             "recipients": recipients,
-            "rows": recipients[:50],
+            "rows": recipients,
         }
 
     def _emit_shipping_payload(self, settings: dict) -> str:
@@ -2707,7 +2812,12 @@ class WebBridge(QObject):
             "path": str(path),
         }
 
-    def _current_report_state(self, filename: str, settings: dict) -> dict[str, str | bool]:
+    def _current_report_state(
+        self,
+        filename: str,
+        settings: dict,
+        reports_payload: dict | None = None,
+    ) -> dict[str, str | bool]:
         company_id = self._active_company_id(settings)
         input_signature = self._input_signature(settings)
         if (
@@ -2726,17 +2836,76 @@ class WebBridge(QObject):
             raw_path = self._shipping_status.get("reports", {}).get("send_report_path", "")
             return self._report_state_from_path(str(raw_path or ""), filename)
         kind = self._report_kind_for_path(Path(filename))
-        archived = self._reports_payload(settings).get("latest", {}).get(kind, {})
+        archived = (reports_payload or self._reports_payload(settings)).get("latest", {}).get(kind, {})
         if archived.get("exists"):
             return archived
         return self._empty_report_state(filename)
 
-    def _current_reports_state(self, settings: dict) -> dict[str, dict[str, str | bool]]:
+    def _current_reports_state(
+        self,
+        settings: dict,
+        reports_payload: dict | None = None,
+    ) -> dict[str, dict[str, str | bool]]:
         return {
-            "audit": self._current_report_state("audit_check.xlsx", settings),
-            "missing": self._current_report_state("ohne_email_gesamt.pdf", settings),
-            "send": self._current_report_state("send_report.xlsx", settings),
+            "audit": self._current_report_state("audit_check.xlsx", settings, reports_payload),
+            "missing": self._current_report_state("ohne_email_gesamt.pdf", settings, reports_payload),
+            "send": self._current_report_state("send_report.xlsx", settings, reports_payload),
         }
+
+    def _dashboard_runs(self, records: list[dict]) -> list[dict]:
+        grouped: dict[str, dict] = {}
+        for record in records:
+            if not isinstance(record, dict) or not record.get("exists"):
+                continue
+            run_id = str(record.get("run_id", "") or record.get("run_dir", "") or record.get("id", ""))
+            if not run_id:
+                continue
+            current = grouped.setdefault(
+                run_id,
+                {
+                    "id": run_id,
+                    "company_id": str(record.get("company_id", "") or ""),
+                    "company_name": str(record.get("company_name", "") or ""),
+                    "created_at": "",
+                    "operation": "Prüfung",
+                    "metrics": self._empty_report_metrics(),
+                    "reports": [],
+                },
+            )
+            created_at = str(record.get("created_at", "") or "")
+            if created_at >= str(current.get("created_at", "") or ""):
+                current["created_at"] = created_at
+            if str(record.get("operation", "") or "") == "Versand":
+                current["operation"] = "Versand"
+            metrics = record.get("metrics", {}) if isinstance(record.get("metrics"), dict) else {}
+            for key in self._empty_report_metrics():
+                current["metrics"][key] = max(
+                    int(current["metrics"].get(key, 0) or 0),
+                    int(metrics.get(key, 0) or 0),
+                )
+            current["reports"].append(
+                {
+                    "kind": str(record.get("kind", "") or ""),
+                    "name": str(record.get("filename", "") or ""),
+                    "path": str(record.get("path", "") or ""),
+                }
+            )
+
+        runs = list(grouped.values())
+        for run in runs:
+            metrics = run["metrics"]
+            if int(metrics.get("failed", 0) or metrics.get("errors", 0) or 0) > 0:
+                run["status"] = "Fehler"
+            elif int(metrics.get("sent", 0) or 0) > 0:
+                run["status"] = "Versand abgeschlossen"
+            elif int(metrics.get("prepared", 0) or 0) > 0:
+                run["status"] = "Versand vorbereitet"
+            elif int(metrics.get("warnings", 0) or metrics.get("missing_email", 0) or 0) > 0:
+                run["status"] = "Prüfung mit Warnungen"
+            else:
+                run["status"] = "Prüfung abgeschlossen"
+        runs.sort(key=lambda item: str(item.get("created_at", "") or ""), reverse=True)
+        return runs
 
     def _report_from_result(self, result: dict, key: str, filename: str) -> dict[str, str | bool]:
         raw_path = result.get(key) if isinstance(result, dict) else None

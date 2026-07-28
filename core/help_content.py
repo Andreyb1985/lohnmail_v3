@@ -185,20 +185,21 @@ ul, ol {
 <h2 id="einstellungen">Einstellungen</h2>
 <h3>E-Mail-Einstellungen</h3>
 <ul>
-  <li><b>Versandmethode:</b> <code>smtp</code> oder <code>outlook</code>.</li>
+  <li><b>Versandmethode:</b> <code>SMTP</code> oder <code>Outlook Classic</code>.</li>
   <li><b>SMTP Server / Port / Sicherheit / Benutzer / Passwort / Timeout:</b> nur f&uuml;r SMTP-Versand.</li>
-  <li><b>Absender E-Mail:</b> Absenderadresse f&uuml;r SMTP oder Kennung des Outlook-Kontos.</li>
-  <li><b>Outlook Konto:</b> auf Windows k&ouml;nnen gefundene Outlook-Konten geladen und ausgew&auml;hlt werden.</li>
+  <li><b>Absender E-Mail:</b> Absenderadresse f&uuml;r SMTP oder Kennung des Outlook-Classic-Kontos.</li>
+  <li><b>Outlook-Classic-Konto:</b> auf Windows k&ouml;nnen gefundene Konten geladen und ausgew&auml;hlt werden.</li>
   <li><b>Absender Name:</b> erscheint im Absender und steht als Platzhalter <code>{from_name}</code> zur Verf&uuml;gung.</li>
 </ul>
 
-<h3>Outlook-Versand mit mehreren Konten</h3>
+<h3>Outlook-Classic-Versand mit mehreren Konten</h3>
+<p>Unter Windows werden Microsoft 365 Desktop sowie Outlook 2016, 2019 und 2021 unterst&uuml;tzt. Das neue Outlook f&uuml;r Windows ist nicht kompatibel; verwenden Sie dort SMTP. Unter macOS ist eine Outlook-Version mit AppleScript-Unterst&uuml;tzung erforderlich.</p>
 <ul>
-  <li>W&auml;hlen Sie <code>outlook</code> als Versandmethode.</li>
+  <li>W&auml;hlen Sie <code>Outlook Classic</code> als Versandmethode.</li>
   <li>Klicken Sie auf <b>Konten laden</b>.</li>
-  <li>W&auml;hlen Sie das gew&uuml;nschte Outlook-Konto aus der Liste.</li>
+  <li>W&auml;hlen Sie das gew&uuml;nschte Outlook-Classic-Konto aus der Liste.</li>
   <li>Die Auswahl wird in <b>Absender E-Mail</b> &uuml;bernommen und f&uuml;r den Versand verwendet.</li>
-  <li>Wenn Sie <b>Automatisch</b> lassen, kann Outlook das erste Konto im Profil verwenden.</li>
+  <li>Wenn Sie <b>Automatisch</b> lassen, kann Outlook Classic das erste Konto im Profil verwenden.</li>
 </ul>
 
 <h3>Unternehmen</h3>
@@ -257,7 +258,7 @@ ul, ol {
 <ul>
   <li>Deaktivieren Sie <b>Dry-Run</b>.</li>
   <li>Starten Sie erneut <b>E-Mails senden</b> oder <b>Nur ausgew&auml;hlte senden</b>.</li>
-  <li>Das Programm pr&uuml;ft zuerst die Verbindung zu SMTP oder Outlook.</li>
+  <li>Das Programm pr&uuml;ft zuerst die Verbindung zu SMTP oder Outlook Classic.</li>
   <li>Danach wird pro Mitarbeiter die PDF erzeugt, optional verschl&uuml;sselt und versendet.</li>
 </ul>
 """,
@@ -330,8 +331,8 @@ ul, ol {
     <td>Im Betreff oder Text wurde etwas wie <code>{foo}</code> verwendet. Erlaubt sind nur die Platzhalter aus der Tabelle oben.</td>
   </tr>
   <tr>
-    <td><b>Outlook sendet &uuml;ber das falsche Konto</b></td>
-    <td>W&auml;hlen Sie in den E-Mail-Einstellungen <code>outlook</code>, laden Sie die Konten neu und w&auml;hlen Sie das richtige Konto explizit aus.</td>
+    <td><b>Outlook Classic sendet &uuml;ber das falsche Konto</b></td>
+    <td>W&auml;hlen Sie in den E-Mail-Einstellungen <code>Outlook Classic</code>, laden Sie die Konten neu und w&auml;hlen Sie das richtige Konto explizit aus. Das neue Outlook f&uuml;r Windows wird nicht unterst&uuml;tzt.</td>
   </tr>
   <tr>
     <td><b>SMTP-Verbindung fehlgeschlagen</b></td>

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 import sys
 import time
 from pathlib import Path
 
 from PySide6.QtCore import QUrl, Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMainWindow
 
 try:
@@ -22,10 +24,22 @@ from core.config import ensure_settings_file
 from ui_web.bridge import WebBridge
 
 
+BRAND_DIR = Path(__file__).resolve().parents[1] / "web" / "assets" / "brand"
+LOGO_VARIANT = os.environ.get("LOHNMAIL_LOGO_VARIANT", "previous").strip().lower()
+if LOGO_VARIANT in {"previous", "classic", "b"}:
+    LOGO_VARIANT = "previous"
+    APP_ICON_PATH = BRAND_DIR / "lohnmail-app-icon-previous.png"
+else:
+    LOGO_VARIANT = "current"
+    APP_ICON_PATH = BRAND_DIR / "lohnmail-app-icon.png"
+
+
 class WebMainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("LohnMail v2 — Enterprise Edition")
+        if APP_ICON_PATH.exists():
+            self.setWindowIcon(QIcon(str(APP_ICON_PATH)))
         self.setMinimumSize(1180, 760)
         self._fit_to_screen()
 
@@ -43,7 +57,7 @@ class WebMainWindow(QMainWindow):
 
         html_path = Path(__file__).resolve().parents[1] / "web" / "index.html"
         url = QUrl.fromLocalFile(str(html_path))
-        url.setQuery(f"v={int(time.time())}")
+        url.setQuery(f"v={int(time.time())}&logo={LOGO_VARIANT}")
         self.view.setUrl(url)
         self.setCentralWidget(self.view)
 
@@ -77,6 +91,8 @@ def run() -> int:
     ensure_settings_file()
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("LohnMail")
+    if APP_ICON_PATH.exists():
+        app.setWindowIcon(QIcon(str(APP_ICON_PATH)))
     app.setAttribute(Qt.AA_DontCreateNativeWidgetSiblings, True)
     window = WebMainWindow()
     window.show()

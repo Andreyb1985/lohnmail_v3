@@ -4,13 +4,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LohnMail v2 — Enterprise Edition</title>
-  <link rel="stylesheet" href="styles.css?v=company-config-20260717-002" />
+  <link rel="stylesheet" href="styles.css?v=validation-table-fit-20260728-006" />
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-mark">LM</div>
+        <div class="brand-mark" aria-hidden="true">
+          <img data-brand-logo src="assets/brand/lohnmail-app-icon.png" alt="">
+        </div>
         <div>
           <div class="brand-title">LohnMail v2</div>
           <div class="brand-subtitle">Enterprise Edition</div>
@@ -102,8 +104,7 @@
             <div>
               <h3>Verarbeitete Mitarbeiter</h3>
               <div class="metric-value" data-dashboard="employees">0</div>
-              <p>Gesamt</p>
-              <div class="metric-track"><span style="width:0%"></span></div>
+              <p data-dashboard-metric-label="employees">Noch kein Lauf</p>
             </div>
           </article>
           <article class="metric metric-green">
@@ -111,8 +112,7 @@
             <div>
               <h3>Versendete E-Mails</h3>
               <div class="metric-value" data-dashboard="sent">0</div>
-              <p>E-Mails gesendet</p>
-              <div class="metric-track"><span style="width:0%"></span></div>
+              <p data-dashboard-metric-label="sent">Noch kein Versand</p>
             </div>
           </article>
           <article class="metric metric-orange">
@@ -120,8 +120,7 @@
             <div>
               <h3>Mitarbeiter ohne E-Mail</h3>
               <div class="metric-value" data-dashboard="missing-email">0</div>
-              <p>Bitte prüfen</p>
-              <div class="metric-track"><span style="width:0%"></span></div>
+              <p data-dashboard-metric-label="missing-email">Noch kein Lauf</p>
             </div>
           </article>
           <article class="metric metric-red">
@@ -130,7 +129,6 @@
               <h3>Fehler</h3>
               <div class="metric-value" data-dashboard="errors">0</div>
               <p data-dashboard="errors-label">Keine Fehler</p>
-              <div class="metric-track"><span style="width:0%"></span></div>
             </div>
           </article>
         </section>
@@ -138,29 +136,44 @@
         <section class="dashboard-grid">
           <article class="card last-run">
             <h2>Letzter Lauf</h2>
-            <div class="empty-state">
+            <div class="empty-state" data-dashboard-last-run="empty">
               <div class="empty-icon"><span data-icon="hourglass"></span></div>
-              <p>Noch kein Lauf in dieser Sitzung.<br />Starten Sie eine Prüfung oder Verarbeitung.</p>
-              <button class="ghost" data-dashboard-action="open-processing"><span data-icon="play"></span>Verarbeitung starten</button>
+              <p>Für diesen Mandanten ist noch kein Lauf gespeichert.</p>
+              <button class="ghost" data-dashboard-action="open-processing"><span data-icon="play"></span>Verarbeitung öffnen</button>
+            </div>
+            <div class="last-run-summary" data-dashboard-last-run="content" hidden>
+              <div class="last-run-head">
+                <span class="last-run-icon"><span data-icon="checkcircle"></span></span>
+                <div>
+                  <strong data-dashboard-last-run="status">Prüfung abgeschlossen</strong>
+                  <small data-dashboard-last-run="date">-</small>
+                </div>
+              </div>
+              <div class="last-run-stats">
+                <span><b data-dashboard-last-run="employees">0</b>Mitarbeiter</span>
+                <span><b data-dashboard-last-run="sent">0</b>gesendet</span>
+                <span><b data-dashboard-last-run="warnings">0</b>Hinweise</span>
+              </div>
+              <button class="ghost" data-dashboard-action="open-last-run"><span data-icon="bars"></span>Berichte öffnen</button>
             </div>
           </article>
 
           <article class="card health">
             <h2>Systemstatus</h2>
             <div class="health-list">
-              <div><span class="check">✓</span>Verarbeitungsmodul <b data-dashboard="status-processing">Bereit</b></div>
-              <div><span class="check">✓</span>PDF Engine <b data-dashboard="status-pdf">Bereit</b></div>
-              <div><span class="check">✓</span>Excel Engine <b data-dashboard="status-excel">Bereit</b></div>
-              <div><span class="check">✓</span>E-Mail (SMTP) <b data-dashboard="status-mail">Bereit</b></div>
+              <div><span class="check">✓</span>Verarbeitung <b data-dashboard="status-processing">Bereit</b></div>
+              <div><span class="check">✓</span>PDF-Eingang <b data-dashboard="status-pdf">Offen</b></div>
+              <div><span class="check">✓</span>Excel-Daten <b data-dashboard="status-excel">Offen</b></div>
+              <div><span class="check">✓</span>E-Mail <b data-dashboard="status-mail">Offen</b></div>
               <div><span class="check">✓</span>Lizenzserver <b data-dashboard="status-license">Bereit</b></div>
-              <div><span class="check">✓</span>Dateisystem <b data-dashboard="status-filesystem">Bereit</b></div>
+              <div><span class="check">✓</span>Ausgabe <b data-dashboard="status-filesystem">Offen</b></div>
             </div>
           </article>
 
           <article class="card quick">
             <h2>Schnellaktionen</h2>
             <div class="quick-grid">
-              <button data-dashboard-action="open-processing"><span data-icon="play"></span>Verarbeitung starten</button>
+              <button data-dashboard-action="open-processing"><span data-icon="play"></span>Verarbeitung öffnen</button>
               <button data-processing-action="start-check"><span data-icon="checkcircle"></span>Prüfung starten</button>
               <button data-dashboard-action="open-shipping"><span data-icon="send"></span>Versand starten</button>
               <button data-dashboard-action="open-reports"><span data-icon="bars"></span>Berichte anzeigen</button>
@@ -169,10 +182,11 @@
 
           <article class="card activity">
             <h2>Aktivitätsverlauf</h2>
-            <div class="activity-empty">
+            <div class="activity-empty" data-dashboard-activity="empty">
               <span data-icon="clock"></span>
-              <div>Noch keine Aktivität.<br />Der nächste Lauf wird hier zusammengefasst.</div>
+              <div>Noch keine Aktivität für diesen Mandanten.</div>
             </div>
+            <div class="dashboard-activity-list" data-dashboard-activity="list" hidden></div>
           </article>
 
           <article class="card reports">
@@ -182,11 +196,11 @@
               <div class="report-item" data-report="missing"><span class="file file-pdf">PDF</span><div><strong>ohne_email_gesamt.pdf</strong><small>Nicht erstellt</small></div><button><span data-icon="arrow-up-right"></span></button></div>
               <div class="report-item" data-report="send"><span class="file file-xls">XLS</span><div><strong>send_report.xlsx</strong><small>Nicht erstellt</small></div><button><span data-icon="arrow-up-right"></span></button></div>
             </div>
-            <button class="wide-button">Alle Berichte anzeigen</button>
+            <button class="wide-button" data-dashboard-action="open-reports">Alle Berichte anzeigen</button>
           </article>
 
           <article class="card pipeline-card">
-            <h2>Processing Overview</h2>
+            <h2>Verarbeitungsübersicht</h2>
             <div class="pipeline">
               <div data-dashboard-pipeline-step="pdf"><span data-icon="doc"></span><small>PDF Import</small><em data-dashboard-pipeline-label="pdf">Wartet</em></div>
               <i></i>
@@ -609,6 +623,21 @@
                 <span data-icon="check-circle"></span>
                 <strong data-shipping="selection-title">0 von 0 sendbaren Einträgen ausgewählt</strong>
                 <span data-shipping="selection-message">Empfänger auswählen und Versand vorbereiten.</span>
+                <div class="shipping-live-progress" data-shipping-live hidden>
+                  <div class="shipping-live-progress-head">
+                    <strong data-shipping-live="title">E-Mails werden versendet</strong>
+                    <span data-shipping-live="count">0 / 0</span>
+                  </div>
+                  <div class="shipping-live-progress-track" aria-hidden="true">
+                    <span data-shipping-live="bar"></span>
+                  </div>
+                  <div class="shipping-live-progress-meta">
+                    <span>Gesendet <b data-shipping-live="sent">0</b></span>
+                    <span>Fehler <b data-shipping-live="errors">0</b></span>
+                    <span>Verbleibend <b data-shipping-live="remaining">0</b></span>
+                    <span class="shipping-live-current" data-shipping-live="current">Versand wird gestartet...</span>
+                  </div>
+                </div>
               </div>
 
               <div class="mailing-table-scroll">
@@ -747,14 +776,16 @@
 
               <article class="card reports-table-card">
                 <h2>Berichte Übersicht</h2>
-                <table class="reports-table">
-                  <thead>
-                    <tr><th>Datum</th><th>Typ</th><th>Titel</th><th>Status</th><th>Verarbeitung</th><th>Prüfung</th><th>Versand</th><th>Erstellt von</th><th>Aktionen</th></tr>
-                  </thead>
-                  <tbody data-reports="table-body">
-                    <tr><td colspan="9">Berichte werden geladen...</td></tr>
-                  </tbody>
-                </table>
+                <div class="reports-table-wrap">
+                  <table class="reports-table">
+                    <thead>
+                      <tr><th>Datum</th><th>Typ</th><th>Titel</th><th>Status</th><th>Verarbeitung</th><th>Prüfung</th><th>Versand</th><th>Erstellt von</th><th>Aktionen</th></tr>
+                    </thead>
+                    <tbody data-reports="table-body">
+                      <tr><td colspan="9">Berichte werden geladen...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
                 <div class="table-footer"><span data-reports="table-footer">Zeige 0 Einträge</span><div class="pagination"><button data-reports-action="page-prev" disabled>‹</button><button class="active" data-reports="page-current">1</button><button data-reports-action="page-next" disabled>›</button></div><button data-reports-action="page-size" data-reports="page-size-label">10 pro Seite⌄</button></div>
               </article>
             </div>
@@ -883,7 +914,7 @@
           <div class="content-heading license-heading">
             <div>
               <h1>Lizenzen</h1>
-              <p>Trial, Lizenzstatus und Stripe-Verwaltung.</p>
+              <p>Trial, Lizenzstatus und Zahlungsverwaltung.</p>
             </div>
             <button class="secondary-action" data-license-action="refresh"><span data-icon="process"></span>Aktualisieren</button>
           </div>
@@ -1025,7 +1056,7 @@
                 <section class="card settings-reference-card">
                   <h2>E-Mail Versand</h2>
                   <div class="reference-form-grid">
-                    <label>Versandmethode<select data-settings-field="mail_mode"><option value="smtp">smtp</option><option value="outlook">outlook</option></select></label>
+                    <label>Versandmethode<select data-settings-field="mail_mode"><option value="smtp">SMTP</option><option value="outlook">Outlook Classic</option></select></label>
                     <label>SMTP Server<input data-settings-field="smtp.server" placeholder="smtp.example.de"></label>
                     <label>SMTP Port<input data-settings-field="smtp.port" type="number" min="1" max="65535"></label>
                     <label>Sicherheit<select data-settings-field="smtp.security"><option value="tls">tls</option><option value="ssl">ssl</option><option value="none">none</option></select></label>
@@ -1037,9 +1068,9 @@
                   </div>
                   <div class="settings-inline-actions">
                     <button class="secondary-action" data-settings-action="test-mail"><span data-icon="mail"></span>Verbindung testen</button>
-                    <button class="secondary-action" data-settings-action="load-outlook"><span data-icon="process"></span>Outlook Konten laden</button>
+                    <button class="secondary-action" data-settings-action="load-outlook"><span data-icon="process"></span>Outlook-Konten laden</button>
                   </div>
-                  <div class="settings-message compact" data-settings="mail-message">SMTP nutzt Serverdaten. Outlook nutzt Microsoft Outlook und das Feld Absender E-Mail als Konto.</div>
+                  <div class="settings-message compact" data-settings="mail-message">SMTP nutzt die eingetragenen Serverdaten. Outlook Classic wird unter Windows mit Microsoft 365 Desktop sowie Outlook 2016/2019/2021 unterstützt; das neue Outlook für Windows wird nicht unterstützt. Unter macOS ist eine Outlook-Version mit AppleScript-Unterstützung erforderlich.</div>
                   <div class="settings-bottom-actions">
                     <button class="secondary-action" data-settings-action="reload"><span data-icon="process"></span>Abbrechen</button>
                     <button class="primary" data-settings-action="save-email"><span data-icon="checkcircle"></span>E-Mail speichern</button>
@@ -1145,7 +1176,7 @@
                 <button data-help-action="topic" data-help-topic="validation"><span class="topic-icon violet"><span data-icon="checkcircle"></span></span><strong>Prüfung</strong><small>Ergebnisse lesen, suchen, filtern und Fehler beheben</small><i>›</i></button>
                 <button data-help-action="topic" data-help-topic="shipping"><span class="topic-icon blue"><span data-icon="send"></span></span><strong>Versand</strong><small>Empfänger auswählen, Vorschau prüfen und sicher versenden</small><i>›</i></button>
                 <button data-help-action="topic" data-help-topic="reports"><span class="topic-icon mint"><span data-icon="report"></span></span><strong>Berichte</strong><small>Prüf-, Fehladress- und Versandberichte verwenden</small><i>›</i></button>
-                <button data-help-action="topic" data-help-topic="settings"><span class="topic-icon amber"><span data-icon="settings"></span></span><strong>Einstellungen</strong><small>SMTP, Outlook, Vorlagen, Zeitraum und Benachrichtigungen</small><i>›</i></button>
+                <button data-help-action="topic" data-help-topic="settings"><span class="topic-icon amber"><span data-icon="settings"></span></span><strong>Einstellungen</strong><small>SMTP, Outlook Classic, Vorlagen, Zeitraum und Benachrichtigungen</small><i>›</i></button>
               </div>
             </article>
 
@@ -1183,7 +1214,7 @@
               <article class="card support-card">
                 <h2>Support kontaktieren</h2>
                 <div class="support-list">
-                  <button data-help-action="email"><span data-icon="mail"></span><strong>E-Mail Support</strong><small>support@lohnmail.de</small><i><span data-icon="mail"></span></i></button>
+                  <button data-help-action="email"><span data-icon="mail"></span><strong>E-Mail Support</strong><small>support@lohn-mail.de</small><i><span data-icon="mail"></span></i></button>
                   <button data-help-action="diagnostics"><span data-icon="checkcircle"></span><strong>Diagnose-Checkliste</strong><small>Angaben für eine schnelle Problemlösung</small><i><span data-icon="checkcircle"></span></i></button>
                   <button data-help-action="remote"><span data-icon="screen"></span><strong>Fernsupport vorbereiten</strong><small>Nur nach Termin und Ihrer Freigabe</small><i><span data-icon="screen"></span></i></button>
                 </div>
@@ -1204,7 +1235,9 @@
             <div class="about-left">
               <article class="card product-card">
                 <div class="product-hero">
-                  <div class="product-logo-mark"><span>LM</span></div>
+                  <div class="product-logo-mark">
+                    <img data-brand-logo src="assets/brand/lohnmail-app-icon.png" alt="LohnMail">
+                  </div>
                   <div>
                     <h1>LohnMail v2</h1>
                     <h2>Enterprise Edition</h2>
@@ -1218,7 +1251,7 @@
                   <div><span data-icon="checkcircle"></span><span>Lizenz Status</span><b class="state ready">Aktiv</b></div>
                 </div>
                 <div class="about-actions">
-                  <button class="secondary-action" data-about-action="website"><span data-icon="screen"></span>Website besuchen</button>
+                  <button class="secondary-action" data-about-action="website"><span data-icon="screen"></span>lohn-mail.de besuchen</button>
                   <button class="secondary-action green-outline" data-about-action="release"><span data-icon="arrow-up-right"></span>Release Notes</button>
                 </div>
               </article>
@@ -1230,7 +1263,7 @@
                   <div><span class="tech-icon py">Py</span><strong>Backend</strong><small>Python 3.12</small></div>
                   <div><span class="tech-icon db"><span data-icon="table"></span></span><strong>Datenbank</strong><small>SQLite 3.45.1</small></div>
                   <div><span class="tech-icon pdf"><span data-icon="doc"></span></span><strong>PDF Engine</strong><small>PyPDF2 3.0.1</small></div>
-                  <div><span class="tech-icon mail"><span data-icon="mail"></span></span><strong>E-Mail</strong><small>SMTP / Outlook</small></div>
+                  <div><span class="tech-icon mail"><span data-icon="mail"></span></span><strong>E-Mail</strong><small>SMTP / Outlook Classic</small></div>
                   <div><span class="tech-icon xls">X</span><strong>Excel Engine</strong><small>openpyxl 3.1.2</small></div>
                   <div><span class="tech-icon qt">Qt</span><strong>UI Framework</strong><small>Qt 6.7</small></div>
                   <div><span class="tech-icon build"><span data-icon="process"></span></span><strong>Build System</strong><small>PyInstaller 6.6</small></div>
@@ -1269,7 +1302,7 @@
               <article class="card about-support-card">
                 <div class="about-card-head"><span data-icon="help"></span><h2>Kontakt & Support</h2></div>
                 <p>Bei Fragen oder Problemen steht Ihnen unser Support-Team gerne zur Verfügung.</p>
-                <button class="wide-button" data-about-action="support"><span data-icon="mail"></span>Support kontaktieren</button>
+                <button class="wide-button" data-about-action="support"><span data-icon="mail"></span>support@lohn-mail.de</button>
                 <p>Supportzeiten: Mo – Fr 08:00 – 17:00 Uhr</p>
               </article>
             </aside>
@@ -1357,6 +1390,87 @@
         </section>
       </div>
 
+      <div class="license-payment-modal" data-license-payment-modal hidden>
+        <button class="license-payment-modal-backdrop" data-license-payment-close aria-label="Schliessen"></button>
+        <section class="license-payment-modal-panel" role="dialog" aria-modal="true" aria-labelledby="license-payment-modal-title">
+          <header class="license-payment-modal-header">
+            <div>
+              <span data-icon="key"></span>
+              <div>
+                <small>Lizenz kaufen</small>
+                <h2 id="license-payment-modal-title">Zahlungsart wählen</h2>
+              </div>
+            </div>
+            <button class="license-payment-modal-close" data-license-payment-close aria-label="Schliessen">x</button>
+          </header>
+          <div class="license-payment-modal-body">
+            <button class="license-payment-option primary-option" data-license-payment="card">
+              <span class="license-payment-option-icon" data-icon="key"></span>
+              <span>
+                <strong>Automatische Zahlung</strong>
+                <small>Karte, Apple Pay oder Link. Monatliche automatische Verlängerung.</small>
+              </span>
+              <span class="license-payment-option-arrow" data-icon="arrow-up-right"></span>
+            </button>
+            <button class="license-payment-option" data-license-payment="invoice">
+              <span class="license-payment-option-icon" data-icon="doc"></span>
+              <span>
+                <strong>Zahlung auf Rechnung</strong>
+                <small>Monatliche Rechnung per E-Mail. 14 Tage Zahlungsziel.</small>
+              </span>
+              <span class="license-payment-option-arrow" data-icon="arrow-up-right"></span>
+            </button>
+            <p class="license-payment-hint">Beide Zahlungsarten gelten für ein monatliches Abonnement. Die Zahlungsart kann später im Kundenportal verwaltet werden.</p>
+          </div>
+          <footer class="license-payment-modal-actions">
+            <button class="secondary-action" data-license-payment-close>Abbrechen</button>
+          </footer>
+        </section>
+      </div>
+
+      <div class="shipping-send-modal" data-mass-send-modal hidden>
+        <button class="shipping-send-modal-backdrop" data-mass-send-close aria-label="Schliessen"></button>
+        <section class="shipping-send-modal-panel" role="dialog" aria-modal="true" aria-labelledby="mass-send-modal-title">
+          <header class="shipping-send-modal-header">
+            <div>
+              <span data-icon="mail"></span>
+              <div>
+                <small>Finale Nachrichtenprüfung</small>
+                <h2 id="mass-send-modal-title">Nachricht vor dem Senden prüfen</h2>
+              </div>
+            </div>
+            <button class="shipping-send-modal-close" data-mass-send-close aria-label="Schliessen">x</button>
+          </header>
+          <div class="shipping-send-modal-body">
+            <div class="shipping-send-summary">
+              <div><small>Unternehmen</small><strong data-mass-preview="company">-</strong></div>
+              <div><small>Empfänger</small><strong data-mass-preview="total">0</strong></div>
+              <div><small>Versandmethode</small><strong data-mass-preview="mode">smtp</strong></div>
+            </div>
+            <div class="shipping-send-mail">
+              <label><span>Betreff</span><input data-mass-preview="subject" readonly></label>
+              <label><span>Nachricht</span><textarea data-mass-preview="body" rows="7" readonly></textarea></label>
+            </div>
+            <div class="shipping-send-notes mass-send-notes">
+              <span>Alle Empfänger stammen aus der Excel-Datei des aktiven Unternehmens.</span>
+              <span>Platzhalter werden für jeden Empfänger individuell eingesetzt.</span>
+              <span>Die Nachricht wird erst nach der finalen Bestätigung versendet.</span>
+            </div>
+            <div class="shipping-send-table-wrap">
+              <table class="shipping-send-table mass-send-table">
+                <thead><tr><th>PersNr</th><th>Name</th><th>E-Mail</th></tr></thead>
+                <tbody data-mass-preview="rows"><tr><td colspan="3">Keine Vorschau geladen.</td></tr></tbody>
+              </table>
+            </div>
+            <p class="shipping-send-message" data-mass-preview="message"></p>
+          </div>
+          <footer class="shipping-send-modal-actions">
+            <button class="secondary-action" data-mass-send-close>Abbrechen</button>
+            <button class="primary danger-send" data-mass-send-action="confirm"><span data-icon="mail"></span>Nachricht senden</button>
+          </footer>
+        </section>
+      </div>
+
       <div class="legal-modal" data-legal-modal hidden>
         <button class="legal-modal-backdrop" data-legal-close aria-label="Schliessen"></button>
         <section class="legal-modal-panel" role="dialog" aria-modal="true" aria-labelledby="legal-modal-title">
@@ -1408,7 +1522,7 @@
       <footer class="footer">
         <span data-dashboard="footer-license"><span data-icon="key"></span> Lizenz: Aktiv</span>
         <span data-dashboard="footer-mail"><span data-icon="mail"></span> SMTP: Online</span>
-        <span data-dashboard="footer-outlook"><span data-icon="screen"></span> Outlook: Verbunden</span>
+        <span data-dashboard="footer-outlook"><span data-icon="screen"></span> Outlook Classic: Verbunden</span>
         <span data-dashboard="footer-mode"><span data-icon="desktop"></span> Modus: Lokal</span>
         <strong data-dashboard="footer-system"><span class="status-dot small"></span>System bereit</strong>
       </footer>
@@ -1416,6 +1530,6 @@
   </div>
 
   <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
-  <script src="app.js?v=company-config-20260717-002"></script>
+  <script src="app.js?v=shipping-progress-20260728-003"></script>
 </body>
 </html>
