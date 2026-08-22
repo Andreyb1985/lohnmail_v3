@@ -17,9 +17,15 @@ except ModuleNotFoundError:
     PdfWriter = None
 
 from .config import GESOB_DIR
-from .excel_io import load_email_records
+from .email_validation import validate_email_records
+from .excel_io import load_email_records, normalize_birth_date
 from .input_scan import scan_pdf_folder
-from .message_templates import build_mail_context, format_message_template, format_name_vorname
+from .message_templates import (
+    append_pdf_password_notice,
+    build_mail_context,
+    format_message_template,
+    format_name_vorname,
+)
 from .report import write_audit_check_xlsx
 
 ProgressCb = Callable[[str], None] | None
@@ -239,11 +245,47 @@ def _merge_pdf_files_verified(pdf_files: list[Path], out_pdf: Path) -> dict:
         readers.clear()
 
 
-def _email_map_from_records(email_records: dict[str, dict[str, str]]) -> dict[str, str]:
+def _email_map_from_records(
+    email_records: dict[str, dict[str, str]],
+    email_validation: dict[str, dict] | None = None,
+) -> dict[str, str]:
     return {
         persnr: str(record.get("Email", "") or "")
         for persnr, record in email_records.items()
         if str(record.get("Email", "") or "").strip()
+        and (
+            email_validation is None
+            or email_validation.get(persnr, {}).get("sendable", False)
+        )
+    }
+
+
+def _email_check_values(email_validation: dict[str, dict], persnr: str) -> dict:
+    result = email_validation.get(persnr, {})
+    return {
+        "EmailValidationCode": str(result.get("code") or "not_checked"),
+        "EmailValidation": str(result.get("label") or "Nicht geprüft"),
+        "EmailMxStatus": str(result.get("mx_status") or "-"),
+        "EmailCheckedAt": str(result.get("checked_at") or ""),
+        "EmailSendable": bool(result.get("sendable", False)),
+        "EmailValidationHint": str(result.get("hint") or ""),
+    }
+
+
+def _email_validation_summary(email_validation: dict[str, dict]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for result in email_validation.values():
+        code = str(result.get("code") or "not_checked")
+        counts[code] = counts.get(code, 0) + 1
+    return {
+        "email_valid_count": counts.get("valid", 0),
+        "email_missing_count": counts.get("missing", 0),
+        "email_invalid_format_count": counts.get("invalid_format", 0)
+        + counts.get("illegal_characters", 0),
+        "email_duplicate_count": counts.get("duplicate", 0),
+        "email_domain_missing_count": counts.get("domain_missing", 0),
+        "email_mx_missing_count": counts.get("mx_missing", 0),
+        "email_dns_unavailable_count": counts.get("dns_unavailable", 0),
     }
 
 
@@ -253,6 +295,33 @@ def _person_values(email_records: dict[str, dict[str, str]], persnr: str) -> dic
         "Name": str(record.get("Name", "") or ""),
         "Vorname": str(record.get("Vorname", "") or ""),
     }
+
+
+def _pdf_password_for_employee(
+    password_settings: dict,
+    persnr: str,
+    employee_record: dict,
+) -> str:
+    if not bool(password_settings.get("enabled", True)):
+        return ""
+
+    source = str(password_settings.get("source", "persnr") or "persnr").strip().lower()
+    if source == "birth_date":
+        password_basis = str(
+            employee_record.get("PdfGeburtsdatum")
+            or employee_record.get("Geburtsdatum")
+            or ""
+        ).strip()
+        if not password_basis:
+            raise ValueError(
+                "Geburtsdatum fehlt oder ist ungültig; PDF-Passwort konnte nicht erstellt werden."
+            )
+    else:
+        password_basis = persnr
+
+    prefix = str(password_settings.get("prefix", "") or "")
+    suffix = str(password_settings.get("suffix", "") or "")
+    return f"{prefix}{password_basis}{suffix}"
 
 
 def make_run_id(source_name: str, prefix: str = "") -> str:
@@ -277,6 +346,241 @@ def _extract_persnr_from_pdf(pdf_path: Path) -> str | None:
     finally:
         doc.close()
     return None
+
+
+def _extract_birth_date_from_page(page) -> str | None:
+    """Read the DATEV birth date printed below the Geburtsdatum heading."""
+    words = page.get_text("words") or []
+    labels = page.search_for("Geburtsdatum") or []
+
+    for label in labels:
+        label_x0, label_y0, label_x1, label_y1 = map(
+            float,
+            (label.x0, label.y0, label.x1, label.y1),
+        )
+        candidates: list[tuple[float, float, str]] = []
+        for word in words:
+            normalized = normalize_birth_date(str(word[4] or "").strip())
+            if not normalized:
+                continue
+
+            word_x0, word_y0, word_x1, _word_y1 = map(float, word[:4])
+            if word_x0 < label_x0 - 12 or word_x1 > label_x1 + 16:
+                continue
+            if word_y0 < label_y0 - 2 or word_y0 > label_y1 + 22:
+                continue
+
+            center_distance = abs(
+                ((word_x0 + word_x1) / 2) - ((label_x0 + label_x1) / 2)
+            )
+            vertical_distance = abs(word_y0 - label_y1)
+            candidates.append((vertical_distance, center_distance, normalized))
+
+        if candidates:
+            candidates.sort(key=lambda item: (item[0], item[1]))
+            return candidates[0][2]
+
+    return None
+
+
+def _extract_birth_date_from_pdf(pdf_path: Path) -> str | None:
+    doc = fitz.open(pdf_path)
+    try:
+        found = {
+            birth_date
+            for page in doc
+            if (birth_date := _extract_birth_date_from_page(page))
+        }
+    finally:
+        doc.close()
+
+    if len(found) > 1:
+        raise ValueError(
+            f"Widersprüchliche Geburtsdaten in {pdf_path.name}: {', '.join(sorted(found))}."
+        )
+    return next(iter(found), None)
+
+
+def _extract_employee_birth_date(pdf_files: list[Path]) -> str | None:
+    found = {
+        birth_date
+        for pdf_path in _dedup_pdf_paths(pdf_files)
+        if (birth_date := _extract_birth_date_from_pdf(pdf_path))
+    }
+    if len(found) > 1:
+        raise ValueError(
+            "Widersprüchliche Geburtsdaten in den Abrechnungen dieses Mitarbeiters: "
+            + ", ".join(sorted(found))
+            + "."
+        )
+    return next(iter(found), None)
+
+
+_PDF_NAME_SALUTATIONS = {"frau", "herr", "herrn"}
+_PDF_NAME_TITLES = {"dr", "prof"}
+_PDF_NAME_REJECT_MARKERS = (
+    "pers.-nr",
+    "geburtsdatum",
+    "abrechnung",
+    "brutto",
+    "netto",
+)
+_PDF_ADDRESS_TOKENS = {
+    "allee",
+    "gasse",
+    "platz",
+    "ring",
+    "str",
+    "strasse",
+    "straße",
+    "weg",
+}
+
+
+def _normalize_personnel_number(value: object) -> str:
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    return digits.zfill(5) if digits else ""
+
+
+def _clean_pdf_person_name(value: str) -> str | None:
+    text = re.sub(r"\s+", " ", str(value or "")).strip(" ,;:")
+    if not text or "@" in text or any(ch.isdigit() for ch in text):
+        return None
+
+    lowered = text.casefold()
+    if any(marker in lowered for marker in _PDF_NAME_REJECT_MARKERS):
+        return None
+
+    tokens = text.split()
+    normalized_tokens = {
+        token.casefold().strip(".,;:")
+        for token in tokens
+    }
+    if normalized_tokens & _PDF_ADDRESS_TOKENS:
+        return None
+    while tokens and tokens[0].casefold().rstrip(".") in _PDF_NAME_SALUTATIONS:
+        tokens.pop(0)
+    while tokens and tokens[0].casefold().rstrip(".") in _PDF_NAME_TITLES:
+        tokens.pop(0)
+
+    if not 1 <= len(tokens) <= 6:
+        return None
+    if any(not any(ch.isalpha() for ch in token) for token in tokens):
+        return None
+    return " ".join(tokens)
+
+
+def _extract_employee_full_name_from_page(page, persnr: str) -> str | None:
+    """Read the employee name from the address line below the DATEV Pers.-Nr."""
+    grouped_lines: dict[tuple[int, int], list[tuple]] = {}
+    for word in page.get_text("words", sort=True) or []:
+        grouped_lines.setdefault((int(word[5]), int(word[6])), []).append(word)
+
+    lines: list[dict] = []
+    for words in grouped_lines.values():
+        words.sort(key=lambda item: float(item[0]))
+        lines.append({
+            "x0": min(float(word[0]) for word in words),
+            "y0": min(float(word[1]) for word in words),
+            "y1": max(float(word[3]) for word in words),
+            "text": " ".join(str(word[4] or "").strip() for word in words).strip(),
+        })
+    lines.sort(key=lambda item: (item["y0"], item["x0"]))
+
+    wanted_persnr = _normalize_personnel_number(persnr)
+    for anchor in lines:
+        match = PERSNR_TEXT_RE.search(anchor["text"])
+        if not match or _normalize_personnel_number(match.group(1)) != wanted_persnr:
+            continue
+
+        candidates = [
+            line
+            for line in lines
+            if anchor["y1"] + 3 <= line["y0"] <= anchor["y1"] + 105
+            and line["x0"] <= anchor["x0"] + 110
+        ]
+        for candidate in candidates:
+            if full_name := _clean_pdf_person_name(candidate["text"]):
+                return full_name
+    return None
+
+
+def _extract_employee_full_name_from_pdf(pdf_path: Path, persnr: str) -> str | None:
+    document = fitz.open(pdf_path)
+    try:
+        found = {
+            full_name
+            for page in document
+            if (full_name := _extract_employee_full_name_from_page(page, persnr))
+        }
+    finally:
+        document.close()
+
+    normalized = {name.casefold(): name for name in found}
+    return next(iter(normalized.values())) if len(normalized) == 1 else None
+
+
+def _extract_employee_full_name(pdf_files: list[Path], persnr: str) -> str | None:
+    found = {
+        full_name
+        for pdf_path in _dedup_pdf_paths(pdf_files)
+        if (full_name := _extract_employee_full_name_from_pdf(pdf_path, persnr))
+    }
+    normalized = {name.casefold(): name for name in found}
+    return next(iter(normalized.values())) if len(normalized) == 1 else None
+
+
+def _name_tokens(value: str) -> list[str]:
+    return [token.casefold().strip(".,") for token in str(value or "").split()]
+
+
+def _merge_pdf_person_name(record: dict, full_name: str) -> dict:
+    merged = dict(record)
+    first_name = str(merged.get("Vorname") or "").strip()
+    last_name = str(merged.get("Name") or "").strip()
+    tokens = full_name.split()
+    if not tokens or (first_name and last_name):
+        return merged
+
+    if not first_name and not last_name:
+        if len(tokens) == 1:
+            merged["Name"] = tokens[0]
+        else:
+            merged["Vorname"] = tokens[0]
+            merged["Name"] = " ".join(tokens[1:])
+        return merged
+
+    if first_name and not last_name:
+        known = _name_tokens(first_name)
+        candidate = _name_tokens(full_name)
+        if candidate[: len(known)] == known and len(candidate) > len(known):
+            merged["Name"] = " ".join(tokens[len(known):])
+        return merged
+
+    if last_name and not first_name:
+        known = _name_tokens(last_name)
+        candidate = _name_tokens(full_name)
+        if candidate[-len(known):] == known and len(candidate) > len(known):
+            merged["Vorname"] = " ".join(tokens[:-len(known)])
+    return merged
+
+
+def _enrich_employee_names_from_pdfs(
+    email_records: dict[str, dict],
+    grouped: dict[str, list[Path]],
+) -> dict[str, dict]:
+    enriched = {persnr: dict(record) for persnr, record in email_records.items()}
+    for persnr, pdf_files in grouped.items():
+        record = enriched.setdefault(
+            persnr,
+            {"Email": "", "Name": "", "Vorname": ""},
+        )
+        if str(record.get("Name") or "").strip() and str(record.get("Vorname") or "").strip():
+            continue
+        full_name = _extract_employee_full_name(pdf_files, persnr)
+        if full_name:
+            enriched[persnr] = _merge_pdf_person_name(record, full_name)
+    return enriched
 
 
 def _split_single_pdf_to_employee_pages(source_pdf: Path, out_dir: Path, progress_cb: ProgressCb = None) -> None:
@@ -424,6 +728,7 @@ def _write_audit_compat(
     missing_files_persnr: list[str],
     bundle_details: list[dict],
     validation: dict,
+    email_validation: dict[str, dict],
 ) -> None:
     params = inspect.signature(write_audit_check_xlsx).parameters
     kwargs = {
@@ -444,6 +749,8 @@ def _write_audit_compat(
         kwargs["invalid_pdf_details"] = invalid_pdf_details
     if "pdf_errors_by_persnr" in params:
         kwargs["pdf_errors_by_persnr"] = pdf_errors_by_persnr
+    if "email_validation" in params:
+        kwargs["email_validation"] = email_validation
     write_audit_check_xlsx(**kwargs)
 
 
@@ -480,6 +787,11 @@ def _write_send_report_xlsx(out_path: Path, rows: list[dict]) -> None:
             "Anhang",
             "Passwort",
             "Fehler",
+            "E-Mail-Prüfung",
+            "MX",
+            "Geprüft am",
+            "Versandfähig",
+            "Prüfhinweis",
         ]
     )
     for row in rows:
@@ -494,6 +806,11 @@ def _write_send_report_xlsx(out_path: Path, rows: list[dict]) -> None:
                 row.get("Attachment", ""),
                 "",
                 row.get("Error", ""),
+                row.get("EmailValidation", "Nicht geprüft"),
+                row.get("EmailMxStatus", "-"),
+                row.get("EmailCheckedAt", ""),
+                "Ja" if row.get("EmailSendable", False) else "Nein",
+                row.get("EmailValidationHint", ""),
             ]
         )
 
@@ -528,7 +845,11 @@ def action_check(pdf_input: Path, excel_path: Path, progress_cb: ProgressCb = No
 
     _p(progress_cb, "Excel-Datei wird gelesen…")
     email_records = load_email_records(excel_path)
-    email_map = _email_map_from_records(email_records)
+    _p(progress_cb, "Fehlende Mitarbeiternamen werden aus den Abrechnungen ergänzt…")
+    email_records = _enrich_employee_names_from_pdfs(email_records, valid_grouped)
+    _p(progress_cb, "E-Mail-Adressen werden geprüft…")
+    email_validation = validate_email_records(email_records)
+    email_map = _email_map_from_records(email_records, email_validation)
 
     _p(progress_cb, "PDF-Dateien und E-Mail-Adressen werden abgeglichen…")
     grouped_persnr = set(grouped.keys())
@@ -580,14 +901,21 @@ def action_check(pdf_input: Path, excel_path: Path, progress_cb: ProgressCb = No
         missing_files_persnr=missing_files_persnr,
         bundle_details=bundle_stats["details"],
         validation=validation,
+        email_validation=email_validation,
     )
 
     table_rows: list[dict] = []
     for persnr in sorted(grouped.keys(), key=_persnr_sort_key):
         files = _dedup_pdf_paths(grouped[persnr])
-        email = email_map.get(persnr, "")
+        email_check = email_validation.get(persnr, {})
+        email = str(email_check.get("email") or "")
         pdf_errors = pdf_errors_by_persnr.get(persnr, [])
-        status = "Fehler" if pdf_errors else ("OK" if email else "Keine E-Mail")
+        if pdf_errors:
+            status = "Fehler"
+        elif email_check and not email_check.get("sendable", False):
+            status = "Keine E-Mail" if email_check.get("code") == "missing" else "Ungültige E-Mail"
+        else:
+            status = "OK" if email else "Keine E-Mail"
         total_pages = sum(pdf_page_counts.get(_pdf_path_key(p), 0) for p in files)
         table_rows.append(
             {
@@ -601,6 +929,7 @@ def action_check(pdf_input: Path, excel_path: Path, progress_cb: ProgressCb = No
                 "Attachment": "",
                 "Password": "",
                 "Error": "; ".join(pdf_errors),
+                **_email_check_values(email_validation, persnr),
             }
         )
 
@@ -609,7 +938,7 @@ def action_check(pdf_input: Path, excel_path: Path, progress_cb: ProgressCb = No
             {
                 "PersNr": persnr,
                 **_person_values(email_records, persnr),
-                "Email": email_map.get(persnr, ""),
+                "Email": str(email_validation.get(persnr, {}).get("email") or ""),
                 "Files": "",
                 "Count": 0,
                 "Pages": 0,
@@ -617,6 +946,7 @@ def action_check(pdf_input: Path, excel_path: Path, progress_cb: ProgressCb = No
                 "Attachment": "",
                 "Password": "",
                 "Error": "",
+                **_email_check_values(email_validation, persnr),
             }
         )
 
@@ -634,6 +964,7 @@ def action_check(pdf_input: Path, excel_path: Path, progress_cb: ProgressCb = No
         "actual_bundle_pages": bundle_stats["merged_page_count"],
         "content_check_ok": bundle_stats["content_check_ok"],
         "page_check_ok": validation["page_check_ok"],
+        **_email_validation_summary(email_validation),
     }
 
     _p(progress_cb, "Prüfung abgeschlossen.")
@@ -650,6 +981,7 @@ def action_check(pdf_input: Path, excel_path: Path, progress_cb: ProgressCb = No
         "source_kind": scan_result.get("source_kind"),
         "email_map": email_map,
         "email_records": email_records,
+        "email_validation": email_validation,
         "invalid_files": invalid_files,
         "invalid_pdf_details": invalid_pdf_details,
         "pdf_errors_by_persnr": pdf_errors_by_persnr,
@@ -697,19 +1029,12 @@ def action_send(
 
     _p(progress_cb, "Excel-Datei wird gelesen…")
     email_records = load_email_records(excel_path)
-    email_map = _email_map_from_records(email_records)
-    if allowed_persnr is not None:
-        grouped = {persnr: files for persnr, files in grouped.items() if persnr in allowed_persnr}
-        valid_grouped = {persnr: files for persnr, files in valid_grouped.items() if persnr in allowed_persnr}
-        pdf_errors_by_persnr = {
-            persnr: errors for persnr, errors in pdf_errors_by_persnr.items() if persnr in allowed_persnr
-        }
-        invalid_pdf_details = [
-            row for row in invalid_pdf_details if str(row.get("persnr", "") or "") in allowed_persnr
-        ]
-        email_records = {persnr: record for persnr, record in email_records.items() if persnr in allowed_persnr}
-        email_map = {persnr: email for persnr, email in email_map.items() if persnr in allowed_persnr}
-
+    _p(progress_cb, "Fehlende Mitarbeiternamen werden aus den Abrechnungen ergänzt…")
+    email_records = _enrich_employee_names_from_pdfs(email_records, valid_grouped)
+    _p(progress_cb, "E-Mail-Adressen werden geprüft…")
+    email_validation = validate_email_records(email_records)
+    audit_email_validation = email_validation
+    email_map = _email_map_from_records(email_records, email_validation)
     grouped_persnr = set(grouped.keys())
     email_persnr = set(email_map.keys())
     missing_email_persnr = sorted(grouped_persnr - email_persnr, key=_persnr_sort_key)
@@ -724,8 +1049,6 @@ def action_send(
     body_html_template = mail_text.get("body_html", "")
     pdf_password_settings = settings.get("pdf_password", {})
     password_enabled = bool(pdf_password_settings.get("enabled", True))
-    password_prefix = str(pdf_password_settings.get("prefix", "") or "")
-    password_suffix = str(pdf_password_settings.get("suffix", "") or "")
 
     if mail_mode == "smtp":
         test_connection = lambda: test_smtp_connection(smtp_settings)
@@ -793,9 +1116,40 @@ def action_send(
         missing_files_persnr=missing_files_persnr,
         bundle_details=bundle_stats["details"],
         validation=validation,
+        email_validation=email_validation,
     )
 
     missing_pdf_path = run_dir / "ohne_email_gesamt.pdf"
+
+    # The audit and the collective PDF must always describe the complete input.
+    # A recipient selection only limits which employee documents are sent.
+    audit_invalid_pdf_details = invalid_pdf_details
+    audit_missing_email_persnr = missing_email_persnr
+    audit_missing_files_persnr = missing_files_persnr
+    if allowed_persnr is not None:
+        grouped = {persnr: files for persnr, files in grouped.items() if persnr in allowed_persnr}
+        valid_grouped = {persnr: files for persnr, files in valid_grouped.items() if persnr in allowed_persnr}
+        pdf_errors_by_persnr = {
+            persnr: errors for persnr, errors in pdf_errors_by_persnr.items() if persnr in allowed_persnr
+        }
+        email_records = {persnr: record for persnr, record in email_records.items() if persnr in allowed_persnr}
+        email_validation = {
+            persnr: result
+            for persnr, result in email_validation.items()
+            if persnr in allowed_persnr
+        }
+        email_map = {persnr: email for persnr, email in email_map.items() if persnr in allowed_persnr}
+
+    delivery_grouped_persnr = set(grouped.keys())
+    delivery_email_persnr = set(email_map.keys())
+    missing_email_persnr = sorted(
+        delivery_grouped_persnr - delivery_email_persnr,
+        key=_persnr_sort_key,
+    )
+    missing_files_persnr = sorted(
+        delivery_email_persnr - delivery_grouped_persnr,
+        key=_persnr_sort_key,
+    )
 
     if not dry_run:
         _p(progress_cb, f"Versandmethode '{mail_mode}' wird geprüft…")
@@ -806,10 +1160,18 @@ def action_send(
     skipped_count = 0
     rows: list[dict] = []
 
-    _p(progress_cb, "Mitarbeiter-PDFs werden erstellt…")
+    if (
+        password_enabled
+        and str(pdf_password_settings.get("source", "persnr") or "persnr").strip().lower()
+        == "birth_date"
+    ):
+        _p(progress_cb, "Geburtsdaten werden aus den Abrechnungen gelesen…")
+    else:
+        _p(progress_cb, "Mitarbeiter-PDFs werden erstellt…")
     for persnr in sorted(grouped.keys(), key=_persnr_sort_key):
         files = _dedup_pdf_paths(grouped[persnr])
-        email = email_map.get(persnr, "")
+        email_check = email_validation.get(persnr, {})
+        email = str(email_check.get("email") or "")
         file_names = ", ".join(p.name for p in files)
         pdf_errors = pdf_errors_by_persnr.get(persnr, [])
 
@@ -823,6 +1185,7 @@ def action_send(
             "Attachment": "",
             "Password": "",
             "Error": "",
+            **_email_check_values(email_validation, persnr),
         }
 
         if pdf_errors:
@@ -833,17 +1196,35 @@ def action_send(
             _p(progress_cb, f"Fehler bei {persnr}: {row['Error']}")
             continue
 
-        if not email:
-            row["Status"] = "Keine E-Mail"
+        if not email or (email_check and not email_check.get("sendable", False)):
+            row["Status"] = (
+                "Keine E-Mail"
+                if not email or email_check.get("code") == "missing"
+                else "Ungültige E-Mail"
+            )
             skipped_count += 1
             rows.append(row)
             continue
 
         merged_pdf = prepared_dir / f"{persnr}.pdf"
         final_pdf = prepared_dir / f"{persnr}_protected.pdf" if password_enabled else merged_pdf
-        password = f"{password_prefix}{persnr}{password_suffix}" if password_enabled else ""
+        password = ""
 
         try:
+            employee_record = dict(email_records.get(persnr, {}))
+            if (
+                password_enabled
+                and str(pdf_password_settings.get("source", "persnr") or "persnr").strip().lower()
+                == "birth_date"
+            ):
+                pdf_birth_date = _extract_employee_birth_date(files)
+                if pdf_birth_date:
+                    employee_record["PdfGeburtsdatum"] = pdf_birth_date
+            password = _pdf_password_for_employee(
+                pdf_password_settings,
+                persnr,
+                employee_record,
+            )
             _merge_employee_pdfs(files, merged_pdf)
             if password_enabled:
                 _encrypt_pdf(merged_pdf, final_pdf, password)
@@ -856,6 +1237,11 @@ def action_send(
             subject = format_message_template(subject_template, context)
             body = format_message_template(body_template, context)
             body_html = format_message_template(body_html_template, context) if body_html_template else ""
+            body, body_html = append_pdf_password_notice(
+                body,
+                body_html,
+                pdf_password_settings,
+            )
 
             row["Attachment"] = final_pdf.name
             row["Password"] = password
@@ -882,13 +1268,14 @@ def action_send(
             {
                 "PersNr": persnr,
                 **_person_values(email_records, persnr),
-                "Email": email_map.get(persnr, ""),
+                "Email": str(email_validation.get(persnr, {}).get("email") or ""),
                 "Files": "",
                 "Count": 0,
                 "Status": "Keine Dateien",
                 "Attachment": "",
                 "Password": "",
                 "Error": "",
+                **_email_check_values(email_validation, persnr),
             }
         )
 
@@ -899,10 +1286,10 @@ def action_send(
         "total_pdf_files": scan_result["total_pdf_files"],
         "valid_pdf_files": scan_result["valid_pdf_files"],
         "invalid_pdf_files": len(invalid_files),
-        "unreadable_pdf_files": len(invalid_pdf_details),
+        "unreadable_pdf_files": len(audit_invalid_pdf_details),
         "unique_persnr_count": scan_result["unique_persnr_count"],
-        "missing_email_count": len(missing_email_persnr),
-        "missing_files_count": len(missing_files_persnr),
+        "missing_email_count": len(audit_missing_email_persnr),
+        "missing_files_count": len(audit_missing_files_persnr),
         "missing_pdf_count": bundle_stats["pdf_file_count"],
         "duplicate_bundle_pdf_files": bundle_stats["duplicate_pdf_file_count"],
         "expected_bundle_pages": bundle_stats["expected_page_count"],
@@ -914,6 +1301,7 @@ def action_send(
         "skipped_count": skipped_count,
         "dry_run": dry_run,
         "mail_mode": mail_mode,
+        **_email_validation_summary(audit_email_validation),
     }
 
     _p(progress_cb, "Versandlauf abgeschlossen.")
@@ -931,6 +1319,7 @@ def action_send(
         "source_kind": scan_result.get("source_kind"),
         "email_map": email_map,
         "email_records": email_records,
+        "email_validation": email_validation,
         "invalid_files": invalid_files,
         "invalid_pdf_details": invalid_pdf_details,
         "pdf_errors_by_persnr": pdf_errors_by_persnr,

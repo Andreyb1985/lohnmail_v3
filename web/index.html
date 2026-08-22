@@ -740,55 +740,24 @@
             <button class="secondary-action" data-reports-action="export-csv"><span data-icon="report"></span>Export⌄</button>
           </section>
 
-          <article class="card report-files-panel">
-            <div class="card-title-row"><h2>Prüfberichte</h2><button data-report-open="audit">Prüfbericht öffnen</button></div>
-            <div class="report-list report-files-list">
-              <div class="report-item" data-report="audit"><span class="file file-xls">XLS</span><div><strong>audit_check.xlsx</strong><small>Nicht erstellt</small></div><button><span data-icon="arrow-up-right"></span></button></div>
-              <div class="report-item" data-report="missing"><span class="file file-pdf">PDF</span><div><strong>ohne_email_gesamt.pdf</strong><small>Nicht erstellt</small></div><button><span data-icon="arrow-up-right"></span></button></div>
-              <div class="report-item" data-report="send"><span class="file file-xls">XLS</span><div><strong>send_report.xlsx</strong><small>Nicht erstellt</small></div><button><span data-icon="arrow-up-right"></span></button></div>
-            </div>
-          </article>
-
           <section class="reports-grid">
-            <div class="reports-main">
-              <article class="card report-chart-card">
-                <div class="card-title-row"><h2>Verarbeitung & Versand Verlauf</h2><button data-reports-action="chart-mode" data-reports="chart-mode-label">Alle⌄</button></div>
-                <div class="chart-legend">
-                  <span class="green-line">Verarbeitungen</span>
-                  <span class="blue-line">Gesendete E-Mails</span>
-                  <span class="purple-line">Erfolgreich zugestellt</span>
-                  <span class="orange-line">Fehlgeschlagen</span>
-                </div>
-                <div class="report-chart">
-                  <div class="chart-gridlines"><i></i><i></i><i></i><i></i></div>
-                  <svg viewBox="0 0 760 190" preserveAspectRatio="none" aria-hidden="true">
-                    <path class="area green" data-reports-chart="processed-area" d="M0 176 L760 176 L760 190 L0 190 Z"></path>
-                    <path class="line green" data-reports-chart="processed-line" d="M0 176 L760 176"></path>
-                    <path class="area blue" data-reports-chart="sent-area" d="M0 176 L760 176 L760 190 L0 190 Z"></path>
-                    <path class="line blue" data-reports-chart="sent-line" d="M0 176 L760 176"></path>
-                    <path class="line purple" data-reports-chart="delivered-line" d="M0 176 L760 176"></path>
-                    <path class="line orange" data-reports-chart="failed-line" d="M0 176 L760 176"></path>
-                  </svg>
-                  <div class="chart-y" data-reports="chart-y"><span>1</span><span>1</span><span>1</span><span>0</span><span>0</span></div>
-                  <div class="chart-x" data-reports="chart-x"><span>Keine Daten</span></div>
-                </div>
-              </article>
-
-              <article class="card reports-table-card">
-                <h2>Berichte Übersicht</h2>
-                <div class="reports-table-wrap">
-                  <table class="reports-table">
-                    <thead>
-                      <tr><th>Datum</th><th>Typ</th><th>Titel</th><th>Status</th><th>Verarbeitung</th><th>Prüfung</th><th>Versand</th><th>Erstellt von</th><th>Aktionen</th></tr>
-                    </thead>
-                    <tbody data-reports="table-body">
-                      <tr><td colspan="9">Berichte werden geladen...</td></tr>
-                    </tbody>
-                  </table>
-                </div>
-                <div class="table-footer"><span data-reports="table-footer">Zeige 0 Einträge</span><div class="pagination"><button data-reports-action="page-prev" disabled>‹</button><button class="active" data-reports="page-current">1</button><button data-reports-action="page-next" disabled>›</button></div><button data-reports-action="page-size" data-reports="page-size-label">10 pro Seite⌄</button></div>
-              </article>
-            </div>
+            <article class="card reports-table-card reports-session-card">
+              <div class="report-recipient-head">
+                <div><h2>Versandvorgänge</h2><p>Gespeicherte Versandläufe des aktiven Mandanten</p></div>
+                <span data-reports="session-context">Noch keine Versandvorgänge</span>
+              </div>
+              <div class="reports-table-wrap">
+                <table class="reports-table">
+                  <thead>
+                    <tr><th>Datum</th><th>Mandant</th><th>Status</th><th>Mitarbeiter</th><th>Ohne E-Mail</th><th>Gesendet</th><th>Fehler</th><th>Aktionen</th></tr>
+                  </thead>
+                  <tbody data-reports="table-body">
+                    <tr><td colspan="8">Versandvorgänge werden geladen...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="table-footer"><span data-reports="table-footer">Zeige 0 Einträge</span><div class="pagination"><button data-reports-action="page-prev" disabled>‹</button><button class="active" data-reports="page-current">1</button><button data-reports-action="page-next" disabled>›</button></div><button data-reports-action="page-size" data-reports="page-size-label">10 pro Seite⌄</button></div>
+            </article>
 
             <aside class="card report-details">
               <div class="detail-head"><h2>Bericht Details</h2><div><button data-reports-action="detail-close">×</button></div></div>
@@ -806,25 +775,56 @@
                   <div><span data-icon="hourglass"></span><span>Pfad</span><b data-reports-detail="path">-</b></div>
                 </div>
 
+                <h3>Prüfberichte</h3>
+                <div class="report-detail-files" data-reports-detail="files">
+                  <div class="report-detail-file empty">Keine Berichtsdateien vorhanden.</div>
+                </div>
+
                 <h3>Zusammenfassung</h3>
                 <div class="summary-list">
                   <div><span data-icon="users"></span>Verarbeitete Mitarbeiter<b data-reports-detail="employees">0</b></div>
                   <div><span data-icon="x"></span>Gefundene Fehler<b class="error-text" data-reports-detail="errors">0</b></div>
                   <div><span data-icon="warning"></span>Warnungen<b class="warning-text" data-reports-detail="warnings">0</b></div>
                   <div><span data-icon="send"></span>Gesendete E-Mails<b data-reports-detail="sent">0</b></div>
-                  <div><span data-icon="checkcircle"></span>Erfolgreich zugestellt<b data-reports-detail="delivered">0</b></div>
+                  <div><span data-icon="checkcircle"></span>SMTP akzeptiert<b data-reports-detail="delivered">0</b></div>
                   <div><span data-icon="x"></span>Fehlgeschlagen<b class="error-text" data-reports-detail="failed">0</b></div>
-                </div>
-
-                <h3>Aktionen</h3>
-                <div class="report-actions">
-                  <button data-reports-action="open-pdf"><span data-icon="doc"></span>PDF Bericht öffnen</button>
-                  <button data-reports-action="open-excel"><span data-icon="table"></span>Excel Export</button>
-                  <button data-reports-action="open-selected"><span data-icon="arrow-up-right"></span>Bericht öffnen</button>
                 </div>
               </div>
             </aside>
           </section>
+
+          <article class="card report-recipient-card report-recipient-full">
+            <div class="report-recipient-head">
+              <div>
+                <h2>Versanddetails pro Mitarbeiter</h2>
+                <p>Empfänger und Prüfergebnisse des ausgewählten Versandvorgangs</p>
+              </div>
+              <span data-reports-recipients="context">Noch keine Versanddaten</span>
+            </div>
+            <div class="report-recipient-toolbar">
+              <button class="active" data-reports-recipient-filter="all">Alle <b data-reports-recipient-count="all">0</b></button>
+              <button data-reports-recipient-filter="sent">Gesendet <b data-reports-recipient-count="sent">0</b></button>
+              <button data-reports-recipient-filter="ready">Versandbereit <b data-reports-recipient-count="ready">0</b></button>
+              <button data-reports-recipient-filter="missing">Ohne E-Mail <b data-reports-recipient-count="missing">0</b></button>
+              <button data-reports-recipient-filter="failed">Fehler <b data-reports-recipient-count="failed">0</b></button>
+              <label class="table-search"><input data-reports-recipients="search" placeholder="Mitarbeiter oder E-Mail suchen..." /><span data-icon="search"></span></label>
+            </div>
+            <div class="report-recipient-table-wrap">
+              <table class="report-recipient-table">
+                <thead>
+                  <tr><th>Mitarbeiter</th><th>E-Mail</th><th>E-Mail-Prüfung</th><th>MX</th><th>Geprüft am</th><th>Versandstatus</th><th>Dokument</th><th>Hinweis</th></tr>
+                </thead>
+                <tbody data-reports-recipients="body">
+                  <tr><td colspan="8"><div class="report-recipient-empty">Versanddaten werden geladen...</div></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="report-recipient-footer">
+              <span data-reports-recipients="footer">0 Einträge</span>
+              <div class="pagination"><button data-reports-action="recipient-page-prev" disabled>‹</button><button class="active" data-reports-recipients="page-current">1</button><button data-reports-action="recipient-page-next" disabled>›</button></div>
+              <button data-reports-action="recipient-page-size" data-reports-recipients="page-size-label">20 pro Seite⌄</button>
+            </div>
+          </article>
         </section>
 
         <section class="page page-company" data-page="Unternehmen">
@@ -1023,6 +1023,7 @@
             <button data-settings-tab="email"><span data-icon="mail"></span>E-Mail</button>
             <button data-settings-tab="templates"><span data-icon="table"></span>Vorlagen</button>
             <button data-settings-tab="notifications"><span data-icon="bell"></span>Benachrichtigungen</button>
+            <button data-settings-tab="updates"><span data-icon="process"></span>Updates</button>
             <button data-settings-tab="security"><span data-icon="key"></span>Sicherheit</button>
             <button data-settings-tab="advanced"><span data-icon="process"></span>Erweitert</button>
           </nav>
@@ -1111,11 +1112,99 @@
                 </section>
               </article>
 
+              <article class="settings-panel settings-update-panel" data-settings-panel="updates">
+                <section class="card settings-reference-card update-overview-card">
+                  <div class="update-card-head">
+                    <div>
+                      <h2>Updates</h2>
+                      <p>Sicherheits- und Funktionsupdates für LohnMail.</p>
+                    </div>
+                    <span class="update-status-badge idle" data-update="badge">Noch nicht geprüft</span>
+                  </div>
+                  <div class="update-version-grid">
+                    <div class="update-version-item">
+                      <span data-icon="info"></span>
+                      <span>
+                        <small>Installierte Version</small>
+                        <strong data-update="installed-version">v2.0.0</strong>
+                        <em data-update="installed-build">Build 2025.05.15</em>
+                      </span>
+                    </div>
+                    <div class="update-version-item">
+                      <span data-icon="clock"></span>
+                      <span>
+                        <small>Letzte Prüfung</small>
+                        <strong data-update="last-checked">Noch nicht geprüft</strong>
+                        <em>Kanal: Stabil</em>
+                      </span>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="card settings-reference-card">
+                  <div class="settings-toggle-list compact">
+                    <label>
+                      <span data-icon="process"></span>
+                      <strong>Automatisch nach Updates suchen<small>Prüft beim Start und danach regelmäßig im Hintergrund.</small></strong>
+                      <input data-update-pref="auto-check" type="checkbox" checked>
+                    </label>
+                  </div>
+                  <div class="update-action-row">
+                    <div>
+                      <strong data-update="status-title">Noch nicht geprüft</strong>
+                      <small data-update="status-detail">Die Update-Schnittstelle ist für den Desktop-Updater vorbereitet.</small>
+                    </div>
+                    <button class="secondary-action" data-update-action="check" type="button"><span data-icon="process"></span>Nach Updates suchen</button>
+                  </div>
+                  <div class="update-download" data-update-download hidden>
+                    <div class="update-download-head">
+                      <div>
+                        <strong data-update="download-title">Update wird heruntergeladen</strong>
+                        <small data-update="download-detail">0 MB von 0 MB</small>
+                      </div>
+                      <b data-update="progress-text">0%</b>
+                    </div>
+                    <div class="update-progress-track"><i data-update="progress-bar"></i></div>
+                    <button class="secondary-action" data-update-action="download" type="button"><span data-icon="arrow-up-right"></span>Update herunterladen</button>
+                  </div>
+                </section>
+
+                <section class="card settings-reference-card">
+                  <div class="update-card-head compact">
+                    <div>
+                      <h2>Release Notes</h2>
+                      <p data-update="release-version">Installierte Version 2.0.0</p>
+                    </div>
+                  </div>
+                  <div class="update-release-notes" data-update="release-notes">
+                    <p>Release Notes werden hier angezeigt, sobald ein Update verfügbar ist.</p>
+                  </div>
+                </section>
+
+                <section class="card settings-reference-card">
+                  <div class="settings-toggle-list compact">
+                    <label>
+                      <span data-icon="clock"></span>
+                      <strong>Beim Beenden installieren<small>Wird verfügbar, sobald ein Update vollständig heruntergeladen wurde.</small></strong>
+                      <input data-update-pref="install-on-exit" type="checkbox" disabled>
+                    </label>
+                  </div>
+                  <div class="update-policy-note">
+                    <span data-icon="info"></span>
+                    <p>
+                      <strong>Update-Richtlinie</strong>
+                      <small>Updates bleiben optional. Nur kritische Sicherheitslücken oder technische Inkompatibilität können eine Installation verpflichtend machen.</small>
+                    </p>
+                  </div>
+                </section>
+              </article>
+
               <article class="settings-panel" data-settings-panel="security">
                 <section class="card settings-reference-card">
                   <h2>Sicherheit</h2>
                   <div class="reference-form-grid">
                     <label class="settings-check"><input data-settings-field="pdf_password.enabled" type="checkbox">PDF Passwort aktivieren</label>
+                    <label>Passwort-Basis<select data-settings-field="pdf_password.source"><option value="persnr">Personalnummer</option><option value="birth_date">Geburtsdatum (TTMMJJJJ)</option></select></label>
                     <label>Passwort Prefix<input data-settings-field="pdf_password.prefix"></label>
                     <label>Passwort Suffix<input data-settings-field="pdf_password.suffix"></label>
                   </div>

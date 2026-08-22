@@ -10,15 +10,18 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Slot, Signal, QThread, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QFileDialog, QInputDialog, QWidget
+from openpyxl import load_workbook
 
 from core.config import (
     GESOB_DIR,
+    SETTINGS_DIR,
     get_company_email_excel_file,
     get_company_name,
     load_settings,
     save_settings,
 )
 from core.license_manager import LicenseManager
+from ui_web.report_history import ReportHistoryStore
 
 
 class ProcessingWorker(QObject):
@@ -137,6 +140,7 @@ class WebBridge(QObject):
         "send": "send_report.xlsx",
     }
     REPORT_INDEX_PATH = GESOB_DIR / "lohnmail_reports_index.json"
+    REPORT_HISTORY_PATH = SETTINGS_DIR / "lohnmail_history.sqlite3"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -160,6 +164,10 @@ class WebBridge(QObject):
         self._mass_message_status = self._idle_mass_message_status()
         self._mass_message_preview = self._empty_mass_message_preview()
         self._license_manager = LicenseManager(load_settings())
+        try:
+            self._report_history: ReportHistoryStore | None = ReportHistoryStore(self.REPORT_HISTORY_PATH)
+        except Exception:
+            self._report_history = None
 
     @Slot(str)
     def navigate(self, page: str) -> None:
@@ -734,6 +742,11 @@ class WebBridge(QObject):
             password_data = data.get("pdf_password") if isinstance(data.get("pdf_password"), dict) else {}
             if "enabled" in password_data:
                 pdf_password["enabled"] = bool(password_data.get("enabled"))
+            if "source" in password_data:
+                password_source = str(password_data.get("source") or "persnr").strip().lower()
+                pdf_password["source"] = (
+                    password_source if password_source in {"persnr", "birth_date"} else "persnr"
+                )
             for key in ["prefix", "suffix"]:
                 if key in password_data:
                     pdf_password[key] = str(password_data.get(key) or "")
@@ -1242,6 +1255,7 @@ class WebBridge(QObject):
                 raise ValueError("Bitte zuerst Versand vorbereiten.")
 
             from core.message_templates import (
+                append_pdf_password_notice,
                 build_mail_context,
                 build_send_preview_data,
                 format_message_template,
@@ -1279,6 +1293,11 @@ class WebBridge(QObject):
             if not body_preview and body_html_preview:
                 body_preview = re.sub(r"<[^>]+>", " ", body_html_preview)
                 body_preview = " ".join(body_preview.split())
+            body_preview, body_html_preview = append_pdf_password_notice(
+                body_preview,
+                body_html_preview,
+                settings.get("pdf_password", {}),
+            )
             smtp_settings = settings.get("smtp", {})
             return json.dumps(
                 {
@@ -1920,6 +1939,11 @@ class WebBridge(QObject):
             },
             "pdf_password": {
                 "enabled": bool(pdf_password.get("enabled", True)),
+                "source": (
+                    str(pdf_password.get("source", "persnr") or "persnr")
+                    if str(pdf_password.get("source", "persnr") or "persnr") in {"persnr", "birth_date"}
+                    else "persnr"
+                ),
                 "prefix": str(pdf_password.get("prefix", "") or ""),
                 "suffix": str(pdf_password.get("suffix", "") or ""),
             },
@@ -2610,16 +2634,43 @@ class WebBridge(QObject):
             return False
 
     def _load_report_index(self) -> list[dict]:
-        if not self.REPORT_INDEX_PATH.is_file():
-            return []
-        try:
-            data = json.loads(self.REPORT_INDEX_PATH.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return []
-        records = data.get("records", []) if isinstance(data, dict) else []
-        return [item for item in records if isinstance(item, dict)]
+        stored_records: list[dict] = []
+        if self._report_history is not None:
+            try:
+                stored_records = self._report_history.load_records()
+            except Exception:
+                stored_records = []
+
+        legacy_records: list[dict] = []
+        if self.REPORT_INDEX_PATH.is_file():
+            try:
+                data = json.loads(self.REPORT_INDEX_PATH.read_text(encoding="utf-8"))
+                raw_records = data.get("records", []) if isinstance(data, dict) else []
+                legacy_records = [item for item in raw_records if isinstance(item, dict)]
+            except (OSError, json.JSONDecodeError):
+                legacy_records = []
+
+        merged: dict[str, dict] = {}
+        for index, record in enumerate(legacy_records):
+            key = str(record.get("id") or f"legacy-{index}")
+            merged[key] = record
+        for index, record in enumerate(stored_records):
+            key = str(record.get("id") or f"stored-{index}")
+            merged[key] = record
+        records = list(merged.values())
+        if records and self._report_history is not None:
+            try:
+                self._report_history.upsert_records(records)
+            except Exception:
+                pass
+        return records
 
     def _save_report_index(self, records: list[dict]) -> None:
+        if self._report_history is not None:
+            try:
+                self._report_history.upsert_records(records)
+            except Exception:
+                pass
         self.REPORT_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
         payload = {"version": 1, "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"), "records": records}
         temporary = self.REPORT_INDEX_PATH.with_suffix(".tmp")
@@ -2739,6 +2790,7 @@ class WebBridge(QObject):
         }
         records = self._load_report_index()
         by_id = {str(item.get("id", "") or ""): item for item in records}
+        registered_records: list[dict] = []
         for raw_path in candidates.values():
             path = Path(str(raw_path or "")).expanduser()
             if not path.is_file() or not self._is_report_path_safe(path):
@@ -2754,7 +2806,176 @@ class WebBridge(QObject):
                 dry_run=dry_run if operation == "Versand" else None,
             )
             by_id[record["id"]] = record
+            registered_records.append(record)
         self._save_report_index(list(by_id.values()))
+        if operation == "Versand" and registered_records:
+            self._report_sessions(registered_records, company_id)
+
+    @staticmethod
+    def _email_validation_code(label: str) -> str:
+        normalized = str(label or "").strip().lower()
+        mapping = {
+            "gültig": "valid",
+            "fehlt": "missing",
+            "keine e-mail": "missing",
+            "ungültiges format": "invalid_format",
+            "ungültige zeichen": "illegal_characters",
+            "unzulässige zeichen": "illegal_characters",
+            "doppelte adresse": "duplicate",
+            "doppelte e-mail": "duplicate",
+            "domain nicht gefunden": "domain_missing",
+            "keine mx-einträge": "mx_missing",
+            "keine mx-record": "mx_missing",
+            "dns nicht geprüft": "dns_unavailable",
+            "dns-prüfung nicht verfügbar": "dns_unavailable",
+        }
+        return mapping.get(normalized, "not_checked")
+
+    def _read_send_report_rows(self, path: Path) -> list[dict]:
+        if not path.is_file():
+            return []
+        try:
+            workbook = load_workbook(path, read_only=True, data_only=True)
+            sheet = workbook.active
+            values = sheet.iter_rows(values_only=True)
+            headers = [str(value or "").strip() for value in next(values, ())]
+            rows: list[dict] = []
+            for raw_values in values:
+                source = {
+                    headers[index]: raw_values[index]
+                    for index in range(min(len(headers), len(raw_values)))
+                    if headers[index]
+                }
+                persnr = str(source.get("PersNr") or "").strip()
+                if not persnr:
+                    continue
+                employee = str(source.get("Name, Vorname") or "").strip()
+                if not employee:
+                    first_name = str(source.get("Vorname") or "").strip()
+                    last_name = str(source.get("Name") or "").strip()
+                    employee = " ".join(part for part in (first_name, last_name) if part).strip()
+                employee = employee or "-"
+                validation_label = (
+                    str(source.get("E-Mail-Prüfung") or "").strip()
+                    or "Keine Prüfdaten (alter Bericht)"
+                )
+                sendable_value = str(source.get("Versandfähig") or "").strip().lower()
+                sendable = sendable_value in {"ja", "yes", "true", "1"}
+                status = str(source.get("Status") or "").strip() or "Unbekannt"
+                rows.append(
+                    {
+                        "persnr": persnr,
+                        "employee": employee,
+                        "email": str(source.get("Email") or "").strip(),
+                        "document": str(source.get("Anhang") or source.get("Dateien") or "").strip(),
+                        "status": status,
+                        "error": str(source.get("Fehler") or "").strip(),
+                        "email_validation": {
+                            "code": self._email_validation_code(validation_label),
+                            "label": validation_label,
+                            "mx_status": str(source.get("MX") or "-").strip() or "-",
+                            "checked_at": str(source.get("Geprüft am") or "").strip(),
+                            "sendable": sendable,
+                            "hint": str(source.get("Prüfhinweis") or "").strip(),
+                        },
+                    }
+                )
+            workbook.close()
+            return rows
+        except Exception:
+            return []
+
+    def _report_sessions(self, records: list[dict], company_id: str = "") -> list[dict]:
+        grouped: dict[str, list[dict]] = {}
+        for record in records:
+            run_id = str(record.get("run_id") or record.get("id") or "").strip()
+            grouped.setdefault(run_id, []).append(record)
+
+        sessions: list[dict] = []
+        for run_id, run_records in grouped.items():
+            send_record = next(
+                (
+                    record
+                    for record in run_records
+                    if record.get("kind") == "send"
+                ),
+                None,
+            )
+            if not send_record:
+                continue
+            metrics = self._empty_report_metrics()
+            for record in run_records:
+                raw_metrics = record.get("metrics", {}) if isinstance(record.get("metrics"), dict) else {}
+                for key in metrics:
+                    metrics[key] = max(metrics[key], int(raw_metrics.get(key, 0) or 0))
+            session_company_id = str(send_record.get("company_id") or "")
+            recipients = self._read_send_report_rows(Path(str(send_record.get("path") or "")).expanduser())
+            if not recipients and self._report_history is not None:
+                try:
+                    recipients = self._report_history.load_recipients(session_company_id, run_id)
+                except Exception:
+                    recipients = []
+            if recipients:
+                metrics["employees"] = max(metrics["employees"], len(recipients))
+                metrics["missing_email"] = max(
+                    metrics["missing_email"],
+                    sum(1 for row in recipients if row.get("status") == "Keine E-Mail"),
+                )
+                metrics["failed"] = max(
+                    metrics["failed"],
+                    sum(1 for row in recipients if row.get("status") == "Fehler"),
+                )
+            dry_run = bool(send_record.get("dry_run"))
+            if metrics["failed"]:
+                status_key, status_label = "error", "Mit Fehlern"
+            elif dry_run:
+                status_key, status_label = "prepared", "Vorbereitet"
+            elif metrics["sent"]:
+                status_key, status_label = "sent", "Versendet"
+            else:
+                status_key, status_label = "completed", "Abgeschlossen"
+            created_at = max(str(record.get("created_at") or "") for record in run_records)
+            files = sorted(
+                run_records,
+                key=lambda record: {"audit": 0, "missing": 1, "send": 2}.get(str(record.get("kind")), 9),
+            )
+            session = {
+                "id": run_id,
+                "run_id": run_id,
+                "company_id": session_company_id,
+                "company_name": str(send_record.get("company_name") or ""),
+                "created_at": created_at,
+                "status": status_label,
+                "status_key": status_key,
+                "dry_run": dry_run,
+                "metrics": metrics,
+                "files": files,
+                "recipients": recipients,
+            }
+            sessions.append(session)
+            if self._report_history is not None:
+                try:
+                    self._report_history.upsert_session(session)
+                    saved_recipients = self._report_history.load_recipients(session_company_id, run_id)
+                    if saved_recipients:
+                        session["recipients"] = saved_recipients
+                except Exception:
+                    pass
+
+        if self._report_history is not None and company_id:
+            try:
+                known_run_ids = {str(session.get("run_id") or "") for session in sessions}
+                for saved_session in self._report_history.load_sessions(company_id):
+                    saved_run_id = str(saved_session.get("run_id") or "")
+                    if not saved_run_id or saved_run_id in known_run_ids:
+                        continue
+                    saved_session["files"] = []
+                    sessions.append(saved_session)
+                    known_run_ids.add(saved_run_id)
+            except Exception:
+                pass
+        sessions.sort(key=lambda session: str(session.get("created_at") or ""), reverse=True)
+        return sessions
 
     def _reports_payload(self, settings: dict) -> dict:
         company_id = self._active_company_id(settings)
@@ -2778,6 +2999,10 @@ class WebBridge(QObject):
                 normalized["metrics"]["missing_email"] = int(raw_metrics.get("warnings", 0) or 0)
             active_records.append(normalized)
         active_records.sort(key=lambda item: str(item.get("created_at", "") or ""), reverse=True)
+        sessions = self._report_sessions(active_records, company_id)
+        latest_session = next((session for session in sessions if not session.get("dry_run")), None)
+        if latest_session is None and sessions:
+            latest_session = sessions[0]
 
         latest = {}
         for kind in self.REPORT_FILES:
@@ -2797,6 +3022,8 @@ class WebBridge(QObject):
             "company": {"id": company_id, "name": get_company_name(settings, company_id)},
             "output_dir": str(GESOB_DIR),
             "records": active_records,
+            "sessions": sessions,
+            "latest_session_id": str((latest_session or {}).get("id") or ""),
             "latest": latest,
             "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         }

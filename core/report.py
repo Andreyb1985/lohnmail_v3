@@ -16,6 +16,7 @@ def write_audit_check_xlsx(
     email_records: dict[str, dict[str, str]] | None = None,
     invalid_pdf_details: list[dict] | None = None,
     pdf_errors_by_persnr: dict[str, list[str]] | None = None,
+    email_validation: dict[str, dict] | None = None,
 ) -> None:
     def person_name(persnr: str) -> str:
         record = (email_records or {}).get(persnr, {})
@@ -33,9 +34,15 @@ def write_audit_check_xlsx(
 
     for persnr in sorted(grouped.keys()):
         files = grouped[persnr]
-        email = email_map.get(persnr, "")
+        email_check = (email_validation or {}).get(persnr, {})
+        email = str(email_check.get("email") or email_map.get(persnr, ""))
         pdf_errors = (pdf_errors_by_persnr or {}).get(persnr, [])
-        status = "Fehler" if pdf_errors else ("OK" if email else "Keine E-Mail")
+        if pdf_errors:
+            status = "Fehler"
+        elif email_check and not email_check.get("sendable", False):
+            status = str(email_check.get("label") or "Ungültige E-Mail")
+        else:
+            status = "OK" if email else "Keine E-Mail"
         ws1.append([
             persnr,
             person_name(persnr),
@@ -144,6 +151,31 @@ def write_audit_check_xlsx(
             row.get("reason", ""),
             row.get("file_hash", ""),
             row.get("duplicate_of", ""),
+        ])
+
+    # ---------- Blatt 7: E-Mail-Prüfung ----------
+    ws7 = wb.create_sheet("E-Mail-Prüfung")
+    ws7.append([
+        "PersNr",
+        "Name, Vorname",
+        "E-Mail",
+        "Ergebnis",
+        "MX",
+        "Geprüft am",
+        "Versandfähig",
+        "Hinweis",
+    ])
+    for persnr in sorted((email_records or {}).keys()):
+        result = (email_validation or {}).get(persnr, {})
+        ws7.append([
+            persnr,
+            person_name(persnr),
+            result.get("email", (email_records or {}).get(persnr, {}).get("Email", "")),
+            result.get("label", "Nicht geprüft"),
+            result.get("mx_status", "-"),
+            result.get("checked_at", ""),
+            "Ja" if result.get("sendable", False) else "Nein",
+            result.get("hint", ""),
         ])
 
     # einfache Breiten

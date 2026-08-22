@@ -220,23 +220,54 @@ class LicenseManager:
         return str(response.get("url") or "")
 
     def require_action(self, action: str) -> tuple[bool, dict]:
+        state = self.load_state()
+        status = str(state.get("status", "") or "").lower()
+        if status in BLOCKED_STATUSES:
+            return False, {**state, "last_message": self.block_message(status)}
+
+        # Processing is local and must not wait for a network timeout. A cached
+        # entitlement remains valid until its known access end. Regular status
+        # refreshes still synchronize revocations and payment state.
+        if self._allow_offline(state):
+            return True, state
+
         state = self.refresh(force=False, start_trial=True)
         status = str(state.get("status", "") or "").lower()
         if status in BLOCKED_STATUSES:
             return False, {**state, "last_message": self.block_message(status)}
-        if status == "no_connection":
-            return self._allow_offline(state), state
-        return True, state
+        if self._allow_offline(state):
+            return True, state
+        return False, state
 
     def _allow_offline(self, state: dict) -> bool:
-        if not self.server_url:
-            return True
+        status = str(state.get("status", "") or "").lower()
+        if status not in ACTIVE_STATUSES:
+            return False
+
+        entitlement_end = self._entitlement_end(state)
+        if entitlement_end is not None:
+            return _now() <= entitlement_end
+
         last_success = _parse_dt(state.get("last_successful_check_at"))
         if not last_success:
             return False
         license_type = str(state.get("type", "") or "").lower()
         grace = LIFETIME_OFFLINE_GRACE if license_type in {"lifetime", "internal"} else SUBSCRIPTION_OFFLINE_GRACE
         return _now() <= last_success + grace
+
+    @staticmethod
+    def _entitlement_end(state: dict) -> datetime | None:
+        dates = [
+            _parse_dt(state.get(key))
+            for key in (
+                "access_ends_at",
+                "trial_ends_at",
+                "related_trial_ends_at",
+                "current_period_end",
+            )
+        ]
+        known_dates = [value for value in dates if value is not None]
+        return max(known_dates) if known_dates else None
 
     def _needs_online_check(self, state: dict) -> bool:
         next_check = _parse_dt(state.get("next_check_at"))
@@ -248,6 +279,8 @@ class LicenseManager:
         state = {**state}
         state["last_message"] = f"Lizenzserver nicht erreichbar: {message}"
         state["server"] = "Nicht erreichbar"
+        # Connection state and license state are independent. Keep an active
+        # cached license visible and usable while its stored entitlement lasts.
         if not self._allow_offline(state):
             state["status"] = "no_connection"
         self._save_state(state)

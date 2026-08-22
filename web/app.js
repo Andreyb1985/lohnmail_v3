@@ -36,8 +36,11 @@
   var reportsReadyOnly = false;
   var reportsPage = 1;
   var reportsPageSize = 10;
+  var reportsRecipientPage = 1;
+  var reportsRecipientPageSize = 20;
   var reportsPeriodFilter = 'latest';
-  var reportsChartMode = 'all';
+  var reportsRecipientFilter = 'all';
+  var reportsRecipientSearchQuery = '';
   var selectedReportKind = '';
   var selectedReportId = '';
   var latestReportsState = null;
@@ -45,6 +48,23 @@
   var companySwitchSearchQuery = '';
   var latestLicenseState = null;
   var latestSettingsState = null;
+  var UPDATE_STORAGE_KEY = 'lohnmail.update-ui.v1';
+  var latestUpdateState = {
+    installed_version: '2.0.0',
+    installed_build: '2025.05.15',
+    last_checked_at: '',
+    auto_check: true,
+    status: 'idle',
+    available_version: '',
+    available_build: '',
+    progress: 0,
+    downloaded_bytes: 0,
+    total_bytes: 0,
+    release_notes: [],
+    install_on_exit: false,
+    required_reason: '',
+    message: ''
+  };
   var warningsAutoOpened = false;
   var latestMassMessageState = null;
   var latestShippingSendPreview = null;
@@ -64,6 +84,201 @@
       image.setAttribute('src', source);
     });
   }
+  function parseUpdatePayload(payload){
+    if (!payload) return {};
+    if (typeof payload === 'object') return payload;
+    try {
+      return JSON.parse(payload);
+    } catch (error) {
+      return { status: 'error', message: 'Die Update-Antwort konnte nicht gelesen werden.' };
+    }
+  }
+  function normalizeUpdateStatus(value){
+    var allowed = ['idle', 'checking', 'current', 'available', 'downloading', 'ready', 'required', 'error'];
+    var normalized = String(value || 'idle').toLowerCase();
+    return allowed.indexOf(normalized) === -1 ? 'idle' : normalized;
+  }
+  function updateIsMandatory(state){
+    var reason = String((state || {}).required_reason || '').toLowerCase();
+    return reason === 'security' || reason === 'critical_security' || reason === 'incompatible' || reason === 'critical_incompatibility';
+  }
+  function updateIsAvailable(state){
+    state = state || {};
+    var status = normalizeUpdateStatus(state.status);
+    return ['available', 'downloading', 'ready', 'required'].indexOf(status) !== -1 || !!state.available_version;
+  }
+  function formatUpdateBytes(value){
+    var bytes = Math.max(0, Number(value || 0));
+    if (!bytes) return '0 MB';
+    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0) + ' MB';
+  }
+  function loadUpdatePreferences(){
+    try {
+      var stored = JSON.parse(window.localStorage.getItem(UPDATE_STORAGE_KEY) || '{}');
+      if (stored && typeof stored === 'object') latestUpdateState = Object.assign({}, latestUpdateState, stored);
+    } catch (error) {
+      // Eine beschädigte lokale Präferenz darf die Einstellungen nicht blockieren.
+    }
+    latestUpdateState.status = normalizeUpdateStatus(latestUpdateState.status);
+    if (latestUpdateState.status === 'checking') latestUpdateState.status = 'idle';
+    if (latestUpdateState.status === 'downloading') latestUpdateState.status = 'available';
+  }
+  function saveUpdatePreferences(){
+    try {
+      window.localStorage.setItem(UPDATE_STORAGE_KEY, JSON.stringify(latestUpdateState));
+    } catch (error) {
+      // QWebEngine kann lokalen Speicher deaktivieren; der UI-Zustand bleibt trotzdem aktiv.
+    }
+  }
+  function activateSettingsTab(tab){
+    document.querySelectorAll('[data-settings-tab]').forEach(function(item){
+      item.classList.toggle('active', item.getAttribute('data-settings-tab') === tab);
+    });
+    document.querySelectorAll('[data-settings-panel]').forEach(function(panel){
+      panel.classList.toggle('active', panel.getAttribute('data-settings-panel') === tab);
+    });
+  }
+  function updateStatusCopy(state){
+    var version = state.available_version ? 'Version ' + state.available_version : 'Eine neue Version';
+    var copies = {
+      idle: ['Noch nicht geprüft', 'Die Update-Schnittstelle ist für den Desktop-Updater vorbereitet.'],
+      checking: ['Suche läuft...', 'Der Update-Dienst wird nach einer neueren Version gefragt.'],
+      current: ['LohnMail ist aktuell', 'Für diese Installation ist kein neueres Update verfügbar.'],
+      available: ['Update verfügbar', version + ' kann heruntergeladen werden.'],
+      downloading: ['Download läuft', version + ' wird sicher heruntergeladen.'],
+      ready: ['Bereit zur Installation', version + ' wurde heruntergeladen.'],
+      required: ['Kritisches Update erforderlich', version + ' behebt eine kritische Sicherheitslücke oder technische Inkompatibilität.'],
+      error: ['Prüfung nicht verfügbar', state.message || 'Der Update-Dienst ist derzeit nicht erreichbar.']
+    };
+    return copies[normalizeUpdateStatus(state.status)] || copies.idle;
+  }
+  function setButtonLabel(button, label){
+    if (!button) return;
+    var labelNode = button.querySelector('.button-label');
+    if (!labelNode) {
+      labelNode = document.createElement('span');
+      labelNode.className = 'button-label';
+      Array.prototype.slice.call(button.childNodes).forEach(function(node){
+        if (node.nodeType === Node.TEXT_NODE) node.remove();
+      });
+      button.appendChild(labelNode);
+    }
+    labelNode.textContent = label;
+  }
+  function renderUpdateSettings(){
+    var state = latestUpdateState;
+    var status = normalizeUpdateStatus(state.status);
+    var copy = updateStatusCopy(state);
+    setText('[data-update="installed-version"]', 'v' + String(state.installed_version || '2.0.0').replace(/^v/i, ''));
+    setText('[data-update="installed-build"]', 'Build ' + (state.installed_build || '-'));
+    setText('[data-update="last-checked"]', state.last_checked_at ? formatDateTime(state.last_checked_at) : 'Noch nicht geprüft');
+    setText('[data-update="status-title"]', copy[0]);
+    setText('[data-update="status-detail"]', copy[1]);
+
+    var badge = document.querySelector('[data-update="badge"]');
+    if (badge) {
+      badge.className = 'update-status-badge ' + status;
+      badge.textContent = copy[0];
+    }
+    var autoCheck = document.querySelector('[data-update-pref="auto-check"]');
+    if (autoCheck) autoCheck.checked = state.auto_check !== false;
+    var installOnExit = document.querySelector('[data-update-pref="install-on-exit"]');
+    if (installOnExit) {
+      installOnExit.disabled = status !== 'ready';
+      installOnExit.checked = status === 'ready' && state.install_on_exit === true;
+    }
+
+    var checkButton = document.querySelector('[data-update-action="check"]');
+    if (checkButton) checkButton.disabled = status === 'checking' || status === 'downloading';
+    var download = document.querySelector('[data-update-download]');
+    if (download) download.hidden = !updateIsAvailable(state);
+    var progress = Math.max(0, Math.min(100, Number(state.progress || 0)));
+    setText('[data-update="progress-text"]', Math.round(progress) + '%');
+    var progressBar = document.querySelector('[data-update="progress-bar"]');
+    if (progressBar) progressBar.style.width = progress + '%';
+    setText('[data-update="download-title"]', status === 'ready' ? 'Update heruntergeladen' : (status === 'required' ? 'Kritisches Update' : 'Update wird vorbereitet'));
+    var downloadDetail = state.total_bytes
+      ? formatUpdateBytes(state.downloaded_bytes) + ' von ' + formatUpdateBytes(state.total_bytes)
+      : [state.available_version ? 'Version ' + state.available_version : '', state.available_build ? 'Build ' + state.available_build : ''].filter(Boolean).join(' · ');
+    setText('[data-update="download-detail"]', downloadDetail || 'Download noch nicht gestartet');
+    var downloadButton = document.querySelector('[data-update-action="download"]');
+    if (downloadButton) {
+      setButtonLabel(downloadButton, status === 'ready' ? 'Heruntergeladen' : (status === 'downloading' ? 'Download läuft...' : 'Update herunterladen'));
+      downloadButton.disabled = status === 'downloading' || status === 'ready';
+    }
+
+    setText('[data-update="release-version"]', state.available_version ? 'Version ' + state.available_version : 'Installierte Version ' + state.installed_version);
+    var notes = document.querySelector('[data-update="release-notes"]');
+    if (notes) {
+      notes.textContent = '';
+      var values = Array.isArray(state.release_notes) ? state.release_notes : String(state.release_notes || '').split(/\r?\n/).filter(Boolean);
+      if (!values.length) values = ['Release Notes erscheinen hier, sobald der Update-Dienst eine neue Version meldet.'];
+      var list = document.createElement('ul');
+      values.forEach(function(value){
+        var item = document.createElement('li');
+        item.textContent = String(value);
+        list.appendChild(item);
+      });
+      notes.appendChild(list);
+    }
+  }
+  function applyUpdateState(payload){
+    var next = parseUpdatePayload(payload);
+    latestUpdateState = Object.assign({}, latestUpdateState, next);
+    latestUpdateState.status = normalizeUpdateStatus(latestUpdateState.status);
+    if (latestUpdateState.status === 'required' && !updateIsMandatory(latestUpdateState)) {
+      latestUpdateState.status = 'available';
+    }
+    if (updateIsMandatory(latestUpdateState) && updateIsAvailable(latestUpdateState)) {
+      latestUpdateState.status = 'required';
+    }
+    if (!Object.prototype.hasOwnProperty.call(next, 'last_checked_at') && ['current', 'available', 'required', 'error'].indexOf(latestUpdateState.status) !== -1) {
+      latestUpdateState.last_checked_at = new Date().toISOString();
+    }
+    saveUpdatePreferences();
+    renderUpdateSettings();
+    updateWarningCenter();
+    return latestUpdateState;
+  }
+  function dispatchUpdateAction(action){
+    var bridge = window.lohnmailBridge;
+    if (action === 'check') {
+      latestUpdateState.status = 'checking';
+      latestUpdateState.message = '';
+      renderUpdateSettings();
+      if (bridge && typeof bridge.checkForUpdates === 'function') {
+        bridge.checkForUpdates(function(payload){ applyUpdateState(payload); });
+      } else {
+        applyUpdateState({
+          status: 'error',
+          last_checked_at: new Date().toISOString(),
+          message: 'Der Update-Dienst ist in dieser Build noch nicht verbunden.'
+        });
+      }
+      return;
+    }
+    if (action === 'download') {
+      if (bridge && typeof bridge.downloadUpdate === 'function') {
+        applyUpdateState({ status: 'downloading', progress: 0, downloaded_bytes: 0 });
+        bridge.downloadUpdate(function(payload){ applyUpdateState(payload); });
+      } else {
+        latestUpdateState.message = 'Der Download-Dienst ist in dieser Build noch nicht verbunden.';
+        latestUpdateState.status = updateIsMandatory(latestUpdateState) ? 'required' : 'available';
+        saveUpdatePreferences();
+        renderUpdateSettings();
+      }
+    }
+  }
+  function maybeCheckForUpdates(){
+    var bridge = window.lohnmailBridge;
+    if (latestUpdateState.auto_check !== false && bridge && typeof bridge.checkForUpdates === 'function') {
+      dispatchUpdateAction('check');
+    }
+  }
+  window.lohnmailApplyUpdateState = applyUpdateState;
+  window.lohnmailGetUpdatePreferences = function(){ return Object.assign({}, latestUpdateState); };
+  window.addEventListener('lohnmail:update-state', function(event){ applyUpdateState(event.detail || {}); });
   function initBridge(){
     if (typeof QWebChannel === 'undefined') {
       setInfoBanner('Bridge nicht verfügbar. Bitte WebEngine neu starten.', false);
@@ -80,6 +295,7 @@
       loadShippingState();
       loadReportsState();
       loadMassMessageState();
+      maybeCheckForUpdates();
     });
   }
   function bindBridgeSignals(){
@@ -134,6 +350,12 @@
     }
     if (bridge.massMessageError) {
       bridge.massMessageError.connect(function(payload){ consumeMassMessagePayload(payload); });
+    }
+    if (bridge.updateStateChanged) {
+      bridge.updateStateChanged.connect(function(payload){ applyUpdateState(payload); });
+    }
+    if (bridge.updateProgress) {
+      bridge.updateProgress.connect(function(payload){ applyUpdateState(payload); });
     }
   }
   function setText(selector, value){
@@ -284,51 +506,51 @@
     };
   }
   function reportRows(){
-    var records = (latestReportsState && latestReportsState.records) || [];
-    return records.map(function(record){
-      var metrics = normalizeReportMetrics(record.metrics);
-      var exists = !!record.exists;
-      var type = String(record.type || 'file').toLowerCase();
-      var employees = Math.max(metrics.employees, metrics.processed);
-      var validation = metrics.errors || metrics.warnings ? metrics.errors + ' Fehler, ' + metrics.warnings + ' Warnungen' : '-';
-      var shipping = metrics.sent ? metrics.sent + ' gesendet' : (metrics.prepared ? metrics.prepared + ' vorbereitet' : '-');
+    var sessions = (latestReportsState && latestReportsState.sessions) || [];
+    return sessions.map(function(session){
+      var metrics = normalizeReportMetrics(session.metrics);
+      var files = (session.files || []).map(function(file){
+        var type = String(file.type || 'file').toLowerCase();
+        return {
+          id: String(file.id || ''),
+          kind: String(file.kind || 'other'),
+          type: type,
+          icon: reportIcon(type, file.kind),
+          title: String(file.filename || file.title || 'Bericht'),
+          path: String(file.path || ''),
+          exists: !!file.exists,
+          size: reportSize(file.size)
+        };
+      });
+      var statusKey = String(session.status_key || '').toLowerCase();
+      if (!statusKey) statusKey = metrics.failed || metrics.errors ? 'error' : (session.dry_run === true ? 'prepared' : 'completed');
       return {
-        id: String(record.id || ''),
-        kind: String(record.kind || 'other'),
-        type: type,
-        icon: reportIcon(type, record.kind),
-        title: String(record.filename || record.title || 'Bericht'),
-        subtitle: String(record.operation || record.subtitle || 'LohnMail'),
-        status: exists ? 'Abgeschlossen' : 'Nicht gefunden',
-        statusKey: exists ? 'ready' : 'missing',
-        exists: exists,
-        createdAt: String(record.created_at || ''),
-        created: reportDate(record.created_at),
-        path: String(record.path || ''),
-        runId: String(record.run_id || ''),
-        operation: String(record.operation || ''),
-        dryRun: record.dry_run === true ? true : (record.dry_run === false ? false : null),
-        processing: employees ? metrics.processed + ' / ' + employees : '-',
-        validation: validation,
-        shipping: shipping,
-        owner: String(record.owner || 'LohnMail'),
-        size: reportSize(record.size),
-        metrics: metrics
+        id: String(session.id || session.run_id || ''),
+        runId: String(session.run_id || session.id || ''),
+        companyId: String(session.company_id || ''),
+        companyName: String(session.company_name || 'Mandant'),
+        createdAt: String(session.created_at || ''),
+        created: reportDate(session.created_at),
+        status: String(session.status || (session.dry_run === true ? 'Vorbereitet' : 'Abgeschlossen')),
+        statusKey: statusKey,
+        dryRun: session.dry_run === true,
+        metrics: metrics,
+        files: files,
+        recipients: (session.recipients || []).slice(),
+        exists: files.some(function(file){ return file.exists; })
       };
+    }).sort(function(a, b){
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
   }
   function isRealSendReport(row){
-    return row.operation === 'Versand' && row.dryRun !== true && (row.dryRun === false || row.metrics.sent > 0);
+    return row && row.dryRun !== true && Number(row.metrics.sent || 0) > 0;
   }
   function reportRowsForPeriod(){
     var rows = reportRows();
     if (reportsPeriodFilter === 'latest') {
-      var latestSend = rows.filter(isRealSendReport).sort(function(a, b){
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      })[0];
-      if (!latestSend) return [];
-      var latestRunId = latestSend.runId || latestSend.id;
-      return rows.filter(function(row){ return (row.runId || row.id) === latestRunId; });
+      var latestSent = rows.filter(isRealSendReport)[0];
+      return latestSent ? [latestSent] : (rows.length ? [rows[0]] : []);
     }
     if (reportsPeriodFilter === 'all') return rows;
     var now = new Date();
@@ -343,42 +565,32 @@
   }
   function filteredReportRows(){
     var rows = reportRowsForPeriod();
-    if (reportsTypeFilter !== 'all') rows = rows.filter(function(row){ return row.type === reportsTypeFilter; });
+    if (reportsTypeFilter === 'sent') rows = rows.filter(isRealSendReport);
+    if (reportsTypeFilter === 'prepared') rows = rows.filter(function(row){ return row.dryRun; });
     if (reportsStatusFilter !== 'all') rows = rows.filter(function(row){ return row.statusKey === reportsStatusFilter; });
     if (reportsReadyOnly) rows = rows.filter(function(row){ return row.exists; });
     if (reportsSearchQuery) {
       var query = reportsSearchQuery.toLowerCase();
       rows = rows.filter(function(row){
-        return [row.title, row.subtitle, row.status, row.created, row.path, row.runId, row.processing, row.validation, row.shipping]
+        var files = row.files.map(function(file){ return file.title + ' ' + file.path; }).join(' ');
+        var recipients = row.recipients.map(function(recipient){ return [recipient.employee, recipient.persnr, recipient.email].join(' '); }).join(' ');
+        return [row.companyName, row.status, row.created, row.runId, files, recipients]
           .join(' ').toLowerCase().indexOf(query) !== -1;
       });
     }
     return rows;
   }
-  function reportRunMetrics(rows){
-    var runs = {};
-    rows.forEach(function(row){
-      var key = row.runId || row.id;
-      if (!runs[key]) runs[key] = { key: key, date: row.createdAt, metrics: normalizeReportMetrics() };
-      Object.keys(runs[key].metrics).forEach(function(metric){
-        runs[key].metrics[metric] = Math.max(runs[key].metrics[metric], Number(row.metrics[metric] || 0));
-      });
-      if (!runs[key].date || row.createdAt < runs[key].date) runs[key].date = row.createdAt;
-    });
-    return Object.keys(runs).map(function(key){ return runs[key]; });
-  }
-  function reportMetricValues(){
-    var rows = reportRowsForPeriod().filter(isRealSendReport);
-    var totals = { sent: 0, missingEmail: 0, employees: 0, failed: 0, rate: 0, hasData: false };
-    reportRunMetrics(rows).forEach(function(run){
-      totals.hasData = true;
-      totals.sent += run.metrics.sent;
-      totals.missingEmail += run.metrics.missing_email;
-      totals.failed += run.metrics.failed;
-      totals.employees += run.metrics.employees;
-    });
-    totals.rate = totals.employees ? Math.round((totals.sent / totals.employees) * 100) : 0;
-    return totals;
+  function reportMetricValues(row){
+    var metrics = row ? row.metrics : normalizeReportMetrics();
+    var employees = Math.max(metrics.employees, metrics.processed, row ? row.recipients.length : 0);
+    return {
+      sent: metrics.sent,
+      missingEmail: metrics.missing_email,
+      employees: employees,
+      failed: Math.max(metrics.failed, metrics.errors),
+      rate: employees ? Math.round((metrics.sent / employees) * 100) : 0,
+      hasData: !!row
+    };
   }
   function setReportsDetailText(key, value){ setText('[data-reports-detail="' + key + '"]', value); }
   function selectedReportRow(){
@@ -392,47 +604,52 @@
       if (reportsGrid) reportsGrid.classList.remove('detail-hidden');
     }
     selectedReportId = row ? row.id : '';
-    selectedReportKind = row ? row.kind : '';
+    selectedReportKind = '';
     var statusNode = document.querySelector('[data-reports-detail="status"]');
     var iconNode = document.querySelector('[data-reports-detail="icon"]');
-    if (iconNode) iconNode.setAttribute('data-icon', row ? row.icon : 'doc');
+    if (iconNode) iconNode.setAttribute('data-icon', row ? 'report' : 'doc');
     if (statusNode) {
       statusNode.textContent = row ? row.status : 'Nicht ausgewählt';
-      statusNode.className = 'state ' + (row && row.exists ? 'ready' : 'warning');
+      statusNode.className = 'state ' + (row && row.statusKey === 'error' ? 'error' : (row ? 'ready' : 'warning'));
     }
-    setReportsDetailText('title', row ? row.title : 'Kein Bericht ausgewählt');
-    setReportsDetailText('subtitle', row ? row.subtitle : 'Bitte einen Eintrag wählen.');
+    setReportsDetailText('title', row ? row.companyName : 'Kein Bericht ausgewählt');
+    setReportsDetailText('subtitle', row ? 'Versandvorgang vom ' + row.created : 'Bitte einen Eintrag wählen.');
     setReportsDetailText('id', row ? row.id.toUpperCase() : '-');
-    setReportsDetailText('period', row ? (row.runId || '-') : '-');
+    setReportsDetailText('period', row ? (row.runId || row.created) : '-');
     setReportsDetailText('created', row ? row.created : '-');
-    setReportsDetailText('owner', row ? row.owner : 'LohnMail');
-    setReportsDetailText('path', row && row.path ? row.path : '-');
+    setReportsDetailText('owner', 'LohnMail');
+    var existingFiles = row ? row.files.filter(function(file){ return file.exists; }) : [];
+    setReportsDetailText('path', existingFiles.length ? existingFiles[0].path : '-');
     var metrics = row ? row.metrics : normalizeReportMetrics();
-    setReportsDetailText('employees', Math.max(metrics.employees, metrics.processed));
+    setReportsDetailText('employees', Math.max(metrics.employees, metrics.processed, row ? row.recipients.length : 0));
     setReportsDetailText('errors', metrics.errors);
     setReportsDetailText('warnings', metrics.warnings);
     setReportsDetailText('sent', metrics.sent);
     setReportsDetailText('delivered', metrics.delivered);
     setReportsDetailText('failed', metrics.failed);
-    document.querySelectorAll('[data-reports-action="open-selected"]').forEach(function(button){
-      button.disabled = !(row && row.exists);
-      button.title = row && row.exists ? row.path : 'Kein Bericht ausgewählt.';
-    });
-    document.querySelectorAll('[data-reports-action="open-pdf"]').forEach(function(button){
-      button.disabled = !(row && row.exists && row.type === 'pdf');
-      button.title = button.disabled ? 'Der ausgewählte Bericht ist keine PDF-Datei.' : row.path;
-    });
-    document.querySelectorAll('[data-reports-action="open-excel"]').forEach(function(button){
-      button.disabled = !(row && row.exists && (row.type === 'xlsx' || row.type === 'xls'));
-      button.title = button.disabled ? 'Der ausgewählte Bericht ist keine Excel-Datei.' : row.path;
-    });
+    var filesNode = document.querySelector('[data-reports-detail="files"]');
+    if (filesNode) {
+      filesNode.innerHTML = row && row.files.length ? row.files.map(function(file, index){
+        return '<button type="button" class="report-detail-file" data-report-file-index="' + index + '" ' + (file.exists ? '' : 'disabled') + '>' +
+          '<span class="file-dot ' + escapeHtml(file.type) + '"><span data-icon="' + escapeHtml(file.icon) + '"></span></span>' +
+          '<span><b>' + escapeHtml(file.title) + '</b><small>' + escapeHtml(file.exists ? file.size : 'Nicht erstellt') + '</small></span>' +
+          '<span data-icon="arrow-up-right"></span></button>';
+      }).join('') : '<div class="report-detail-file empty">Keine Berichtsdateien vorhanden.</div>';
+      filesNode.querySelectorAll('[data-report-file-index]').forEach(function(button){
+        button.addEventListener('click', function(){
+          var file = row.files[Number(button.getAttribute('data-report-file-index'))];
+          if (file) openReportEntry(file);
+        });
+      });
+    }
   }
-  function openReportEntry(row){
-    row = row || selectedReportRow();
+  function openReportEntry(file){
+    var selected = selectedReportRow();
+    file = file || (selected && selected.files.filter(function(item){ return item.exists; })[0]);
     var bridge = window.lohnmailBridge;
-    if (!row || !row.exists) return setReportsMessage('Bitte einen vorhandenen Bericht auswählen.');
-    if (!bridge || !bridge.openReportEntry) return openReport(row.kind);
-    bridge.openReportEntry(row.id, function(payload){
+    if (!file || !file.exists) return setReportsMessage('Bitte einen vorhandenen Bericht auswählen.');
+    if (!bridge || !bridge.openReportEntry) return openReport(file.kind);
+    bridge.openReportEntry(file.id, function(payload){
       try {
         var result = JSON.parse(payload || '{}');
         setReportsMessage(result.ok ? 'Bericht geöffnet: ' + result.path : (result.message || 'Bericht konnte nicht geöffnet werden.'));
@@ -451,22 +668,20 @@
     var end = Math.min(start + reportsPageSize, rows.length);
     var pageRows = rows.slice(start, end);
     if (!pageRows.length) {
-      tbody.innerHTML = '<tr><td colspan="9">Keine Berichte für diesen Filter.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8">Keine Versandvorgänge für diesen Filter.</td></tr>';
       setReportsMessage('Zeige 0 Einträge');
-      applyReportDetail(null);
     } else {
       tbody.innerHTML = pageRows.map(function(row, index){
         return '<tr data-reports-row="' + index + '" class="' + (row.id === selectedReportId ? 'selected' : '') + '">' +
           '<td>' + escapeHtml(row.created) + '</td>' +
-          '<td><span class="file-dot ' + escapeHtml(row.type) + '"><span data-icon="' + escapeHtml(row.icon) + '"></span></span></td>' +
-          '<td><b>' + escapeHtml(row.title) + '</b><small>' + escapeHtml(row.subtitle) + '</small></td>' +
-          '<td><span class="state ' + (row.exists ? 'ready' : 'warning') + '">' + escapeHtml(row.status) + '</span></td>' +
-          '<td><b>' + escapeHtml(row.processing) + '</b><small>' + escapeHtml(row.size) + '</small></td>' +
-          '<td><b>' + escapeHtml(row.validation) + '</b><small>Prüfung</small></td>' +
-          '<td><b>' + escapeHtml(row.shipping) + '</b><small>Versand</small></td>' +
-          '<td>' + escapeHtml(row.owner) + '</td>' +
+          '<td><b>' + escapeHtml(row.companyName) + '</b><small>' + escapeHtml(row.runId || '-') + '</small></td>' +
+          '<td><span class="state ' + (row.statusKey === 'error' ? 'error' : 'ready') + '">' + escapeHtml(row.status) + '</span></td>' +
+          '<td>' + Math.max(row.metrics.employees, row.metrics.processed, row.recipients.length) + '</td>' +
+          '<td>' + row.metrics.missing_email + '</td>' +
+          '<td>' + row.metrics.sent + '</td>' +
+          '<td>' + Math.max(row.metrics.failed, row.metrics.errors) + '</td>' +
           '<td><div class="report-row-actions">' +
-            '<button type="button" data-reports-row-action="open" title="Bericht öffnen" aria-label="Bericht öffnen" ' + (row.exists ? '' : 'disabled') + '><span data-icon="arrow-up-right"></span></button>' +
+            '<button type="button" data-reports-row-action="select" title="Details anzeigen" aria-label="Details anzeigen"><span data-icon="arrow-up-right"></span></button>' +
           '</div></td>' +
         '</tr>';
       }).join('');
@@ -474,17 +689,14 @@
         tr.addEventListener('click', function(event){
           var row = pageRows[Number(tr.getAttribute('data-reports-row'))];
           if (!row) return;
-          tbody.querySelectorAll('tr').forEach(function(node){ node.classList.remove('selected'); });
-          tr.classList.add('selected');
-          applyReportDetail(row);
-          var openButton = event.target.closest && event.target.closest('[data-reports-row-action="open"]');
-          if (openButton && !openButton.disabled) openReportEntry(row);
+          selectedReportId = row.id;
+          reportsRecipientPage = 1;
+          updateReportsScreen();
         });
       });
-      var selected = pageRows.filter(function(row){ return row.id === selectedReportId; })[0] || pageRows[0];
-      applyReportDetail(selected);
       setReportsMessage('Zeige ' + (start + 1) + ' bis ' + end + ' von ' + rows.length + ' Einträgen');
     }
+    setText('[data-reports="session-context"]', rows.length ? rows.length + ' Versandvorgänge' : 'Noch keine Versandvorgänge');
     setText('[data-reports="page-current"]', String(reportsPage));
     setText('[data-reports="page-size-label"]', reportsPageSize + ' pro Seite⌄');
     var prev = document.querySelector('[data-reports-action="page-prev"]');
@@ -492,59 +704,124 @@
     if (prev) prev.disabled = reportsPage <= 1;
     if (next) next.disabled = reportsPage >= totalPages;
   }
-  function chartPath(values, area, scaleMax){
-    values = values.length ? values.slice() : [0, 0];
-    if (values.length === 1) values.push(values[0]);
-    var max = Math.max(1, Number(scaleMax || 0));
-    var points = values.map(function(value, index){
-      var x = index * (760 / (values.length - 1));
-      var y = 176 - (Number(value || 0) / max) * 148;
-      return [Math.round(x * 10) / 10, Math.round(y * 10) / 10];
-    });
-    var line = points.map(function(point, index){ return (index ? 'L' : 'M') + point[0] + ' ' + point[1]; }).join(' ');
-    return area ? line + ' L760 190 L0 190 Z' : line;
+  function reportRecipientRows(){
+    var row = selectedReportRow();
+    return row ? row.recipients.slice() : [];
   }
-  function updateReportsChart(){
-    var runs = reportRunMetrics(reportRowsForPeriod()).sort(function(a, b){ return String(a.date).localeCompare(String(b.date)); });
-    var series = {
-      processed: runs.map(function(run){ return run.metrics.processed; }),
-      sent: runs.map(function(run){ return run.metrics.sent; }),
-      delivered: runs.map(function(run){ return run.metrics.delivered; }),
-      failed: runs.map(function(run){ return Math.max(run.metrics.failed, run.metrics.errors); })
-    };
-    var maxValue = Math.max.apply(Math, series.processed.concat(series.sent, series.delivered, series.failed, [1]));
-    [['processed-area', series.processed, true], ['processed-line', series.processed, false], ['sent-area', series.sent, true], ['sent-line', series.sent, false], ['delivered-line', series.delivered, false], ['failed-line', series.failed, false]].forEach(function(def){
-      var path = document.querySelector('[data-reports-chart="' + def[0] + '"]');
-      if (path) path.setAttribute('d', chartPath(def[1], def[2], maxValue));
+  function reportRecipientFilterKey(row){
+    var status = String(row && row.status || '');
+    var validation = row && row.email_validation || {};
+    if (status === 'Gesendet') return 'sent';
+    if (validation.code === 'missing' || status === 'Keine E-Mail') return 'missing';
+    if (validation.sendable === false || status === 'Fehler' || status === 'Keine Dateien') return 'failed';
+    return 'ready';
+  }
+  function reportRecipientStatusLabel(row){
+    var status = String(row && row.status || '');
+    return {
+      'Gesendet': 'Gesendet',
+      'Dry-Run': 'Vorbereitet',
+      'Bereit': 'Versandbereit',
+      'Wird gesendet': 'Wird gesendet',
+      'Wartet': 'Wartet',
+      'Keine E-Mail': 'Nicht gesendet',
+      'Keine Dateien': 'Nicht versendbar',
+      'Fehler': 'Fehler'
+    }[status] || (status || 'Versandbereit');
+  }
+  function reportRecipientHint(row){
+    var validation = row && row.email_validation || {};
+    if (row && row.error) return String(row.error);
+    if (validation.hint) return String(validation.hint);
+    var status = String(row && row.status || '');
+    if (status === 'Keine E-Mail') return 'E-Mail-Adresse fehlt';
+    if (status === 'Keine Dateien') return 'Abrechnung fehlt';
+    if (status === 'Fehler') return 'Versand prüfen';
+    return '-';
+  }
+  function renderReportRecipients(){
+    var tbody = document.querySelector('[data-reports-recipients="body"]');
+    if (!tbody) return;
+    var allRows = reportRecipientRows();
+    var counts = { all: allRows.length, sent: 0, ready: 0, missing: 0, failed: 0 };
+    allRows.forEach(function(row){ counts[reportRecipientFilterKey(row)] += 1; });
+    Object.keys(counts).forEach(function(key){
+      setText('[data-reports-recipient-count="' + key + '"]', counts[key]);
     });
-    var y = document.querySelector('[data-reports="chart-y"]');
-    if (y) y.innerHTML = [maxValue, Math.round(maxValue * .75), Math.round(maxValue * .5), Math.round(maxValue * .25), 0].map(function(value){ return '<span>' + value.toLocaleString('de-DE') + '</span>'; }).join('');
-    var x = document.querySelector('[data-reports="chart-x"]');
-    if (x) {
-      var labels = runs.map(function(run){ var date = new Date(run.date); return isNaN(date.getTime()) ? '-' : date.toLocaleDateString('de-DE', { day: '2-digit', month: 'short' }); });
-      if (!labels.length) labels = ['Keine Daten'];
-      labels = labels.slice(-7);
-      x.style.gridTemplateColumns = 'repeat(' + labels.length + ', minmax(0, 1fr))';
-      x.innerHTML = labels.map(function(label){ return '<span>' + escapeHtml(label) + '</span>'; }).join('');
+    var selected = selectedReportRow();
+    setText('[data-reports-recipients="context"]', allRows.length
+      ? String(selected && selected.companyName || 'Aktiver Mandant') + ' · ' + allRows.length + ' Einträge'
+      : 'Noch keine Versanddaten');
+
+    var rows = allRows.filter(function(row){
+      if (reportsRecipientFilter !== 'all' && reportRecipientFilterKey(row) !== reportsRecipientFilter) return false;
+      if (!reportsRecipientSearchQuery) return true;
+      var validation = row.email_validation || {};
+      return [row.employee, row.persnr, row.email, row.document, row.status, row.error, validation.label, validation.mx_status]
+        .join(' ').toLowerCase().indexOf(reportsRecipientSearchQuery.toLowerCase()) !== -1;
+    });
+    var totalPages = Math.max(1, Math.ceil(rows.length / reportsRecipientPageSize));
+    reportsRecipientPage = Math.max(1, Math.min(reportsRecipientPage, totalPages));
+    var start = rows.length ? (reportsRecipientPage - 1) * reportsRecipientPageSize : 0;
+    var end = Math.min(start + reportsRecipientPageSize, rows.length);
+    var pageRows = rows.slice(start, end);
+    if (!pageRows.length) {
+      tbody.innerHTML = '<tr><td colspan="8"><div class="report-recipient-empty">' +
+        (allRows.length ? 'Keine Empfänger für diesen Filter.' : 'Noch keine Empfängerdaten. Führen Sie zuerst eine Prüfung oder Versandvorbereitung aus.') +
+        '</div></td></tr>';
+    } else {
+      tbody.innerHTML = pageRows.map(function(row){
+        var email = String(row.email || '').trim();
+        var status = String(row.status || 'Bereit');
+        var validation = row.email_validation || {};
+        var statusLabel = reportRecipientStatusLabel(row);
+        var person = String(row.employee || '').trim() || '-';
+        var persnr = String(row.persnr || '').trim();
+        var validationLabel = String(validation.label || (email ? 'Keine Prüfdaten (alter Bericht)' : 'Fehlt'));
+        var validationClass = validation.code === 'valid' ? 'ready' : 'warning';
+        return '<tr>' +
+          '<td><span class="report-recipient-person"><b title="' + escapeHtml(person) + '">' + escapeHtml(person) + '</b><small>' + escapeHtml(persnr || '-') + '</small></span></td>' +
+          '<td title="' + escapeHtml(email || 'Keine E-Mail-Adresse') + '">' + escapeHtml(email || '-') + '</td>' +
+          '<td title="' + escapeHtml(reportRecipientHint(row)) + '"><span class="report-recipient-check ' + validationClass + '"><span data-icon="' + (validationClass === 'ready' ? 'checkcircle' : 'warning') + '"></span>' + escapeHtml(validationLabel) + '</span></td>' +
+          '<td>' + escapeHtml(validation.mx_status || '-') + '</td>' +
+          '<td>' + escapeHtml(validation.checked_at ? reportDate(validation.checked_at) : '-') + '</td>' +
+          '<td><span class="state ' + shippingStatusClass(status) + '">' + escapeHtml(statusLabel) + '</span></td>' +
+          '<td title="' + escapeHtml(row.document || '-') + '">' + escapeHtml(row.document || '-') + '</td>' +
+          '<td title="' + escapeHtml(reportRecipientHint(row)) + '">' + escapeHtml(reportRecipientHint(row)) + '</td>' +
+        '</tr>';
+      }).join('');
     }
-    var processingVisible = reportsChartMode !== 'shipping';
-    var shippingVisible = reportsChartMode !== 'processing';
-    document.querySelectorAll('[data-reports-chart^="processed-"]').forEach(function(node){ node.style.opacity = processingVisible ? '' : '0'; });
-    ['sent-area', 'sent-line', 'delivered-line', 'failed-line'].forEach(function(name){
-      var node = document.querySelector('[data-reports-chart="' + name + '"]');
-      if (node) node.style.opacity = shippingVisible ? '' : '0';
+    setText('[data-reports-recipients="footer"]', rows.length ? 'Zeige ' + (start + 1) + ' bis ' + end + ' von ' + rows.length + ' Einträgen' : '0 Einträge');
+    setText('[data-reports-recipients="page-current"]', String(reportsRecipientPage));
+    setText('[data-reports-recipients="page-size-label"]', reportsRecipientPageSize + ' pro Seite⌄');
+    var previous = document.querySelector('[data-reports-action="recipient-page-prev"]');
+    var next = document.querySelector('[data-reports-action="recipient-page-next"]');
+    if (previous) previous.disabled = reportsRecipientPage <= 1;
+    if (next) next.disabled = reportsRecipientPage >= totalPages;
+    document.querySelectorAll('[data-reports-recipient-filter]').forEach(function(button){
+      button.classList.toggle('active', button.getAttribute('data-reports-recipient-filter') === reportsRecipientFilter);
     });
   }
   function reportPeriodLabel(){
     return { latest: 'Letzter Versand', month: 'Dieser Monat', '7d': 'Letzte 7 Tage', '30d': 'Letzte 30 Tage', all: 'Gesamter Zeitraum' }[reportsPeriodFilter];
   }
   function updateReportsScreen(){
-    var metrics = reportMetricValues();
+    var filteredRows = filteredReportRows();
+    var selected = selectedReportRow();
+    if (!filteredRows.length) {
+      selected = null;
+      selectedReportId = '';
+      selectedReportKind = '';
+      reportsRecipientPage = 1;
+    } else if (!selected || !filteredRows.some(function(row){ return row.id === selected.id; })) {
+      selected = filteredRows[0];
+      selectedReportId = selected ? selected.id : '';
+      selectedReportKind = '';
+      reportsRecipientPage = 1;
+    }
+    var metrics = reportMetricValues(selected);
     var periodLabel = reportPeriodLabel();
-    var periodRows = reportRowsForPeriod();
-    var metricRows = periodRows.filter(isRealSendReport);
-    var latestRunDate = metricRows.length ? reportDate(metricRows[0].createdAt) : '';
-    var contextLabel = reportsPeriodFilter === 'latest' && latestRunDate ? periodLabel + ' · ' + latestRunDate : periodLabel;
+    var contextLabel = selected ? selected.companyName + ' · ' + selected.created : periodLabel;
     setText('[data-reports-metric="sent"]', metrics.sent);
     setText('[data-reports-metric="missing-email"]', metrics.missingEmail);
     setText('[data-reports-metric="employees"]', metrics.employees);
@@ -556,25 +833,23 @@
     setText('[data-reports-metric="failed-label"]', metrics.failed ? 'Bitte prüfen' : 'Keine Fehler');
     setText('[data-reports-metric="rate-label"]', metrics.hasData ? metrics.sent + ' von ' + metrics.employees : 'Keine Versanddaten');
     setText('[data-reports="period-label"]', periodLabel);
-    setText('[data-reports="type-label"]', reportsTypeFilter === 'all' ? 'Alle Typen' : reportsTypeFilter.toUpperCase());
-    setText('[data-reports="status-label"]', reportsStatusFilter === 'all' ? 'Alle Status' : (reportsStatusFilter === 'ready' ? 'Erstellt' : 'Nicht gefunden'));
+    setText('[data-reports="type-label"]', { all: 'Alle Typen', sent: 'Gesendet', prepared: 'Vorbereitet' }[reportsTypeFilter] || 'Alle Typen');
+    setText('[data-reports="status-label"]', { all: 'Alle Status', completed: 'Abgeschlossen', prepared: 'Vorbereitet', error: 'Fehler' }[reportsStatusFilter] || 'Alle Status');
     setText('[data-reports="filter-label"]', reportsReadyOnly ? 'Nur erstellt' : 'Filter');
-    setText('[data-reports="chart-mode-label"]', { all: 'Alle', processing: 'Verarbeitung', shipping: 'Versand' }[reportsChartMode] + '⌄');
     document.querySelectorAll('[data-reports-action="period"]').forEach(function(button){ button.classList.toggle('active', reportsPeriodFilter !== 'all'); });
     document.querySelectorAll('[data-reports-action="type"]').forEach(function(button){ button.classList.toggle('active', reportsTypeFilter !== 'all'); });
     document.querySelectorAll('[data-reports-action="status"]').forEach(function(button){ button.classList.toggle('active', reportsStatusFilter !== 'all'); });
     document.querySelectorAll('[data-reports-action="toggle-ready"]').forEach(function(button){ button.classList.toggle('active', reportsReadyOnly); });
-    var reports = reportMap();
-    updateReport('audit', reports.audit);
-    updateReport('missing', reports.missing);
-    updateReport('send', reports.send);
-    updateReportsChart();
     renderReportsTable();
+    applyReportDetail(selected);
+    renderReportRecipients();
   }
   function exportReportsCsv(includeAll){
     var rows = includeAll ? reportRows() : filteredReportRows();
-    var headers = ['Bericht', 'Typ', 'Status', 'Erstellt', 'Verarbeitung', 'Pruefung', 'Versand', 'Groesse', 'Pfad'];
-    var csvRows = [headers].concat(rows.map(function(row){ return [row.title, row.type.toUpperCase(), row.status, row.created, row.processing, row.validation, row.shipping, row.size, row.path]; }));
+    var headers = ['Datum', 'Mandant', 'Status', 'Mitarbeiter', 'Ohne E-Mail', 'Gesendet', 'Fehler', 'Run-ID'];
+    var csvRows = [headers].concat(rows.map(function(row){
+      return [row.created, row.companyName, row.status, Math.max(row.metrics.employees, row.metrics.processed, row.recipients.length), row.metrics.missing_email, row.metrics.sent, Math.max(row.metrics.failed, row.metrics.errors), row.runId];
+    }));
     var csv = csvRows.map(function(row){
       return row.map(function(cell){ return '"' + String(cell === undefined || cell === null ? '' : cell).replace(/"/g, '""') + '"'; }).join(';');
     }).join('\n');
@@ -603,12 +878,12 @@
   function runReportsAction(action){
     if (action === 'export-csv' || action === 'export-all-csv') return exportReportsCsv(action === 'export-all-csv');
     if (action === 'type') {
-      reportsTypeFilter = { all: 'pdf', pdf: 'xlsx', xlsx: 'all' }[reportsTypeFilter] || 'all';
+      reportsTypeFilter = { all: 'sent', sent: 'prepared', prepared: 'all' }[reportsTypeFilter] || 'all';
       reportsPage = 1;
       return updateReportsScreen();
     }
     if (action === 'status') {
-      reportsStatusFilter = { all: 'ready', ready: 'missing', missing: 'all' }[reportsStatusFilter] || 'all';
+      reportsStatusFilter = { all: 'completed', completed: 'prepared', prepared: 'error', error: 'all' }[reportsStatusFilter] || 'all';
       reportsPage = 1;
       return updateReportsScreen();
     }
@@ -622,10 +897,6 @@
       reportsPage = 1;
       return updateReportsScreen();
     }
-    if (action === 'chart-mode') {
-      reportsChartMode = { all: 'processing', processing: 'shipping', shipping: 'all' }[reportsChartMode] || 'all';
-      return updateReportsScreen();
-    }
     if (action === 'page-prev' || action === 'page-next') {
       reportsPage += action === 'page-next' ? 1 : -1;
       return renderReportsTable();
@@ -635,6 +906,15 @@
       reportsPage = 1;
       return renderReportsTable();
     }
+    if (action === 'recipient-page-prev' || action === 'recipient-page-next') {
+      reportsRecipientPage += action === 'recipient-page-next' ? 1 : -1;
+      return renderReportRecipients();
+    }
+    if (action === 'recipient-page-size') {
+      reportsRecipientPageSize = { 20: 50, 50: 100, 100: 20 }[reportsRecipientPageSize] || 20;
+      reportsRecipientPage = 1;
+      return renderReportRecipients();
+    }
     if (action === 'detail-close') {
       var detail = document.querySelector('.report-details');
       var reportsGrid = document.querySelector('.reports-grid');
@@ -642,7 +922,7 @@
       if (reportsGrid) reportsGrid.classList.add('detail-hidden');
       return;
     }
-    if (action === 'open-pdf' || action === 'open-excel' || action === 'open-selected') return openReportEntry();
+    if (action === 'open-selected') return openReportEntry();
   }
   function companyInitials(name){
     var parts = String(name || '').replace(/-/g, ' ').split(/\s+/).filter(Boolean);
@@ -845,6 +1125,19 @@
     } else if (validationWarnings && Number(summary.warnings || 0) > 0) {
       warnings.push({ level: 'warning', title: 'Prüfwarnungen vorhanden', text: summary.warnings + ' Warnungen sollten vor dem Versand kontrolliert werden.', action: 'open-validation' });
     }
+    if (updateIsAvailable(latestUpdateState)) {
+      var mandatoryUpdate = updateIsMandatory(latestUpdateState);
+      warnings.push({
+        level: mandatoryUpdate ? 'error' : 'info',
+        title: mandatoryUpdate ? 'Kritisches Update erforderlich' : 'Update verfügbar',
+        text: mandatoryUpdate
+          ? 'Dieses Update behebt eine kritische Sicherheitslücke oder technische Inkompatibilität.'
+          : ((latestUpdateState.available_version
+            ? 'Version ' + latestUpdateState.available_version
+            : 'Eine neue Version') + ' kann heruntergeladen werden.'),
+        action: 'open-updates'
+      });
+    }
     return warnings;
   }
   function runWarningAction(action){
@@ -859,6 +1152,10 @@
     if (action === 'open-license') setPage('Lizenzen');
     if (action === 'open-processing') setPage('Verarbeitung');
     if (action === 'open-validation') setPage('Prüfung');
+    if (action === 'open-updates') {
+      setPage('Einstellungen');
+      activateSettingsTab('updates');
+    }
   }
   function updateWarningCenter(){
     var warnings = collectHeaderWarnings();
@@ -3519,11 +3816,17 @@
       try {
         var state = JSON.parse(payload || '{}');
         if (!workflowStateMatchesActiveCompany(state)) return;
+        var previousReportId = selectedReportId;
         latestReportsState = state;
-        if (selectedReportId && !reportRows().some(function(row){ return row.id === selectedReportId; })) {
-          selectedReportId = '';
+        var rows = reportRows();
+        var selectedStillExists = selectedReportId && rows.some(function(row){ return row.id === selectedReportId; });
+        if (!selectedStillExists) {
+          var preferredId = String(state.latest_session_id || '').trim();
+          var preferredRow = rows.find(function(row){ return row.id === preferredId; }) || rows[0] || null;
+          selectedReportId = preferredRow ? preferredRow.id : '';
           selectedReportKind = '';
         }
+        if (selectedReportId !== previousReportId) reportsRecipientPage = 1;
         updateReportsScreen();
       } catch (error) {
         console.warn('Berichte state konnte nicht verarbeitet werden', error);
@@ -4006,7 +4309,10 @@
     if (normalized === 'Verarbeitung') loadProcessingState();
     if (normalized === 'Prüfung') loadValidationState();
     if (normalized === 'Versand') loadShippingState();
-    if (normalized === 'Berichte') loadReportsState();
+    if (normalized === 'Berichte') {
+      loadReportsState();
+      loadShippingState();
+    }
     if (normalized === 'Unternehmen') loadCompanyState();
     if (normalized === 'Lizenzen') loadLicenseState();
     if (normalized === 'Einstellungen') loadSettingsState();
@@ -4017,6 +4323,8 @@
   window.addEventListener('DOMContentLoaded', function(){
     applyBrandLogoVariant();
     renderHelpKnowledge();
+    loadUpdatePreferences();
+    renderUpdateSettings();
     initBridge();
     document.addEventListener('click', function(event){
       var control = event.target.closest && event.target.closest('[data-processing-action]');
@@ -4121,6 +4429,23 @@
         updateReportsScreen();
       });
     }
+    var reportRecipientSearch = document.querySelector('[data-reports-recipients="search"]');
+    if (reportRecipientSearch) {
+      reportRecipientSearch.addEventListener('input', function(){
+        reportsRecipientSearchQuery = reportRecipientSearch.value.trim();
+        reportsRecipientPage = 1;
+        renderReportRecipients();
+      });
+    }
+    document.querySelectorAll('[data-reports-recipient-filter]').forEach(function(button){
+      button.addEventListener('click', function(event){
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        reportsRecipientFilter = button.getAttribute('data-reports-recipient-filter') || 'all';
+        reportsRecipientPage = 1;
+        renderReportRecipients();
+      });
+    });
     document.querySelectorAll('.page-reports [data-reports-action]').forEach(function(button){
       button.addEventListener('click', function(event){
         event.preventDefault();
@@ -4214,13 +4539,26 @@
     document.querySelectorAll('[data-settings-tab]').forEach(function(button){
       button.addEventListener('click', function(event){
         event.preventDefault();
-        var tab = button.getAttribute('data-settings-tab');
-        document.querySelectorAll('[data-settings-tab]').forEach(function(item){
-          item.classList.toggle('active', item === button);
-        });
-        document.querySelectorAll('[data-settings-panel]').forEach(function(panel){
-          panel.classList.toggle('active', panel.getAttribute('data-settings-panel') === tab);
-        });
+        activateSettingsTab(button.getAttribute('data-settings-tab'));
+      });
+    });
+    document.querySelectorAll('[data-update-action]').forEach(function(button){
+      button.addEventListener('click', function(event){
+        event.preventDefault();
+        if (button.disabled) return;
+        dispatchUpdateAction(button.getAttribute('data-update-action'));
+      });
+    });
+    document.querySelectorAll('[data-update-pref]').forEach(function(input){
+      input.addEventListener('change', function(){
+        var preference = input.getAttribute('data-update-pref');
+        if (preference === 'auto-check') {
+          latestUpdateState.auto_check = Boolean(input.checked);
+        } else if (preference === 'install-on-exit' && !input.disabled) {
+          latestUpdateState.install_on_exit = Boolean(input.checked);
+        }
+        saveUpdatePreferences();
+        renderUpdateSettings();
       });
     });
     var mailTextField = document.querySelector('[data-settings-field="mail_text.body"]');

@@ -12,6 +12,7 @@
   },
   "pdf_password": {
     "enabled": true,
+    "source": "persnr",
     "prefix": "",
     "suffix": ""
   },

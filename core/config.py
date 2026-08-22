@@ -29,6 +29,7 @@ def build_default_settings(today: date | None = None) -> dict:
         },
         "pdf_password": {
             "enabled": True,
+            "source": "persnr",
             "prefix": "",
             "suffix": "",
         },

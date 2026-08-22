@@ -221,8 +221,13 @@ ul, ol {
 <h3>PDF / Passwort</h3>
 <ul>
   <li>Wenn <b>PDF verschl&uuml;sseln</b> aktiv ist, wird f&uuml;r jeden Mitarbeiter eine gesch&uuml;tzte PDF erzeugt.</li>
-  <li>Das Passwort wird so aufgebaut: <code>Prefix + PersNr + Suffix</code>.</li>
-  <li>Beispiel: Prefix <code>abc-</code> und Suffix <code>-2026</code> ergibt f&uuml;r PersNr <code>02548</code> das Passwort <code>abc-02548-2026</code>.</li>
+  <li>Als Passwort-Basis kann <b>Personalnummer</b> oder <b>Geburtsdatum</b> gew&auml;hlt werden.</li>
+  <li>Das Geburtsdatum wird vorrangig direkt aus der Lohnabrechnung gelesen und als <code>TTMMJJJJ</code> verwendet.</li>
+  <li>Nur wenn die PDF kein lesbares Geburtsdatum enth&auml;lt, dient die Excel-Spalte <code>Geburtsdatum</code> als Fallback.</li>
+  <li>Das Passwort wird so aufgebaut: <code>Prefix + gew&auml;hlte Basis + Suffix</code>.</li>
+  <li>Beispiel: Prefix <code>abc-</code>, Geburtsdatum <code>03.02.1990</code> und Suffix <code>-2026</code> ergeben <code>abc-03021990-2026</code>.</li>
+  <li>Bei der Passwort-Basis <b>Geburtsdatum</b> erg&auml;nzt LohnMail automatisch am Ende der Text- und HTML-E-Mail einen Hinweis zum Format <code>TTMMJJJJ</code>.</li>
+  <li>Fehlt bei gew&auml;hltem Geburtsdatum eine g&uuml;ltige Angabe, wird der betreffende Datensatz mit einem Fehler angehalten und nicht versendet.</li>
 </ul>
 
 <h3>Zeitraum / UI</h3>

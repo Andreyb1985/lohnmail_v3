@@ -1,3 +1,4 @@
+import html
 import re
 from collections.abc import Mapping
 
@@ -5,6 +6,65 @@ from .config import get_company_name
 from .period import get_payroll_period
 
 _MAIL_PLACEHOLDER_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+_BIRTH_DATE_PASSWORD_NOTICE_MARKER = 'data-lohnmail-password-notice="birth-date"'
+
+
+def _birth_date_password_notice(password_settings: Mapping[str, object]) -> str:
+    if not bool(password_settings.get("enabled", True)):
+        return ""
+    source = str(password_settings.get("source", "persnr") or "persnr").strip().lower()
+    if source != "birth_date":
+        return ""
+
+    prefix = str(password_settings.get("prefix", "") or "")
+    suffix = str(password_settings.get("suffix", "") or "")
+    if prefix or suffix:
+        return (
+            "Ihr PDF-Passwort wird aus Ihrem Geburtsdatum gebildet. "
+            f"Format: {prefix}TTMMJJJJ{suffix} (Tag, Monat, Jahr), "
+            f"z. B. {prefix}18061992{suffix}."
+        )
+    return (
+        "Ihr PDF-Passwort ist Ihr Geburtsdatum im Format TTMMJJJJ "
+        "(Tag, Monat, Jahr), z. B. 18061992."
+    )
+
+
+def append_pdf_password_notice(
+    body: str,
+    body_html: str,
+    password_settings: Mapping[str, object] | None,
+) -> tuple[str, str]:
+    """Add the birth-date password hint to rendered payslip messages."""
+    resolved_settings = password_settings if isinstance(password_settings, Mapping) else {}
+    notice = _birth_date_password_notice(resolved_settings)
+    plain_body = str(body or "")
+    html_body = str(body_html or "")
+    if not notice:
+        return plain_body, html_body
+
+    if notice not in plain_body:
+        plain_body = f"{plain_body.rstrip()}\n\n{notice}" if plain_body.strip() else notice
+
+    if html_body and _BIRTH_DATE_PASSWORD_NOTICE_MARKER not in html_body:
+        notice_html = (
+            f'<p {_BIRTH_DATE_PASSWORD_NOTICE_MARKER}>'
+            f"{html.escape(notice)}"
+            "</p>"
+        )
+        closing_body = re.search(r"</body\s*>", html_body, flags=re.IGNORECASE)
+        if closing_body:
+            html_body = (
+                html_body[:closing_body.start()].rstrip()
+                + "\n"
+                + notice_html
+                + "\n"
+                + html_body[closing_body.start():]
+            )
+        else:
+            html_body = f"{html_body.rstrip()}\n{notice_html}"
+
+    return plain_body, html_body
 
 
 def format_message_template(template: str, context: Mapping[str, object]) -> str:
