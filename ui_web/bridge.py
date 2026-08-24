@@ -22,6 +22,8 @@ from core.config import (
 )
 from core.license_manager import LicenseManager
 from ui_web.report_history import ReportHistoryStore
+from ui_web.updater import UpdateService
+from ui_web.version import APP_BUILD, APP_VERSION
 
 
 class ProcessingWorker(QObject):
@@ -113,6 +115,37 @@ class MassMessageWorker(QObject):
             self.error.emit(ProcessingWorker._friendly_error(exc))
 
 
+class UpdateWorker(QObject):
+    progress = Signal(dict)
+    finished = Signal(dict)
+
+    def __init__(self, service: UpdateService, action: str) -> None:
+        super().__init__()
+        self.service = service
+        self.action = action
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            if self.action == "check":
+                state = self.service.check()
+            elif self.action == "download":
+                state = self.service.download(self.progress.emit)
+            else:
+                state = {
+                    **self.service.current_state(),
+                    "status": "error",
+                    "message": "Unbekannte Update-Aktion.",
+                }
+        except Exception as exc:  # defensive boundary for the Qt worker
+            state = {
+                **self.service.current_state(),
+                "status": "error",
+                "message": f"Update fehlgeschlagen: {exc}",
+            }
+        self.finished.emit(state)
+
+
 class WebBridge(QObject):
     """Bridge for the WebEngine UI.
 
@@ -133,6 +166,8 @@ class WebBridge(QObject):
     massMessageProgress = Signal(str)
     massMessageFinished = Signal(str)
     massMessageError = Signal(str)
+    updateStateChanged = Signal(str)
+    updateProgress = Signal(str)
 
     REPORT_FILES = {
         "audit": "audit_check.xlsx",
@@ -164,6 +199,10 @@ class WebBridge(QObject):
         self._mass_message_status = self._idle_mass_message_status()
         self._mass_message_preview = self._empty_mass_message_preview()
         self._license_manager = LicenseManager(load_settings())
+        self._update_service = UpdateService()
+        self._update_service.recover_interrupted_state()
+        self._update_thread: QThread | None = None
+        self._update_worker: UpdateWorker | None = None
         try:
             self._report_history: ReportHistoryStore | None = ReportHistoryStore(self.REPORT_HISTORY_PATH)
         except Exception:
@@ -194,7 +233,76 @@ class WebBridge(QObject):
 
     @Slot(result=str)
     def appVersion(self) -> str:
-        return "v2.0.0-web-poc"
+        return APP_VERSION
+
+    @Slot(result=str)
+    def appBuild(self) -> str:
+        return APP_BUILD
+
+    @Slot(result=str)
+    def getUpdateState(self) -> str:
+        return json.dumps(self._update_service.current_state(), ensure_ascii=False)
+
+    @Slot(str, result=str)
+    def setUpdatePreferences(self, payload: str) -> str:
+        try:
+            data = json.loads(payload or "{}")
+            if not isinstance(data, dict):
+                raise ValueError("Update-Einstellungen sind ungültig.")
+            auto_check = data.get("auto_check")
+            install_on_exit = data.get("install_on_exit")
+            state = self._update_service.set_preferences(
+                auto_check=auto_check if isinstance(auto_check, bool) else None,
+                install_on_exit=install_on_exit if isinstance(install_on_exit, bool) else None,
+            )
+            self.updateStateChanged.emit(json.dumps(state, ensure_ascii=False))
+            return json.dumps({"ok": True, **state}, ensure_ascii=False)
+        except Exception as exc:
+            return json.dumps({"ok": False, "message": str(exc)}, ensure_ascii=False)
+
+    @Slot(result=str)
+    def checkForUpdates(self) -> str:
+        return json.dumps(self._start_update_action("check"), ensure_ascii=False)
+
+    @Slot(result=str)
+    def downloadUpdate(self) -> str:
+        return json.dumps(self._start_update_action("download"), ensure_ascii=False)
+
+    @Slot(result=str)
+    def installUpdateOnExit(self) -> str:
+        state = self._update_service.install_on_exit()
+        return json.dumps(state, ensure_ascii=False)
+
+    def _start_update_action(self, action: str) -> dict:
+        if self._update_thread is not None and self._update_thread.isRunning():
+            return {
+                "ok": False,
+                **self._update_service.current_state(),
+                "message": "Eine Update-Aktion läuft bereits.",
+            }
+
+        state = self._update_service.begin(action)
+        thread = QThread(self)
+        worker = UpdateWorker(self._update_service, action)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(self._on_update_progress)
+        worker.finished.connect(self._on_update_finished)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(self._cleanup_update_worker)
+        self._update_thread = thread
+        self._update_worker = worker
+        self.updateStateChanged.emit(json.dumps(state, ensure_ascii=False))
+        thread.start()
+        return {"ok": True, **state}
+
+    @Slot(dict)
+    def _on_update_progress(self, state: dict) -> None:
+        self.updateProgress.emit(json.dumps(state, ensure_ascii=False))
+
+    @Slot(dict)
+    def _on_update_finished(self, state: dict) -> None:
+        self.updateStateChanged.emit(json.dumps(state, ensure_ascii=False))
 
     @Slot(result=str)
     def getDashboardState(self) -> str:
@@ -2277,6 +2385,15 @@ class WebBridge(QObject):
             self.worker_thread.deleteLater()
         self.worker = None
         self.worker_thread = None
+
+    @Slot()
+    def _cleanup_update_worker(self) -> None:
+        if self._update_worker is not None:
+            self._update_worker.deleteLater()
+        if self._update_thread is not None:
+            self._update_thread.deleteLater()
+        self._update_worker = None
+        self._update_thread = None
 
     @staticmethod
     def _idle_processing_status() -> dict:

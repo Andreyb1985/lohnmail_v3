@@ -22,6 +22,7 @@ except Exception:  # pragma: no cover - depends on local PySide6 installation
 
 from core.config import ensure_settings_file
 from ui_web.bridge import WebBridge
+from ui_web.version import APP_VERSION
 
 
 BRAND_DIR = Path(__file__).resolve().parents[1] / "web" / "assets" / "brand"
@@ -61,6 +62,13 @@ class WebMainWindow(QMainWindow):
         self.view.setUrl(url)
         self.setCentralWidget(self.view)
 
+    def closeEvent(self, event) -> None:
+        try:
+            self.bridge.installUpdateOnExit()
+        except Exception:
+            pass
+        super().closeEvent(event)
+
     def _disable_web_cache(self) -> None:
         profile = self.view.page().profile()
         if hasattr(profile, "clearHttpCache"):
@@ -91,6 +99,7 @@ def run() -> int:
     ensure_settings_file()
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("LohnMail")
+    app.setApplicationVersion(APP_VERSION)
     if APP_ICON_PATH.exists():
         app.setWindowIcon(QIcon(str(APP_ICON_PATH)))
     app.setAttribute(Qt.AA_DontCreateNativeWidgetSiblings, True)

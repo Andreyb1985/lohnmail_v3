@@ -57,11 +57,13 @@
     status: 'idle',
     available_version: '',
     available_build: '',
+    required: false,
     progress: 0,
     downloaded_bytes: 0,
     total_bytes: 0,
     release_notes: [],
     install_on_exit: false,
+    install_supported: false,
     required_reason: '',
     message: ''
   };
@@ -100,7 +102,8 @@
   }
   function updateIsMandatory(state){
     var reason = String((state || {}).required_reason || '').toLowerCase();
-    return reason === 'security' || reason === 'critical_security' || reason === 'incompatible' || reason === 'critical_incompatibility';
+    return (state || {}).required === true
+      && (reason === 'security' || reason === 'critical_security' || reason === 'incompatible' || reason === 'critical_incompatibility');
   }
   function updateIsAvailable(state){
     state = state || {};
@@ -185,8 +188,12 @@
     if (autoCheck) autoCheck.checked = state.auto_check !== false;
     var installOnExit = document.querySelector('[data-update-pref="install-on-exit"]');
     if (installOnExit) {
-      installOnExit.disabled = status !== 'ready';
-      installOnExit.checked = status === 'ready' && state.install_on_exit === true;
+      var installSupported = state.install_supported === true;
+      installOnExit.disabled = status !== 'ready' || !installSupported;
+      installOnExit.checked = installSupported && status === 'ready' && state.install_on_exit === true;
+      installOnExit.title = installSupported
+        ? ''
+        : 'Die automatische Installation ist nur in der Windows-App verfügbar.';
     }
 
     var checkButton = document.querySelector('[data-update-action="check"]');
@@ -205,7 +212,10 @@
     var downloadButton = document.querySelector('[data-update-action="download"]');
     if (downloadButton) {
       setButtonLabel(downloadButton, status === 'ready' ? 'Heruntergeladen' : (status === 'downloading' ? 'Download läuft...' : 'Update herunterladen'));
-      downloadButton.disabled = status === 'downloading' || status === 'ready';
+      downloadButton.disabled = status === 'downloading' || status === 'ready' || state.install_supported !== true;
+      downloadButton.title = state.install_supported === true
+        ? ''
+        : 'Updates werden in dieser Version nur unter Windows installiert.';
     }
 
     setText('[data-update="release-version"]', state.available_version ? 'Version ' + state.available_version : 'Installierte Version ' + state.installed_version);
@@ -270,11 +280,40 @@
       }
     }
   }
+  function persistUpdatePreferences(){
+    var payload = {
+      auto_check: latestUpdateState.auto_check !== false,
+      install_on_exit: latestUpdateState.install_on_exit === true
+    };
+    saveUpdatePreferences();
+    var bridge = window.lohnmailBridge;
+    if (bridge && typeof bridge.setUpdatePreferences === 'function') {
+      bridge.setUpdatePreferences(JSON.stringify(payload), function(raw){ applyUpdateState(raw); });
+      return;
+    }
+    renderUpdateSettings();
+    updateWarningCenter();
+  }
   function maybeCheckForUpdates(){
     var bridge = window.lohnmailBridge;
-    if (latestUpdateState.auto_check !== false && bridge && typeof bridge.checkForUpdates === 'function') {
-      dispatchUpdateAction('check');
+    if (latestUpdateState.auto_check === false || !bridge || typeof bridge.checkForUpdates !== 'function') return;
+    var status = String(latestUpdateState.status || 'idle');
+    if (['checking', 'downloading', 'available', 'required', 'ready'].indexOf(status) !== -1) return;
+    var lastChecked = Date.parse(latestUpdateState.last_checked_at || '');
+    if (Number.isFinite(lastChecked) && Date.now() - lastChecked < 24 * 60 * 60 * 1000) return;
+    dispatchUpdateAction('check');
+  }
+  function loadUpdateStateFromBridge(){
+    var bridge = window.lohnmailBridge;
+    if (bridge && typeof bridge.getUpdateState === 'function') {
+      bridge.getUpdateState(function(payload){
+        applyUpdateState(payload);
+        maybeCheckForUpdates();
+      });
+      return;
     }
+    renderUpdateSettings();
+    maybeCheckForUpdates();
   }
   window.lohnmailApplyUpdateState = applyUpdateState;
   window.lohnmailGetUpdatePreferences = function(){ return Object.assign({}, latestUpdateState); };
@@ -295,7 +334,7 @@
       loadShippingState();
       loadReportsState();
       loadMassMessageState();
-      maybeCheckForUpdates();
+      loadUpdateStateFromBridge();
     });
   }
   function bindBridgeSignals(){
@@ -4557,8 +4596,7 @@
         } else if (preference === 'install-on-exit' && !input.disabled) {
           latestUpdateState.install_on_exit = Boolean(input.checked);
         }
-        saveUpdatePreferences();
-        renderUpdateSettings();
+        persistUpdatePreferences();
       });
     });
     var mailTextField = document.querySelector('[data-settings-field="mail_text.body"]');

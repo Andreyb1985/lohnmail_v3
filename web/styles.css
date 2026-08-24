@@ -4120,7 +4120,7 @@ input, input:focus, input:focus-visible {
   color:#64748b;
   font-size:11.5px;
 }
-.update-download-head > span{
+.update-download-head > b{
   color:#008357;
   font-size:12px;
   font-weight:800;

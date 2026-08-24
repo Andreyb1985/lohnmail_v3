@@ -81,6 +81,26 @@ def build_default_settings(today: date | None = None) -> dict:
             "status": "unregistered",
             "server_url": "",
         },
+        "updates": {
+            "auto_check": True,
+            "install_on_exit": False,
+            "last_checked_at": "",
+            "status": "idle",
+            "available_version": "",
+            "available_build": "",
+            "required": False,
+            "download_url": "",
+            "sha256": "",
+            "size": 0,
+            "release_notes": [],
+            "required_reason": "",
+            "downloaded_path": "",
+            "downloaded_sha256": "",
+            "progress": 0,
+            "downloaded_bytes": 0,
+            "total_bytes": 0,
+            "message": "",
+        },
     }
 
 
@@ -131,6 +151,7 @@ def _deep_merge_settings(data: dict) -> dict:
     merged["notifications"] = _merge_dict(DEFAULT_SETTINGS["notifications"], merged.get("notifications"))
     merged["licensee"] = _merge_dict(DEFAULT_SETTINGS["licensee"], merged.get("licensee"))
     merged["license"] = _merge_dict(DEFAULT_SETTINGS["license"], merged.get("license"))
+    merged["updates"] = _merge_dict(DEFAULT_SETTINGS["updates"], merged.get("updates"))
 
     companies = merged.get("companies")
     has_company_excel_file = False
