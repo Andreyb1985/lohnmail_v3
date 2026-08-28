@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from core.license_manager import LicenseManager
+from core.license_manager import LicenseManager, LicenseNotFoundError
 
 
 class LicenseOfflineTests(unittest.TestCase):
@@ -78,6 +78,35 @@ class LicenseOfflineTests(unittest.TestCase):
         self.assertFalse(allowed)
         self.assertEqual(state["status"], "revoked")
 
+    def test_missing_server_license_starts_persistent_fourteen_day_grace(self) -> None:
+        self.write_state()
+        with patch.object(self.manager, "_post", side_effect=LicenseNotFoundError("License not found")):
+            state = self.manager.refresh(force=True, start_trial=False)
+
+        self.assertEqual(state["status"], "license_problem")
+        self.assertEqual(state["server"], "Verbunden")
+        self.assertIn("Lizenz nicht gefunden", state["last_message"])
+        self.assertTrue(self.manager.require_action("processing")[0])
+        first_end = state["license_problem_grace_ends_at"]
+
+        with patch.object(self.manager, "_post", side_effect=LicenseNotFoundError("License not found")):
+            repeated = self.manager.refresh(force=True, start_trial=False)
+        self.assertEqual(repeated["license_problem_grace_ends_at"], first_end)
+
+    def test_missing_license_is_blocked_after_transition_period(self) -> None:
+        now = datetime.now(timezone.utc)
+        self.write_state(
+            status="license_problem",
+            license_problem_started_at=(now - timedelta(days=15)).isoformat(),
+            license_problem_grace_ends_at=(now - timedelta(days=1)).isoformat(),
+        )
+
+        allowed, state = self.manager.require_action("processing")
+
+        self.assertFalse(allowed)
+        self.assertEqual(state["status"], "invalid")
+        self.assertIn("Übergangsfrist ist abgelaufen", state["last_message"])
+
     def test_legacy_license_files_are_copied_to_settings_directory(self) -> None:
         legacy_dir = self.license_dir / "legacy"
         target_dir = self.license_dir / "Settings"
@@ -97,6 +126,28 @@ class LicenseOfflineTests(unittest.TestCase):
         self.assertEqual(state["license_key"], "LM-MIGRATED")
         self.assertEqual((target_dir / "machine_id").read_text(encoding="utf-8"), "legacy-machine")
         self.assertTrue((legacy_dir / "license.json").exists())
+
+    def test_fresh_install_uses_same_machine_id_in_different_install_folders(self) -> None:
+        first_dir = self.license_dir / "first-copy"
+        second_dir = self.license_dir / "second-copy"
+        with patch.object(LicenseManager, "_hardware_seed", return_value="windows:stable-machine-guid"):
+            with patch("core.license_manager.LICENSE_DIR", first_dir):
+                first_id = LicenseManager({}).machine_id()
+            with patch("core.license_manager.LICENSE_DIR", second_dir):
+                second_id = LicenseManager({}).machine_id()
+
+        self.assertEqual(first_id, second_id)
+
+    def test_existing_license_id_is_preserved_when_machine_file_is_missing(self) -> None:
+        self.write_state(machine_id="already-activated-machine")
+
+        state = self.manager.load_state()
+
+        self.assertEqual(state["machine_id"], "already-activated-machine")
+        self.assertEqual(
+            (self.license_dir / "machine_id").read_text(encoding="utf-8"),
+            "already-activated-machine",
+        )
 
 
 if __name__ == "__main__":

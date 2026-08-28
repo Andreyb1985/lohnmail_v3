@@ -67,6 +67,7 @@
     required_reason: '',
     message: ''
   };
+  var outlookAccounts = [];
   var warningsAutoOpened = false;
   var latestMassMessageState = null;
   var latestShippingSendPreview = null;
@@ -318,24 +319,59 @@
   window.lohnmailApplyUpdateState = applyUpdateState;
   window.lohnmailGetUpdatePreferences = function(){ return Object.assign({}, latestUpdateState); };
   window.addEventListener('lohnmail:update-state', function(event){ applyUpdateState(event.detail || {}); });
+  var pywebviewSignalHandlers = {};
+  window.lohnmailReceiveSignal = function(name, payload){
+    (pywebviewSignalHandlers[name] || []).forEach(function(handler){
+      try { handler(payload); } catch (error) { console.warn('pywebview signal failed', name, error); }
+    });
+  };
+  function createPywebviewBridge(){
+    return new Proxy({}, {
+      get: function(target, property){
+        if (property === '__lohnmailSignalsBound') return target[property];
+        if (property in target) return target[property];
+        if (property in pywebviewSignalHandlers || /(?:Changed|Progress|Finished|Error)$/.test(String(property))) {
+          return {
+            connect: function(handler){
+              pywebviewSignalHandlers[property] = pywebviewSignalHandlers[property] || [];
+              pywebviewSignalHandlers[property].push(handler);
+            }
+          };
+        }
+        if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api[property] !== 'function') return undefined;
+        return function(){
+          var args = Array.prototype.slice.call(arguments);
+          var callback = typeof args[args.length - 1] === 'function' ? args.pop() : null;
+          var promise = window.pywebview.api[property].apply(window.pywebview.api, args);
+          if (callback) promise.then(callback).catch(function(error){
+            console.error('pywebview bridge call failed', property, error);
+            callback(JSON.stringify({ok:false, message:String(error && error.message || error)}));
+          });
+          return promise;
+        };
+      },
+      set: function(target, property, value){ target[property] = value; return true; }
+    });
+  }
+  function bridgeReady(bridge){
+    window.lohnmailBridge = bridge;
+    bindBridgeSignals();
+    loadDashboardState();
+    loadCompanyState();
+    loadSettingsState();
+    loadProcessingState();
+    loadValidationState();
+    loadShippingState();
+    loadReportsState();
+    loadMassMessageState();
+    loadUpdateStateFromBridge();
+  }
   function initBridge(){
-    if (typeof QWebChannel === 'undefined') {
-      setInfoBanner('Bridge nicht verfügbar. Bitte WebEngine neu starten.', false);
+    if (window.pywebview && window.pywebview.api) {
+      bridgeReady(createPywebviewBridge());
       return;
     }
-    new QWebChannel(qt.webChannelTransport, function(channel){
-      window.lohnmailBridge = channel.objects.lohnmailBridge;
-      bindBridgeSignals();
-      loadDashboardState();
-      loadCompanyState();
-      loadSettingsState();
-      loadProcessingState();
-      loadValidationState();
-      loadShippingState();
-      loadReportsState();
-      loadMassMessageState();
-      loadUpdateStateFromBridge();
-    });
+    window.addEventListener('pywebviewready', function(){ bridgeReady(createPywebviewBridge()); }, {once:true});
   }
   function bindBridgeSignals(){
     var bridge = window.lohnmailBridge;
@@ -406,6 +442,22 @@
     if (!node || value === undefined || value === null) return;
     var path = String(value || '-');
     node.title = path === '-' ? '' : path;
+    if (node.parentElement && node.parentElement.classList.contains('file-field')) {
+      node.textContent = '';
+      var fieldSeparatorIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+      if (path === '-' || fieldSeparatorIndex < 0) {
+        node.textContent = path;
+        return;
+      }
+      var fieldDirectory = document.createElement('span');
+      fieldDirectory.className = 'file-path-directory';
+      fieldDirectory.textContent = path.slice(0, fieldSeparatorIndex);
+      var fieldFilename = document.createElement('span');
+      fieldFilename.className = 'file-path-filename';
+      fieldFilename.textContent = path.slice(fieldSeparatorIndex);
+      node.append(fieldDirectory, fieldFilename);
+      return;
+    }
     node.textContent = '';
     var separatorIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
     if (path === '-' || separatorIndex < 0) {
@@ -737,7 +789,8 @@
     }
     setText('[data-reports="session-context"]', rows.length ? rows.length + ' Versandvorgänge' : 'Noch keine Versandvorgänge');
     setText('[data-reports="page-current"]', String(reportsPage));
-    setText('[data-reports="page-size-label"]', reportsPageSize + ' pro Seite⌄');
+    var reportPageSize = document.querySelector('[data-reports="page-size"]');
+    if (reportPageSize) reportPageSize.value = String(reportsPageSize);
     var prev = document.querySelector('[data-reports-action="page-prev"]');
     var next = document.querySelector('[data-reports-action="page-next"]');
     if (prev) prev.disabled = reportsPage <= 1;
@@ -764,6 +817,12 @@
       'Wird gesendet': 'Wird gesendet',
       'Wartet': 'Wartet',
       'Keine E-Mail': 'Nicht gesendet',
+      'Doppelte E-Mail': 'Doppelte E-Mail',
+      'Ungültige E-Mail': 'Ungültige E-Mail',
+      'Ungültige Zeichen': 'Ungültige Zeichen',
+      'Ungültiges Format': 'Ungültiges Format',
+      'Domain nicht gefunden': 'Domain nicht gefunden',
+      'Keine MX-Einträge': 'Keine MX-Einträge',
       'Keine Dateien': 'Nicht versendbar',
       'Fehler': 'Fehler'
     }[status] || (status || 'Versandbereit');
@@ -774,6 +833,7 @@
     if (validation.hint) return String(validation.hint);
     var status = String(row && row.status || '');
     if (status === 'Keine E-Mail') return 'E-Mail-Adresse fehlt';
+    if (status === 'Doppelte E-Mail') return 'Diese E-Mail-Adresse ist mehreren Mitarbeitern zugeordnet';
     if (status === 'Keine Dateien') return 'Abrechnung fehlt';
     if (status === 'Fehler') return 'Versand prüfen';
     return '-';
@@ -832,7 +892,8 @@
     }
     setText('[data-reports-recipients="footer"]', rows.length ? 'Zeige ' + (start + 1) + ' bis ' + end + ' von ' + rows.length + ' Einträgen' : '0 Einträge');
     setText('[data-reports-recipients="page-current"]', String(reportsRecipientPage));
-    setText('[data-reports-recipients="page-size-label"]', reportsRecipientPageSize + ' pro Seite⌄');
+    var recipientPageSize = document.querySelector('[data-reports-recipients="page-size"]');
+    if (recipientPageSize) recipientPageSize.value = String(reportsRecipientPageSize);
     var previous = document.querySelector('[data-reports-action="recipient-page-prev"]');
     var next = document.querySelector('[data-reports-action="recipient-page-next"]');
     if (previous) previous.disabled = reportsRecipientPage <= 1;
@@ -940,18 +1001,8 @@
       reportsPage += action === 'page-next' ? 1 : -1;
       return renderReportsTable();
     }
-    if (action === 'page-size') {
-      reportsPageSize = { 10: 20, 20: 50, 50: 100, 100: 10 }[reportsPageSize] || 10;
-      reportsPage = 1;
-      return renderReportsTable();
-    }
     if (action === 'recipient-page-prev' || action === 'recipient-page-next') {
       reportsRecipientPage += action === 'recipient-page-next' ? 1 : -1;
-      return renderReportRecipients();
-    }
-    if (action === 'recipient-page-size') {
-      reportsRecipientPageSize = { 20: 50, 50: 100, 100: 20 }[reportsRecipientPageSize] || 20;
-      reportsRecipientPage = 1;
       return renderReportRecipients();
     }
     if (action === 'detail-close') {
@@ -1473,6 +1524,14 @@
       openCompanyCreateModal();
       return;
     }
+    if (action === 'edit-company') {
+      var editCard = document.querySelector('[data-company-edit-card]');
+      var nameField = companyEditField('name');
+      if (editCard) editCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (nameField) setTimeout(function(){ nameField.focus(); nameField.select(); }, 350);
+      setCompanyMessage('Änderungen unten bearbeiten und anschließend speichern.');
+      return;
+    }
     if (action === 'select-company' && bridge.selectCompany) {
       var previousId = activeCompanyId();
       bridge.selectCompany(value || '', function(payload){
@@ -1658,6 +1717,7 @@
     setText('[data-license="trial-end"]', accessEnd ? 'bis ' + formatDateTime(accessEnd) : '-');
     setText('[data-license="server"]', state.server || 'Nicht verbunden');
     setText('[data-license="server-note"]', state.server_note || (state.server === 'Verbunden' ? 'Online-Prüfung aktiv' : 'Keine Serverlogik aktiv'));
+    setText('[data-license="key-label"]', state.key_label || 'Lizenzschlüssel');
     setText('[data-license="key"]', state.key_masked || 'Nicht hinterlegt');
     setText('[data-license="detail-mode"]', state.mode || 'Lokal');
     setText('[data-license="detail-company"]', state.company || '-');
@@ -1933,6 +1993,9 @@
   function setSettingsTemplatesMessage(message){
     setText('[data-settings="templates-message"]', message);
   }
+  function setSettingsSecurityMessage(message){
+    setText('[data-settings="security-message"]', message);
+  }
   function mailTextToHtml(value){
     var text = String(value === undefined || value === null ? '' : value)
       .replace(/\r\n?/g, '\n');
@@ -1991,7 +2054,29 @@
     setText('[data-settings-summary="period"]', formatSettingsPeriod(period));
     setText('[data-settings-summary="period-mode"]', period.mode || 'automatic_current_month');
     setText('[data-settings-summary="dry-run"]', ui.dry_run_default ? 'Aktiv' : 'Aus');
+    updateOutlookAccountControl();
     updateWarningCenter();
+  }
+  function updateOutlookAccountControl(){
+    var modeField = document.querySelector('[data-settings-field="mail_mode"]');
+    var smtpLabel = document.querySelector('[data-settings-smtp-from]');
+    var outlookLabel = document.querySelector('[data-settings-outlook-from]');
+    var input = document.querySelector('[data-settings-field="smtp.from_email"]');
+    var select = document.querySelector('[data-outlook-account-select]');
+    var isOutlook = !!modeField && modeField.value === 'outlook';
+    if (smtpLabel) smtpLabel.hidden = isOutlook;
+    if (outlookLabel) outlookLabel.hidden = !isOutlook;
+    if (!select) return;
+    var current = String(input && input.value || '');
+    select.innerHTML = '<option value="">Outlook-Konto auswählen…</option>' + outlookAccounts.map(function(account){
+      var value = account.smtp_address || account.identifier || '';
+      var label = account.label || value;
+      return '<option value="' + escapeHtml(value) + '">' + escapeHtml(label) + '</option>';
+    }).join('');
+    if (current && !outlookAccounts.some(function(account){ return (account.smtp_address || account.identifier || '') === current; })) {
+      select.innerHTML += '<option value="' + escapeHtml(current) + '">' + escapeHtml(current) + ' (gespeichert)</option>';
+    }
+    select.value = current;
   }
   function collectSettingsForm(){
     var payload = {};
@@ -2103,6 +2188,10 @@
       saveSettingsForm(setSettingsTemplatesMessage, 'E-Mail Vorlage wurde gespeichert.');
       return;
     }
+    if (action === 'save-security') {
+      saveSettingsForm(setSettingsSecurityMessage, 'PDF-Verschlüsselung wurde gespeichert.');
+      return;
+    }
     if (action === 'test-mail') {
       testMailConnectionAfterSave();
       return;
@@ -2120,7 +2209,9 @@
             return;
           }
           var accounts = result.accounts || [];
-          setSettingsMailMessage(accounts.length ? ('Outlook-Classic-Konten: ' + accounts.map(function(account){ return account.label || account.identifier; }).join(', ')) : 'Outlook Classic ist erreichbar. Unter macOS steht keine Kontenliste zur Verfügung; Outlook verwendet das dort konfigurierte Absenderkonto.');
+          outlookAccounts = accounts;
+          updateOutlookAccountControl();
+          setSettingsMailMessage(accounts.length ? 'Outlook-Konten wurden geladen. Bitte das Absenderkonto auswählen.' : 'Outlook Classic ist erreichbar. Unter macOS steht keine Kontenliste zur Verfügung; Outlook verwendet das dort konfigurierte Absenderkonto.');
         } catch (error) {
           setSettingsMailMessage('Outlook-Classic-Konten konnten nicht verarbeitet werden.');
         }
@@ -2724,7 +2815,7 @@
       title: 'Open Source Lizenzen',
       intro: 'LohnMail verwendet ausgewählte Open-Source-Komponenten für Oberfläche, PDF-Verarbeitung, Excel-Verarbeitung und lokale Datenspeicherung.',
       sections: [
-        ['Verwendete Komponenten', 'Zu den Komponenten gehören unter anderem Python, PySide6/Qt, SQLite, PyPDF2, openpyxl und weitere technische Bibliotheken.'],
+        ['Verwendete Komponenten', 'Zu den Komponenten gehören unter anderem Python, pywebview, SQLite, PyPDF2, openpyxl und weitere technische Bibliotheken.'],
         ['Lizenzhinweise', 'Die jeweiligen Lizenzbedingungen der verwendeten Komponenten bleiben gültig. Detaillierte Hinweise können in der Produktdokumentation oder den Paketinformationen eingesehen werden.'],
         ['Keine Datenfreigabe durch Bibliotheken', 'Die verwendeten lokalen Bibliotheken übertragen keine Lohnunterlagen automatisch an externe Dienste.']
       ]
@@ -3006,16 +3097,11 @@
     updateWarningCenter();
     updateReportsScreen();
   }
-  function runDashboardAction(action){
-    var ready = workflowReadyState();
-    if (action === 'new-run') {
-      var processingStatus = (latestProcessingState && latestProcessingState.status) || {};
-      var hasWorkflowData = !!(
-        processingStatus.finished || processingStatus.failed ||
-        ((latestValidationState && latestValidationState.rows) || []).length ||
-        ((latestShippingState && latestShippingState.rows) || []).length
-      );
-      if (hasWorkflowData && !window.confirm('Aktuellen Workflow zurücksetzen und einen neuen Lauf beginnen? Gespeicherte Berichte bleiben erhalten.')) return;
+  function closeNewRunModal(){
+    var modal = document.querySelector('[data-new-run-modal]');
+    if (modal) modal.hidden = true;
+  }
+  function startNewRunNow(){
       var bridge = window.lohnmailBridge;
       if (!bridge || !bridge.startNewRun) {
         setPage('Verarbeitung');
@@ -3041,6 +3127,22 @@
           setInfoBanner('Neuer Lauf konnte nicht gestartet werden.', false);
         }
       });
+  }
+  function runDashboardAction(action){
+    var ready = workflowReadyState();
+    if (action === 'new-run') {
+      var processingStatus = (latestProcessingState && latestProcessingState.status) || {};
+      var hasWorkflowData = !!(
+        processingStatus.finished || processingStatus.failed ||
+        ((latestValidationState && latestValidationState.rows) || []).length ||
+        ((latestShippingState && latestShippingState.rows) || []).length
+      );
+      if (hasWorkflowData) {
+        var modal = document.querySelector('[data-new-run-modal]');
+        if (modal) modal.hidden = false;
+        return;
+      }
+      startNewRunNow();
       return;
     }
     if (action === 'open-processing') {
@@ -3303,11 +3405,12 @@
     var ready = rows.filter(function(row){ return row.status === 'OK' || row.severity === 'success'; }).length;
     var missingEmail = rows.filter(function(row){ return row.status === 'Keine E-Mail'; }).length;
     var errors = rows.filter(function(row){ return row.severity === 'critical' || row.status === 'Fehler' || row.status === 'Keine Dateien'; }).length;
-    return { ready: ready, missingEmail: missingEmail, errors: errors };
+    var emailIssues = rows.filter(function(row){ return row.category === 'E-Mail' && row.status !== 'Keine E-Mail'; }).length;
+    return { ready: ready, missingEmail: missingEmail, emailIssues: emailIssues, errors: errors };
   }
   function updateValidationShippingStatus(state){
     var summary = validationShippingSummary(state);
-    setText('[data-validation="shipping-status"]', summary.ready + ' versandbereit · ' + summary.missingEmail + ' ohne E-Mail · ' + summary.errors + ' Fehler');
+    setText('[data-validation="shipping-status"]', summary.ready + ' versandbereit · ' + summary.missingEmail + ' ohne E-Mail · ' + summary.emailIssues + ' E-Mail-Hinweise · ' + summary.errors + ' Fehler');
     var button = document.querySelector('[data-validation-action="go-shipping"]');
     if (button) {
       button.disabled = !(state && state.ready);
@@ -3380,7 +3483,7 @@
       rows = rows.filter(function(row){ return row.status === 'Keine E-Mail'; });
     }
     if (shippingStatusFilter === 'error') {
-      rows = rows.filter(function(row){ return row.status === 'Fehler' || row.status === 'Keine Dateien'; });
+      rows = rows.filter(function(row){ return ['Fehler', 'Keine Dateien', 'Doppelte E-Mail', 'Ungültige E-Mail', 'Ungültige Zeichen', 'Ungültiges Format', 'Domain nicht gefunden', 'Keine MX-Einträge'].indexOf(row.status) !== -1; });
     }
     if (shippingStatusFilter === 'sent') {
       rows = rows.filter(function(row){ return row.status === 'Gesendet'; });
@@ -3397,12 +3500,12 @@
   function shippingStatusClass(status){
     if (status === 'Gesendet' || status === 'Dry-Run' || status === 'Bereit') return 'ready';
     if (status === 'Fehler') return 'failed';
-    if (status === 'Keine E-Mail' || status === 'Keine Dateien') return 'warning';
-    if (status === 'Wird gesendet') return 'sending';
+    if (['Keine E-Mail', 'Keine Dateien', 'Doppelte E-Mail', 'Ungültige E-Mail', 'Ungültige Zeichen', 'Ungültiges Format', 'Domain nicht gefunden', 'Keine MX-Einträge', 'Übersprungen'].indexOf(status) !== -1) return 'warning';
+    if (status === 'Wird gesendet' || status === 'Wird vorbereitet') return 'sending';
     if (status === 'Wartet') return 'waiting';
     return 'ready';
   }
-  function resetShippingLiveProgress(companyId, selectedRows){
+  function resetShippingLiveProgress(companyId, selectedRows, phase){
     var selected = {};
     (selectedRows || []).forEach(function(row){
       var persnr = String(row && row.persnr || '');
@@ -3414,13 +3517,16 @@
     });
     shippingLiveProgress = {
       companyId: String(companyId || ''),
-      phase: selectedRows && selectedRows.length ? 'sending' : 'idle',
+      phase: phase || (selectedRows && selectedRows.length ? 'sending' : 'idle'),
       total: selectedRows ? selectedRows.length : 0,
       completed: 0,
+      prepared: 0,
       sent: 0,
       errors: 0,
       currentPersnr: '',
       currentEmail: '',
+      operation: '',
+      dryRun: phase === 'preparing',
       selected: selected,
       processed: {}
     };
@@ -3473,27 +3579,50 @@
   }
   function syncShippingLiveProgress(state, status, metrics){
     var companyId = String(state && state.company && state.company.id || '');
+    var live = status.live_progress || {};
+    var anyRunning = !!status.running;
     var realSendRunning = !!status.running && status.dry_run === false;
-    var realSendTerminal = !status.running && status.dry_run === false && (status.finished || status.failed);
+    var anyTerminal = !status.running && (status.finished || status.failed);
 
-    if (realSendRunning) {
-      if (shippingLiveProgress.phase !== 'sending' || shippingLiveProgress.companyId !== companyId) {
-        resetShippingLiveProgress(companyId, selectedShippingRows());
-      }
-      rememberShippingProgressMessage(status.message);
-    } else if (realSendTerminal) {
+    if (anyRunning) {
+      var phase = String(live.phase || (realSendRunning ? 'sending' : 'preparing'));
       if (shippingLiveProgress.phase === 'idle' || shippingLiveProgress.companyId !== companyId) {
-        var terminalTotal = Number(metrics.sent || 0) + Number(metrics.errors || 0);
-        resetShippingLiveProgress(companyId, []);
+        resetShippingLiveProgress(companyId, realSendRunning ? selectedShippingRows() : shippingRows(), phase);
+      }
+      shippingLiveProgress.phase = phase;
+      shippingLiveProgress.dryRun = status.dry_run !== false;
+      shippingLiveProgress.total = Math.max(0, Number(live.total !== undefined ? live.total : shippingLiveProgress.total) || 0);
+      shippingLiveProgress.completed = Math.max(0, Number(live.current || 0));
+      shippingLiveProgress.prepared = Math.max(0, Number(live.prepared || 0));
+      shippingLiveProgress.sent = Math.max(0, Number(live.sent || 0));
+      shippingLiveProgress.errors = Math.max(0, Number(live.errors || 0));
+      shippingLiveProgress.currentPersnr = String(live.persnr || '');
+      shippingLiveProgress.currentEmail = String(live.email || '');
+      shippingLiveProgress.operation = String(live.operation || status.message || '');
+      var livePersnr = String(live.persnr || '');
+      var liveStatus = String(live.status || 'running');
+      if (livePersnr && ['complete', 'error', 'skipped'].indexOf(liveStatus) !== -1) {
+        shippingLiveProgress.processed[livePersnr] = {
+          status: liveStatus === 'error' ? 'Fehler' : (liveStatus === 'skipped' ? 'Übersprungen' : (shippingLiveProgress.dryRun ? 'Dry-Run' : 'Gesendet')),
+          error: liveStatus === 'error' ? shippingLiveProgress.operation : ''
+        };
+      }
+    } else if (anyTerminal) {
+      if (shippingLiveProgress.phase === 'idle' || shippingLiveProgress.companyId !== companyId) {
+        var terminalTotal = Number(status.dry_run !== false ? metrics.exported : metrics.sent) + Number(metrics.errors || 0);
+        resetShippingLiveProgress(companyId, [], status.dry_run !== false ? 'preparing' : 'sending');
         shippingLiveProgress.total = terminalTotal;
       }
+      shippingLiveProgress.dryRun = status.dry_run !== false;
+      shippingLiveProgress.prepared = Math.max(shippingLiveProgress.prepared, Number(metrics.exported || 0));
       shippingLiveProgress.sent = Math.max(shippingLiveProgress.sent, Number(metrics.sent || 0));
       shippingLiveProgress.errors = Math.max(shippingLiveProgress.errors, Number(metrics.errors || 0));
-      shippingLiveProgress.completed = shippingLiveProgress.total || (shippingLiveProgress.sent + shippingLiveProgress.errors);
+      shippingLiveProgress.completed = shippingLiveProgress.total || ((shippingLiveProgress.dryRun ? shippingLiveProgress.prepared : shippingLiveProgress.sent) + shippingLiveProgress.errors);
       shippingLiveProgress.total = Math.max(shippingLiveProgress.total, shippingLiveProgress.completed);
       shippingLiveProgress.phase = status.failed ? 'failed' : 'complete';
       shippingLiveProgress.currentPersnr = '';
       shippingLiveProgress.currentEmail = '';
+      shippingLiveProgress.operation = String(status.message || '');
     }
     updateShippingLiveProgressPanel(status);
   }
@@ -3507,14 +3636,14 @@
     var completed = Math.min(total, Math.max(0, Number(shippingLiveProgress.completed || 0)));
     var remaining = Math.max(0, total - completed);
     var percent = total ? Math.round((completed / total) * 100) : 0;
-    var next = shippingLiveProgress.phase === 'sending' ? nextPendingShippingRecipient() : null;
-    var title = 'E-Mails werden versendet';
-    var current = 'Versand wird gestartet...';
-    if (next) {
-      current = 'Aktuell: ' + (next.email || ('Personalnr. ' + next.persnr));
-    } else if (shippingLiveProgress.phase === 'complete') {
-      title = 'Versand abgeschlossen';
-      current = shippingLiveProgress.sent + ' E-Mails gesendet' +
+    var title = shippingLiveProgress.phase === 'preparing' ? 'Versand wird vorbereitet' : 'E-Mails werden versendet';
+    var subject = shippingLiveProgress.currentEmail || (shippingLiveProgress.currentPersnr ? ('Personalnr. ' + shippingLiveProgress.currentPersnr) : '');
+    var current = [shippingLiveProgress.operation, subject ? ('Aktuell: ' + subject) : ''].filter(Boolean).join(' · ') || 'Vorgang wird gestartet...';
+    if (shippingLiveProgress.phase === 'complete') {
+      title = shippingLiveProgress.dryRun ? 'Vorbereitung abgeschlossen' : 'Versand abgeschlossen';
+      current = shippingLiveProgress.dryRun
+        ? shippingLiveProgress.prepared + ' PDF-Dateien vorbereitet' + (shippingLiveProgress.errors ? ' · ' + shippingLiveProgress.errors + ' Fehler' : '')
+        : shippingLiveProgress.sent + ' E-Mails gesendet' +
         (shippingLiveProgress.errors ? ' · ' + shippingLiveProgress.errors + ' Fehler' : '');
       percent = 100;
     } else if (shippingLiveProgress.phase === 'failed') {
@@ -3522,12 +3651,14 @@
       current = String(status && status.message || 'Der Versand konnte nicht abgeschlossen werden.');
     }
     setText('[data-shipping-live="title"]', title);
-    var displayedSent = total > 0 ? Math.min(total, shippingLiveProgress.sent) : shippingLiveProgress.sent;
+    var successful = shippingLiveProgress.dryRun ? shippingLiveProgress.prepared : shippingLiveProgress.sent;
+    var displayedSent = total > 0 ? Math.min(total, successful) : successful;
     var displayedErrors = total > 0
       ? Math.min(Math.max(0, total - displayedSent), shippingLiveProgress.errors)
       : shippingLiveProgress.errors;
     setText('[data-shipping-live="count"]', completed + '/' + total);
     setText('[data-shipping-live="sent"]', displayedSent);
+    setText('[data-shipping-live="success-label"]', shippingLiveProgress.dryRun ? 'Vorbereitet' : 'Gesendet');
     setText('[data-shipping-live="errors"]', displayedErrors);
     setText('[data-shipping-live="remaining"]', remaining);
     setText('[data-shipping-live="current"]', current);
@@ -3547,8 +3678,11 @@
       return presented;
     }
     if (shippingLiveProgress.phase === 'sending') {
-      var next = nextPendingShippingRecipient();
-      presented.status = next && next.persnr === persnr ? 'Wird gesendet' : 'Wartet';
+      presented.status = shippingLiveProgress.currentPersnr === persnr ? 'Wird gesendet' : 'Wartet';
+      presented.planned = 'Jetzt';
+    }
+    if (shippingLiveProgress.phase === 'preparing') {
+      presented.status = shippingLiveProgress.currentPersnr === persnr ? 'Wird vorbereitet' : 'Wartet';
       presented.planned = 'Jetzt';
     }
     return presented;
@@ -3662,7 +3796,7 @@
       all: rows.length,
       ready: rows.filter(function(row){ return row.status === 'Bereit' || row.status === 'Dry-Run'; }).length,
       'missing-email': rows.filter(function(row){ return row.status === 'Keine E-Mail'; }).length,
-      error: rows.filter(function(row){ return row.status === 'Fehler' || row.status === 'Keine Dateien'; }).length,
+      error: rows.filter(function(row){ return ['Fehler', 'Keine Dateien', 'Doppelte E-Mail', 'Ungültige E-Mail', 'Ungültige Zeichen', 'Ungültiges Format', 'Domain nicht gefunden', 'Keine MX-Einträge'].indexOf(row.status) !== -1; }).length,
       sent: rows.filter(function(row){ return row.status === 'Gesendet'; }).length
     };
   }
@@ -4152,7 +4286,7 @@
       }
     }
 
-    setProcessingText(kind + '-path', state.path || 'Nicht ausgewählt');
+    setPathText('[data-processing="' + kind + '-path"]', state.path || 'Nicht ausgewählt');
     setProcessingText(kind + '-label', state.label || 'Nicht ausgewählt');
     setProcessingText(kind + '-updated', state.updated || '--');
   }
@@ -4529,6 +4663,18 @@
         renderReportRecipients();
       });
     }
+    var reportPageSize = document.querySelector('[data-reports="page-size"]');
+    if (reportPageSize) reportPageSize.addEventListener('change', function(){
+      reportsPageSize = Number(reportPageSize.value) || 10;
+      reportsPage = 1;
+      renderReportsTable();
+    });
+    var reportRecipientPageSize = document.querySelector('[data-reports-recipients="page-size"]');
+    if (reportRecipientPageSize) reportRecipientPageSize.addEventListener('change', function(){
+      reportsRecipientPageSize = Number(reportRecipientPageSize.value) || 20;
+      reportsRecipientPage = 1;
+      renderReportRecipients();
+    });
     document.querySelectorAll('[data-reports-recipient-filter]').forEach(function(button){
       button.addEventListener('click', function(event){
         event.preventDefault();
@@ -4625,6 +4771,14 @@
     });
     var licenseValidationEdit = document.querySelector('[data-license-validation-edit]');
     if (licenseValidationEdit) licenseValidationEdit.addEventListener('click', focusFirstMissingLicenseeField);
+    document.querySelectorAll('[data-new-run-close]').forEach(function(button){
+      button.addEventListener('click', closeNewRunModal);
+    });
+    var newRunConfirm = document.querySelector('[data-new-run-confirm]');
+    if (newRunConfirm) newRunConfirm.addEventListener('click', function(){
+      closeNewRunModal();
+      startNewRunNow();
+    });
     document.querySelectorAll('[data-licensee-field]').forEach(function(field){
       field.addEventListener('input', function(){
         if (String(field.value || '').trim()) field.classList.remove('licensee-field-missing');
@@ -4669,6 +4823,13 @@
         mailHtmlField.value = mailTextToHtml(mailTextField.value);
       });
     }
+    var mailModeField = document.querySelector('[data-settings-field="mail_mode"]');
+    if (mailModeField) mailModeField.addEventListener('change', updateOutlookAccountControl);
+    var outlookAccountSelect = document.querySelector('[data-outlook-account-select]');
+    if (outlookAccountSelect) outlookAccountSelect.addEventListener('change', function(){
+      var fromInput = document.querySelector('[data-settings-field="smtp.from_email"]');
+      if (fromInput) fromInput.value = outlookAccountSelect.value || '';
+    });
     document.querySelectorAll('[data-mass-action]').forEach(function(button){
       button.addEventListener('click', function(event){
         event.preventDefault();

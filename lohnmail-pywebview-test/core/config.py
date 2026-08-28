@@ -7,7 +7,7 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
-APP_NAME = "LohnMail"
+APP_NAME = "LohnMailPywebviewTest"
 APP_TAGLINE = "Versand von Lohnabrechnungen \u2013 kompatibel mit DATEV"
 APP_COPYRIGHT = "\u00a9 2026 Andrii Bakanov"
 DEVELOPER_NAME = "Andrii Bakanov"
@@ -45,10 +45,8 @@ def build_default_settings(today: date | None = None) -> dict:
             ),
             "body_html": "",
         },
-        "companies": [
-            {"id": "gesob", "name": "GeSoB GmbH", "email_excel_file": ""}
-        ],
-        "selected_company_id": "gesob",
+        "companies": [],
+        "selected_company_id": "",
         "period": {
             "mode": "automatic_current_month",
             "month": resolved_today.month,
@@ -115,6 +113,19 @@ def app_dir() -> Path:
 
 
 def user_data_dir() -> Path:
+    explicit_data_dir = str(os.environ.get("LOHNMAIL_DATA_DIR", "") or "").strip()
+    if explicit_data_dir:
+        return Path(explicit_data_dir).expanduser().resolve()
+
+    install_dir = app_dir()
+    portable_root = install_dir.parent
+    if (
+        install_dir.name.casefold() == "app"
+        and (portable_root / "Settings").is_dir()
+        and (portable_root / "Companies").is_dir()
+    ):
+        return portable_root
+
     if sys.platform == "win32":
         windows_data = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
         if windows_data:
@@ -186,14 +197,16 @@ def _deep_merge_settings(data: dict) -> dict:
 
     companies = merged.get("companies")
     has_company_excel_file = False
-    if not isinstance(companies, list) or not companies:
-        merged["companies"] = deepcopy(DEFAULT_SETTINGS["companies"])
+    has_company_pdf_input = False
+    if not isinstance(companies, list):
+        merged["companies"] = []
     else:
         normalized = []
         for item in companies:
             if not isinstance(item, dict):
                 continue
             has_company_excel_file = has_company_excel_file or "email_excel_file" in item
+            has_company_pdf_input = has_company_pdf_input or "pdf_input" in item
             company_id = str(item.get("id", "") or "").strip()
             company_name = str(item.get("name", "") or "").strip()
             if not company_id:
@@ -201,25 +214,41 @@ def _deep_merge_settings(data: dict) -> dict:
             if not company_name:
                 company_name = company_id
             email_excel_file = str(item.get("email_excel_file", "") or item.get("excel_file", "") or "").strip()
-            normalized.append({
+            pdf_input = str(item.get("pdf_input", "") or "").strip()
+            pdf_input_mode = str(item.get("pdf_input_mode", "folder") or "folder").strip()
+            if pdf_input_mode not in {"folder", "single_pdf"}:
+                pdf_input_mode = "folder"
+            normalized_company = {
                 "id": company_id,
                 "name": company_name,
                 "email_excel_file": email_excel_file,
-            })
-        if not normalized:
-            normalized = deepcopy(DEFAULT_SETTINGS["companies"])
+                "pdf_input": pdf_input,
+                "pdf_input_mode": pdf_input_mode,
+            }
+            if isinstance(item.get("mail_settings"), dict):
+                normalized_company["mail_settings"] = deepcopy(item["mail_settings"])
+            normalized.append(normalized_company)
         merged["companies"] = normalized
 
     selected_company_id = str(merged.get("selected_company_id", "") or "").strip()
     known_ids = {c["id"] for c in merged["companies"]}
     if not selected_company_id or selected_company_id not in known_ids:
-        merged["selected_company_id"] = merged["companies"][0]["id"]
+        merged["selected_company_id"] = merged["companies"][0]["id"] if merged["companies"] else ""
 
     last_excel_file = str(merged.get("ui", {}).get("last_excel_file", "") or "").strip()
     if last_excel_file and not has_company_excel_file:
         for company in merged["companies"]:
             if company["id"] == merged["selected_company_id"] and not company.get("email_excel_file"):
                 company["email_excel_file"] = last_excel_file
+                break
+
+    last_pdf_input = str(merged.get("ui", {}).get("last_pdf_dir", "") or "").strip()
+    if last_pdf_input and not has_company_pdf_input:
+        for company in merged["companies"]:
+            if company["id"] == merged["selected_company_id"] and not company.get("pdf_input"):
+                company["pdf_input"] = last_pdf_input
+                mode = str(merged.get("ui", {}).get("last_pdf_input_mode", "folder") or "folder")
+                company["pdf_input_mode"] = mode if mode in {"folder", "single_pdf"} else "folder"
                 break
 
     return merged

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 import hashlib
 import inspect
 import re
@@ -28,13 +28,36 @@ from .message_templates import (
 )
 from .report import write_audit_check_xlsx
 
-ProgressCb = Callable[[str], None] | None
+ProgressCb = Callable[[Any], None] | None
 PERSNR_TEXT_RE = re.compile(r"Pers\.-Nr\.\s*([0-9]{4,})")
 
 
 def _p(cb: ProgressCb, msg: str) -> None:
     if cb:
         cb(msg)
+
+
+def _shipping_progress(
+    cb: ProgressCb,
+    *,
+    phase: str,
+    current: int,
+    total: int,
+    operation: str,
+    persnr: str = "",
+    email: str = "",
+    prepared: int = 0,
+    sent: int = 0,
+    errors: int = 0,
+    status: str = "running",
+) -> None:
+    if cb:
+        cb({
+            "kind": "shipping_progress", "phase": phase, "current": current,
+            "total": total, "operation": operation, "persnr": persnr,
+            "email": email, "prepared": prepared, "sent": sent,
+            "errors": errors, "status": status,
+        })
 
 
 def _require_pdf_support() -> None:
@@ -270,6 +293,20 @@ def _email_check_values(email_validation: dict[str, dict], persnr: str) -> dict:
         "EmailSendable": bool(result.get("sendable", False)),
         "EmailValidationHint": str(result.get("hint") or ""),
     }
+
+
+def _email_status(result: dict | None, email: str = "") -> str:
+    check = result or {}
+    code = str(check.get("code") or "").strip().lower()
+    if not email or code == "missing":
+        return "Keine E-Mail"
+    return {
+        "duplicate": "Doppelte E-Mail",
+        "illegal_characters": "Ungültige Zeichen",
+        "invalid_format": "Ungültiges Format",
+        "domain_missing": "Domain nicht gefunden",
+        "mx_missing": "Keine MX-Einträge",
+    }.get(code, "Ungültige E-Mail")
 
 
 def _email_validation_summary(email_validation: dict[str, dict]) -> dict[str, int]:
@@ -918,7 +955,7 @@ def action_check(
         if pdf_errors:
             status = "Fehler"
         elif email_check and not email_check.get("sendable", False):
-            status = "Keine E-Mail" if email_check.get("code") == "missing" else "Ungültige E-Mail"
+            status = _email_status(email_check, email)
         else:
             status = "OK" if email else "Keine E-Mail"
         total_pages = sum(pdf_page_counts.get(_pdf_path_key(p), 0) for p in files)
@@ -1174,7 +1211,15 @@ def action_send(
         _p(progress_cb, "Geburtsdaten werden aus den Abrechnungen gelesen…")
     else:
         _p(progress_cb, "Mitarbeiter-PDFs werden erstellt…")
-    for persnr in sorted(grouped.keys(), key=_persnr_sort_key):
+    ordered_persnr = sorted(grouped.keys(), key=_persnr_sort_key)
+    progress_phase = "preparing" if dry_run else "sending"
+    progress_total = len(ordered_persnr)
+    prepared_count = 0
+    _shipping_progress(
+        progress_cb, phase=progress_phase, current=0, total=progress_total,
+        operation="Versandunterlagen werden vorbereitet…" if dry_run else "E-Mail-Versand wird vorbereitet…",
+    )
+    for progress_index, persnr in enumerate(ordered_persnr, start=1):
         files = _dedup_pdf_paths(grouped[persnr])
         email_check = email_validation.get(persnr, {})
         email = str(email_check.get("email") or "")
@@ -1194,22 +1239,37 @@ def action_send(
             **_email_check_values(email_validation, persnr),
         }
 
+        _shipping_progress(
+            progress_cb, phase=progress_phase, current=progress_index - 1, total=progress_total,
+            operation="Mitarbeiter-PDF wird erstellt und verschlüsselt…", persnr=persnr,
+            email=email, prepared=prepared_count, sent=sent_count if not dry_run else 0,
+            errors=failed_count,
+        )
+
         if pdf_errors:
             row["Status"] = "Fehler"
             row["Error"] = "; ".join(pdf_errors)
             failed_count += 1
             rows.append(row)
             _p(progress_cb, f"Fehler bei {persnr}: {row['Error']}")
+            _shipping_progress(
+                progress_cb, phase=progress_phase, current=progress_index, total=progress_total,
+                operation="PDF konnte nicht vorbereitet werden.", persnr=persnr, email=email,
+                prepared=prepared_count, sent=sent_count if not dry_run else 0,
+                errors=failed_count, status="error",
+            )
             continue
 
         if not email or (email_check and not email_check.get("sendable", False)):
-            row["Status"] = (
-                "Keine E-Mail"
-                if not email or email_check.get("code") == "missing"
-                else "Ungültige E-Mail"
-            )
+            row["Status"] = _email_status(email_check, email)
             skipped_count += 1
             rows.append(row)
+            _shipping_progress(
+                progress_cb, phase=progress_phase, current=progress_index, total=progress_total,
+                operation="Eintrag wurde übersprungen.", persnr=persnr, email=email,
+                prepared=prepared_count, sent=sent_count if not dry_run else 0,
+                errors=failed_count, status="skipped",
+            )
             continue
 
         merged_pdf = prepared_dir / f"{persnr}.pdf"
@@ -1238,6 +1298,7 @@ def action_send(
                     merged_pdf.unlink(missing_ok=True)
                 except Exception:
                     pass
+            prepared_count += 1
 
             context = build_mail_context(settings, persnr, company_id=company_id)
             subject = format_message_template(subject_template, context)
@@ -1257,6 +1318,11 @@ def action_send(
                 sent_count += 1
                 _p(progress_cb, f"[Dry-Run] {persnr} -> {email}")
             else:
+                _shipping_progress(
+                    progress_cb, phase="sending", current=progress_index - 1, total=progress_total,
+                    operation="E-Mail wird an Outlook/SMTP übergeben…", persnr=persnr, email=email,
+                    prepared=prepared_count, sent=sent_count, errors=failed_count,
+                )
                 send_message(email, subject, body, final_pdf, body_html)
                 row["Status"] = "Gesendet"
                 sent_count += 1
@@ -1268,6 +1334,13 @@ def action_send(
             _p(progress_cb, f"Fehler bei {persnr}: {exc}")
 
         rows.append(row)
+        _shipping_progress(
+            progress_cb, phase=progress_phase, current=progress_index, total=progress_total,
+            operation=("PDF wurde vorbereitet." if dry_run else ("E-Mail wurde gesendet." if row["Status"] == "Gesendet" else "Versand fehlgeschlagen.")),
+            persnr=persnr, email=email, prepared=prepared_count,
+            sent=sent_count if not dry_run else 0, errors=failed_count,
+            status="complete" if row["Status"] in {"Dry-Run", "Gesendet"} else "error",
+        )
 
     for persnr in missing_files_persnr:
         rows.append(

@@ -5,6 +5,7 @@ import os
 import platform
 import shutil
 import socket
+import subprocess
 import urllib.error
 import urllib.request
 import uuid
@@ -22,9 +23,14 @@ DEFAULT_LICENSE_SERVER_URL = "https://license-server-lm.vercel.app"
 CHECK_INTERVAL = timedelta(days=7)
 SUBSCRIPTION_OFFLINE_GRACE = timedelta(days=7)
 LIFETIME_OFFLINE_GRACE = timedelta(days=30)
+MISSING_LICENSE_GRACE = timedelta(days=14)
 
-ACTIVE_STATUSES = {"trialing", "active", "expiring_soon"}
+ACTIVE_STATUSES = {"trialing", "active", "expiring_soon", "license_problem"}
 BLOCKED_STATUSES = {"past_due", "expired", "unpaid", "canceled", "refunded", "disputed", "revoked", "invalid"}
+
+
+class LicenseNotFoundError(RuntimeError):
+    """The server was reached successfully, but it no longer has this license."""
 
 
 def _now() -> datetime:
@@ -67,7 +73,14 @@ class LicenseManager:
         try:
             data = json.loads(LICENSE_PATH.read_text(encoding="utf-8"))
             if isinstance(data, dict):
-                return {**self._empty_state(), **data}
+                self._preserve_state_machine_id(data)
+                state = {**self._empty_state(), **data}
+                grace_end = _parse_dt(state.get("license_problem_grace_ends_at"))
+                if state.get("status") == "license_problem" and grace_end and grace_end < _now():
+                    state["status"] = "invalid"
+                    state["last_message"] = "Die 14-tägige Übergangsfrist ist abgelaufen. Bitte aktivieren Sie eine neue Lizenz."
+                    self._save_state(state)
+                return state
         except Exception:
             pass
         return self._empty_state()
@@ -104,6 +117,8 @@ class LicenseManager:
             state = self._merge_server_response(state, response)
             self._save_state(state)
             return state
+        except LicenseNotFoundError:
+            return self._missing_license_state(state)
         except Exception as exc:
             return self._offline_state(state, str(exc))
 
@@ -228,7 +243,12 @@ class LicenseManager:
         state = self.load_state()
         status = str(state.get("status", "") or "").lower()
         if status in BLOCKED_STATUSES:
-            return False, {**state, "last_message": self.block_message(status)}
+            message = (
+                state.get("last_message")
+                if status == "invalid" and state.get("license_problem_started_at")
+                else self.block_message(status)
+            )
+            return False, {**state, "last_message": message}
 
         # Processing is local and must not wait for a network timeout. A cached
         # entitlement remains valid until its known access end. Regular status
@@ -239,7 +259,12 @@ class LicenseManager:
         state = self.refresh(force=False, start_trial=True)
         status = str(state.get("status", "") or "").lower()
         if status in BLOCKED_STATUSES:
-            return False, {**state, "last_message": self.block_message(status)}
+            message = (
+                state.get("last_message")
+                if status == "invalid" and state.get("license_problem_started_at")
+                else self.block_message(status)
+            )
+            return False, {**state, "last_message": message}
         if self._allow_offline(state):
             return True, state
         return False, state
@@ -248,6 +273,10 @@ class LicenseManager:
         status = str(state.get("status", "") or "").lower()
         if status not in ACTIVE_STATUSES:
             return False
+
+        if status == "license_problem":
+            grace_end = _parse_dt(state.get("license_problem_grace_ends_at"))
+            return bool(grace_end and _now() <= grace_end)
 
         entitlement_end = self._entitlement_end(state)
         if entitlement_end is not None:
@@ -288,6 +317,31 @@ class LicenseManager:
         # cached license visible and usable while its stored entitlement lasts.
         if not self._allow_offline(state):
             state["status"] = "no_connection"
+        self._save_state(state)
+        return state
+
+    def _missing_license_state(self, state: dict) -> dict:
+        """Grant one persistent 14-day transition period for a server-deleted license."""
+        now = _now()
+        started_at = _parse_dt(state.get("license_problem_started_at")) or now
+        grace_ends_at = _parse_dt(state.get("license_problem_grace_ends_at")) or (started_at + MISSING_LICENSE_GRACE)
+        remaining = max(0, (grace_ends_at.date() - now.date()).days)
+        state = {**state}
+        state["license_problem_started_at"] = _iso(started_at)
+        state["license_problem_grace_ends_at"] = _iso(grace_ends_at)
+        state["last_successful_check_at"] = _iso(now)
+        state["next_check_at"] = _iso(now + CHECK_INTERVAL)
+        state["server"] = "Verbunden"
+        state["days_remaining"] = remaining
+        if now <= grace_ends_at:
+            state["status"] = "license_problem"
+            state["last_message"] = (
+                "Lizenz nicht gefunden oder ungültig. Bitte aktivieren Sie eine neue Lizenz. "
+                f"LohnMail kann noch {remaining} Tage weiter genutzt werden."
+            )
+        else:
+            state["status"] = "invalid"
+            state["last_message"] = "Die 14-tägige Übergangsfrist ist abgelaufen. Bitte aktivieren Sie eine neue Lizenz."
         self._save_state(state)
         return state
 
@@ -349,6 +403,8 @@ class LicenseManager:
         merged["last_message"] = str(response.get("message") or self.message_for_state(merged))
         merged["server"] = "Verbunden"
         merged["machine_id"] = state.get("machine_id") or self._machine_id()
+        merged.pop("license_problem_started_at", None)
+        merged.pop("license_problem_grace_ends_at", None)
         return merged
 
     def _post(self, path: str, payload: dict) -> dict:
@@ -367,7 +423,10 @@ class LicenseManager:
             detail = exc.read().decode("utf-8", errors="ignore")
             try:
                 data = json.loads(detail)
-                raise RuntimeError(str(data.get("message") or detail))
+                message = str(data.get("message") or detail)
+                if exc.code == 404 and message.strip().lower() == "license not found":
+                    raise LicenseNotFoundError(message)
+                raise RuntimeError(message)
             except json.JSONDecodeError:
                 raise RuntimeError(detail or exc.reason)
 
@@ -395,6 +454,8 @@ class LicenseManager:
             "last_successful_check_at": None,
             "next_check_at": None,
             "offline_grace_until": None,
+            "license_problem_started_at": None,
+            "license_problem_grace_ends_at": None,
             "days_remaining": None,
             "last_message": "",
             "server": "Nicht konfiguriert" if not self.server_url else "Verbunden",
@@ -408,10 +469,68 @@ class LicenseManager:
             value = machine_file.read_text(encoding="utf-8").strip()
             if value:
                 return value
-        raw = f"{platform.node()}:{uuid.getnode()}:{socket.gethostname()}"
-        value = str(uuid.uuid5(uuid.NAMESPACE_DNS, raw))
+        value = str(uuid.uuid5(uuid.NAMESPACE_URL, f"lohnmail-device:{self._hardware_seed()}"))
         machine_file.write_text(value, encoding="utf-8")
         return value
+
+    def machine_id(self) -> str:
+        """Return the persistent device ID without creating or refreshing a license."""
+        return self._machine_id()
+
+    @staticmethod
+    def _hardware_seed() -> str:
+        """Read a stable OS/hardware identifier; never send the raw value to the server."""
+        if platform.system() == "Windows":
+            try:
+                import winreg
+
+                with winreg.OpenKey(
+                    winreg.HKEY_LOCAL_MACHINE,
+                    r"SOFTWARE\Microsoft\Cryptography",
+                ) as key:
+                    value, _ = winreg.QueryValueEx(key, "MachineGuid")
+                    if str(value or "").strip():
+                        return f"windows:{str(value).strip().lower()}"
+            except Exception:
+                pass
+        elif platform.system() == "Darwin":
+            try:
+                result = subprocess.run(
+                    ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                for line in result.stdout.splitlines():
+                    if "IOPlatformUUID" in line and "=" in line:
+                        value = line.split("=", 1)[1].strip().strip('"')
+                        if value:
+                            return f"macos:{value.lower()}"
+            except Exception:
+                pass
+        else:
+            for candidate in (Path("/etc/machine-id"), Path("/var/lib/dbus/machine-id")):
+                try:
+                    value = candidate.read_text(encoding="utf-8").strip()
+                    if value:
+                        return f"linux:{value.lower()}"
+                except Exception:
+                    continue
+
+        return f"fallback:{platform.system()}:{platform.node()}:{socket.gethostname()}:{uuid.getnode():012x}"
+
+    @staticmethod
+    def _preserve_state_machine_id(state: dict) -> None:
+        """Keep an already activated license bound to its existing device ID."""
+        value = str(state.get("machine_id", "") or "").strip()
+        if not value:
+            return
+        machine_file = LICENSE_DIR / "machine_id"
+        if machine_file.exists():
+            return
+        LICENSE_DIR.mkdir(parents=True, exist_ok=True)
+        machine_file.write_text(value, encoding="utf-8")
 
     def _save_state(self, state: dict) -> None:
         LICENSE_DIR.mkdir(parents=True, exist_ok=True)
@@ -430,6 +549,10 @@ class LicenseManager:
             shutil.copy2(source, target)
 
     def _days_remaining(self, state: dict) -> int | None:
+        if str(state.get("status", "") or "").lower() == "license_problem":
+            grace_end = _parse_dt(state.get("license_problem_grace_ends_at"))
+            if grace_end:
+                return max(0, (grace_end.date() - _now().date()).days)
         end = _parse_dt(
             state.get("access_ends_at")
             or state.get("trial_ends_at")

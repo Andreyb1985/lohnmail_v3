@@ -1,0 +1,6 @@
+pywebview==6.1
+openpyxl==3.1.5
+PyMuPDF==1.28.0
+PyPDF2==3.0.1
+dnspython==2.8.0
+pywin32>=306; sys_platform == "win32"

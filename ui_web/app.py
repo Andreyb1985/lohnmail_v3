@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QUrl, Qt
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtWidgets import QApplication, QMainWindow
 
 try:
@@ -50,6 +50,7 @@ class WebMainWindow(QMainWindow):
             )
 
         self.view = QWebEngineView(self)
+        self.view.setZoomFactor(1.0)
         self._disable_web_cache()
         self.bridge = WebBridge(self)
         self.channel = QWebChannel(self.view.page())
@@ -97,6 +98,10 @@ class WebMainWindow(QMainWindow):
 
 def run() -> int:
     ensure_settings_file()
+    if QApplication.instance() is None:
+        QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+        )
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("LohnMail")
     app.setApplicationVersion(APP_VERSION)

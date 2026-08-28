@@ -325,6 +325,30 @@ input, input:focus, input:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.file-field > span{
+  display:flex;
+  align-items:center;
+  direction:ltr;
+  text-align:left;
+  text-overflow:clip;
+}
+.file-field > span > .file-path-directory{
+  flex:1 1 auto;
+  min-width:0;
+  padding:0;
+  direction:rtl;
+  unicode-bidi:plaintext;
+  text-overflow:ellipsis;
+}
+.file-field > span > .file-path-filename{
+  flex:0 1 auto;
+  min-width:0;
+  max-width:72%;
+  padding:0;
+  direction:rtl;
+  unicode-bidi:plaintext;
+  text-overflow:ellipsis;
+}
 .process-status { min-height: 326px; }
 .status-rows { gap: 9px; }
 .status-rows div:not(.side-progress) { padding-bottom: 7px; }
@@ -1716,6 +1740,18 @@ input, input:focus, input:focus-visible {
   margin-top: auto;
   border-top: 1px solid #edf2f7;
 }
+.reports-table-card .table-footer select,
+.report-recipient-footer select {
+  height:32px;
+  border:1px solid #dbe5ee;
+  background:#fff;
+  border-radius:8px;
+  color:#334155;
+  padding:0 9px;
+  font:inherit;
+  font-weight:650;
+  outline:0;
+}
 .report-details {
   width: 100%;
   min-width: 0;
@@ -2619,6 +2655,38 @@ input, input:focus, input:focus-visible {
 }
 .company-edit-card{
   min-width:0;
+  scroll-margin-top:18px;
+}
+.company-edit-title{
+  align-items:flex-start;
+  margin-bottom:16px;
+  gap:16px;
+}
+.company-edit-title h2{
+  margin:0;
+}
+.company-edit-title p{
+  margin:5px 0 0;
+  color:#64748b;
+  font-size:12.5px;
+}
+.primary-company-save{
+  flex:0 0 auto;
+  min-height:40px;
+  border:0;
+  border-radius:9px;
+  background:#008357;
+  color:#fff;
+  padding:0 14px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  font-weight:800;
+}
+.primary-company-save span[data-icon]{
+  width:17px;
+  height:17px;
 }
 .company-edit-grid{
   display:grid;
@@ -3779,6 +3847,21 @@ input, input:focus, input:focus-visible {
   min-height:38px;
   margin-top:10px;
   font-size:12px;
+}
+.settings-outlook-note{
+  margin-top:10px;
+  padding:11px 13px;
+  border:1px solid #f4d49a;
+  border-radius:10px;
+  background:#fff9ec;
+  color:#7c5211;
+  font-size:12.5px;
+  line-height:1.45;
+}
+.settings-outlook-note strong{
+  display:block;
+  margin-bottom:3px;
+  color:#68410a;
 }
 .settings-inline-actions{
   display:flex;

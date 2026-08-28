@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
 import re
 import shutil
+import subprocess
+import sys
+import threading
+import webbrowser
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Slot, Signal, QThread, QUrl
-from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QFileDialog, QInputDialog, QWidget
+from ui_web.bridge_compat import QObject, Signal, Slot, QWidget
 from openpyxl import load_workbook
 
 from core.config import (
@@ -29,6 +32,24 @@ from core.license_manager import LicenseManager
 from ui_web.report_history import ReportHistoryStore
 from ui_web.updater import UpdateService
 from ui_web.version import APP_BUILD, APP_VERSION
+from ui_web.workflow_sessions import WorkflowSessionStore
+
+
+def _open_target(target: str | Path) -> bool:
+    value = str(target)
+    try:
+        if re.match(r"^[a-z][a-z0-9+.-]*:", value, flags=re.IGNORECASE):
+            return bool(webbrowser.open(value))
+        path = str(Path(value).expanduser().resolve())
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", path], close_fds=True)
+        elif sys.platform == "win32":
+            os.startfile(path)  # type: ignore[attr-defined]
+        else:
+            subprocess.Popen(["xdg-open", path], close_fds=True)
+        return True
+    except Exception:
+        return False
 
 
 class ProcessingWorker(QObject):
@@ -185,7 +206,7 @@ class WebBridge(QObject):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._dialog_parent = parent
-        self.worker_thread: QThread | None = None
+        self.worker_thread: threading.Thread | None = None
         self.worker: ProcessingWorker | MassMessageWorker | None = None
         self._processing_running = False
         self._processing_status = self._idle_processing_status()
@@ -206,7 +227,7 @@ class WebBridge(QObject):
         self._license_manager = LicenseManager(load_settings())
         self._update_service = UpdateService()
         self._update_service.recover_interrupted_state()
-        self._update_thread: QThread | None = None
+        self._update_thread: threading.Thread | None = None
         self._update_worker: UpdateWorker | None = None
         legacy_history = LEGACY_SETTINGS_DIR / "lohnmail_history.sqlite3"
         if not self.REPORT_HISTORY_PATH.exists() and legacy_history.is_file():
@@ -216,6 +237,8 @@ class WebBridge(QObject):
             self._report_history: ReportHistoryStore | None = ReportHistoryStore(self.REPORT_HISTORY_PATH)
         except Exception:
             self._report_history = None
+        self._workflow_sessions = WorkflowSessionStore(SETTINGS_DIR / "workflow_sessions.json")
+        self._restore_workflow_session(load_settings())
 
     @Slot(str)
     def navigate(self, page: str) -> None:
@@ -231,7 +254,7 @@ class WebBridge(QObject):
         if not contact:
             return json.dumps({"ok": False, "message": "Unbekannter Produktkontakt."}, ensure_ascii=False)
         url, success_message = contact
-        opened = QDesktopServices.openUrl(QUrl(url))
+        opened = _open_target(url)
         return json.dumps(
             {
                 "ok": bool(opened),
@@ -283,26 +306,11 @@ class WebBridge(QObject):
         return json.dumps(state, ensure_ascii=False)
 
     def _start_update_action(self, action: str) -> dict:
-        if self._update_thread is not None and self._update_thread.isRunning():
-            return {
-                "ok": False,
-                **self._update_service.current_state(),
-                "message": "Eine Update-Aktion läuft bereits.",
-            }
-
-        state = self._update_service.begin(action)
-        thread = QThread(self)
-        worker = UpdateWorker(self._update_service, action)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.progress.connect(self._on_update_progress)
-        worker.finished.connect(self._on_update_finished)
-        worker.finished.connect(thread.quit)
-        thread.finished.connect(self._cleanup_update_worker)
-        self._update_thread = thread
-        self._update_worker = worker
-        self.updateStateChanged.emit(json.dumps(state, ensure_ascii=False))
-        thread.start()
+        self._update_service.begin(action)
+        state = self._update_service.check() if action == "check" else self._update_service.download(
+            progress=self._on_update_progress
+        )
+        self._on_update_finished(state)
         return {"ok": True, **state}
 
     @Slot(dict)
@@ -395,6 +403,7 @@ class WebBridge(QObject):
                 ensure_ascii=False,
             )
         settings = load_settings()
+        self._workflow_sessions.delete(self._active_company_id(settings))
         self._reset_workflow_state()
         state = self._processing_payload(settings)
         serialized_state = json.dumps(state, ensure_ascii=False)
@@ -472,7 +481,7 @@ class WebBridge(QObject):
             url = str(response.get("url") or "")
             if not url:
                 raise ValueError("Stripe Checkout URL konnte nicht erstellt werden.")
-            QDesktopServices.openUrl(QUrl(url))
+            _open_target(url)
             state = manager.load_state()
             return json.dumps(
                 {"ok": True, "message": "Stripe Checkout wurde geöffnet.", "state": self._license_payload(settings, state=state)},
@@ -512,7 +521,7 @@ class WebBridge(QObject):
                 )
             invoice_url = str(response.get("invoice_url") or "")
             if invoice_url:
-                QDesktopServices.openUrl(QUrl(invoice_url))
+                _open_target(invoice_url)
             state = manager.refresh(force=True, start_trial=False)
             return json.dumps(
                 {
@@ -590,7 +599,7 @@ class WebBridge(QObject):
             url = manager.portal_url()
             if not url:
                 raise ValueError("Kundenportal URL konnte nicht erstellt werden.")
-            QDesktopServices.openUrl(QUrl(url))
+            _open_target(url)
             return json.dumps({"ok": True, "message": "Stripe Kundenportal wurde geöffnet.", "state": self._license_payload(settings)}, ensure_ascii=False)
         except Exception as exc:
             return json.dumps({"ok": False, "message": str(exc), "state": self._license_payload(settings)}, ensure_ascii=False)
@@ -610,11 +619,15 @@ class WebBridge(QObject):
 
     @Slot(result=str)
     def promptActivateLicenseKey(self) -> str:
-        self._activate_dialog_parent()
-        license_key, accepted = QInputDialog.getText(self._dialog_parent, "Lizenzschlüssel eingeben", "Lizenzschlüssel:")
-        if not accepted:
-            return json.dumps({"ok": False, "message": "Aktivierung abgebrochen.", "state": self._license_payload(load_settings())}, ensure_ascii=False)
-        return self.activateLicenseKey(license_key)
+        return json.dumps(
+            {
+                "ok": False,
+                "needs_input": True,
+                "message": "Bitte einen Lizenzschlüssel eingeben.",
+                "state": self._license_payload(load_settings()),
+            },
+            ensure_ascii=False,
+        )
 
     @Slot(result=str)
     def deactivateLicense(self) -> str:
@@ -802,22 +815,27 @@ class WebBridge(QObject):
         request_settings = deepcopy(settings)
         request_settings["selected_company_id"] = preview["company_id"]
 
-        self.worker_thread = QThread(self)
-        self.worker = MassMessageWorker(
-            settings=request_settings,
-            company_id=preview["company_id"],
-            subject_template=subject,
-            body_template=body,
-            recipients=preview["recipients"],
+        def run_mass_message() -> None:
+            try:
+                from core.jobs import run_mass_message_job
+
+                result = run_mass_message_job(
+                    settings=request_settings,
+                    company_id=preview["company_id"],
+                    subject_template=subject,
+                    body_template=body,
+                    recipients=preview["recipients"],
+                    progress_cb=self._on_mass_message_progress,
+                )
+                self._on_mass_message_finished(result)
+            except Exception as exc:
+                self._on_mass_message_error(str(exc))
+
+        self.worker_thread = threading.Thread(
+            target=run_mass_message,
+            name="lohnmail-pywebview-mass-message",
+            daemon=True,
         )
-        self.worker.moveToThread(self.worker_thread)
-        self.worker_thread.started.connect(self.worker.run)
-        self.worker.progress.connect(self._on_mass_message_progress)
-        self.worker.finished.connect(self._on_mass_message_finished)
-        self.worker.error.connect(self._on_mass_message_error)
-        self.worker.finished.connect(self.worker_thread.quit)
-        self.worker.error.connect(self.worker_thread.quit)
-        self.worker_thread.finished.connect(self._cleanup_worker)
         self.worker_thread.start()
 
         return json.dumps(self._mass_message_payload(settings), ensure_ascii=False)
@@ -930,10 +948,13 @@ class WebBridge(QObject):
             )
             return json.dumps(payload, ensure_ascii=False)
         if requested_id != current_id:
+            self._store_active_company_pdf(settings)
             settings["selected_company_id"] = requested_id
+            self._load_active_company_pdf(settings)
             save_settings(settings)
             settings = load_settings()
             self._reset_workflow_state()
+            self._restore_workflow_session(settings)
             self.processingStateChanged.emit(json.dumps(self._processing_payload(settings), ensure_ascii=False))
             self.shippingStateChanged.emit(json.dumps(self._shipping_payload(settings), ensure_ascii=False))
         payload = self._company_payload(settings)
@@ -975,8 +996,17 @@ class WebBridge(QObject):
                 company_id = f"{base_id}-{suffix}"
                 suffix += 1
 
-            companies.append({"id": company_id, "name": name, "email_excel_file": "", "mail_settings": {"scope": "global"}})
+            self._store_active_company_pdf(settings)
+            companies.append({
+                "id": company_id,
+                "name": name,
+                "email_excel_file": "",
+                "pdf_input": "",
+                "pdf_input_mode": "folder",
+                "mail_settings": {"scope": "global"},
+            })
             settings["selected_company_id"] = company_id
+            self._load_active_company_pdf(settings)
             save_settings(settings)
             self._reset_workflow_state()
 
@@ -1069,7 +1099,7 @@ class WebBridge(QObject):
         path = Path(str(get_company_email_excel_file(settings) or "")).expanduser()
         if not path.is_file():
             return json.dumps({"ok": False, "message": "Excel-Datei wurde noch nicht ausgewählt.", "path": ""}, ensure_ascii=False)
-        opened = QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        opened = _open_target(path)
         return json.dumps(
             {
                 "ok": bool(opened),
@@ -1084,7 +1114,7 @@ class WebBridge(QObject):
         settings = load_settings()
         output_dir = company_output_dir(settings)
         output_dir.mkdir(parents=True, exist_ok=True)
-        opened = QDesktopServices.openUrl(QUrl.fromLocalFile(str(output_dir)))
+        opened = _open_target(output_dir)
         return json.dumps(
             {
                 "ok": bool(opened),
@@ -1142,7 +1172,7 @@ class WebBridge(QObject):
         if not report.get("exists") or not path.is_file():
             return json.dumps({"ok": False, "message": "Bericht wurde noch nicht erstellt.", "path": ""}, ensure_ascii=False)
 
-        opened = QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        opened = _open_target(path)
         return json.dumps(
             {
                 "ok": bool(opened),
@@ -1169,7 +1199,7 @@ class WebBridge(QObject):
         path = Path(str(target.get("path", "") or "")).expanduser()
         if not target.get("exists") or not path.is_file() or not self._is_report_path_safe(path):
             return json.dumps({"ok": False, "message": "Berichtsdatei wurde nicht gefunden.", "path": str(path)}, ensure_ascii=False)
-        opened = QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        opened = _open_target(path)
         return json.dumps(
             {
                 "ok": bool(opened),
@@ -1181,38 +1211,7 @@ class WebBridge(QObject):
 
     @Slot(result=str)
     def choosePdfInput(self) -> str:
-        settings = load_settings()
-        if self._workflow_running():
-            return self._emit_processing_payload(settings)
-        ui_settings = settings.get("ui", {})
-        pdf_input_mode = self._pdf_input_mode(settings)
-        start_path = self._dialog_start_path(str(ui_settings.get("last_pdf_dir", "") or ""))
-        self._activate_dialog_parent()
-        if pdf_input_mode == "single_pdf":
-            selected, _ = QFileDialog.getOpenFileName(
-                self._dialog_parent,
-                "Gesamt-PDF auswählen",
-                start_path,
-                "PDF-Dateien (*.pdf);;Alle Dateien (*)",
-            )
-        else:
-            selected = QFileDialog.getExistingDirectory(
-                self._dialog_parent,
-                "PDF-Ordner auswählen",
-                start_path,
-            )
-
-        if selected:
-            settings.setdefault("ui", {})["last_pdf_dir"] = selected
-            settings["ui"]["last_pdf_input_mode"] = pdf_input_mode
-            save_settings(settings)
-            self._reset_workflow_state()
-
-        payload = self._processing_payload(load_settings())
-        serialized = json.dumps(payload, ensure_ascii=False)
-        self.processingStateChanged.emit(serialized)
-        self.shippingStateChanged.emit(json.dumps(self._shipping_payload(load_settings()), ensure_ascii=False))
-        return serialized
+        return json.dumps({"ok": False, "message": "Der native Dateidialog wird vom pywebview-Adapter bereitgestellt."}, ensure_ascii=False)
 
     @Slot(str, result=str)
     def setPdfInputMode(self, mode: str) -> str:
@@ -1221,6 +1220,7 @@ class WebBridge(QObject):
             return self._emit_processing_payload(settings)
         resolved_mode = mode if mode in {"folder", "single_pdf"} else "folder"
         settings.setdefault("ui", {})["last_pdf_input_mode"] = resolved_mode
+        self._set_company_pdf_input(settings, mode=resolved_mode)
         save_settings(settings)
         self._reset_workflow_state()
         payload = self._processing_payload(load_settings())
@@ -1231,32 +1231,7 @@ class WebBridge(QObject):
 
     @Slot(result=str)
     def chooseExcelInput(self) -> str:
-        settings = load_settings()
-        if self._workflow_running():
-            return self._emit_processing_payload(settings)
-        ui_settings = settings.get("ui", {})
-        start_path = self._dialog_start_path(
-            str(get_company_email_excel_file(settings) or ui_settings.get("last_excel_file", "") or "")
-        )
-        self._activate_dialog_parent()
-        selected, _ = QFileDialog.getOpenFileName(
-            self._dialog_parent,
-            "Mitarbeiter Excel auswählen",
-            start_path,
-            "Excel-Dateien (*.xlsx *.xls *.xlsm);;Alle Dateien (*)",
-        )
-
-        if selected:
-            self._set_company_excel_file(settings, selected)
-            settings.setdefault("ui", {})["last_excel_file"] = selected
-            save_settings(settings)
-            self._reset_workflow_state()
-
-        payload = self._processing_payload(load_settings())
-        serialized = json.dumps(payload, ensure_ascii=False)
-        self.processingStateChanged.emit(serialized)
-        self.shippingStateChanged.emit(json.dumps(self._shipping_payload(load_settings()), ensure_ascii=False))
-        return serialized
+        return json.dumps({"ok": False, "message": "Der native Dateidialog wird vom pywebview-Adapter bereitgestellt."}, ensure_ascii=False)
 
     @Slot(result=str)
     def startCheck(self) -> str:
@@ -1318,23 +1293,23 @@ class WebBridge(QObject):
         self._emit_processing_payload(settings)
         self.shippingStateChanged.emit(json.dumps(self._shipping_payload(settings), ensure_ascii=False))
 
-        self.worker_thread = QThread(self)
-        self.worker = ProcessingWorker(
-            mode="check",
-            pdf_input=pdf_input,
-            excel_path=excel_path,
-            settings=settings,
-            dry_run=bool(ui_settings.get("dry_run_default", True)),
-        )
-        self.worker.moveToThread(self.worker_thread)
-        self.worker_thread.started.connect(self.worker.run)
-        self.worker.progress.connect(self._on_processing_progress)
-        self.worker.finished.connect(self._on_processing_finished)
-        self.worker.error.connect(self._on_processing_error)
-        self.worker.finished.connect(self.worker_thread.quit)
-        self.worker.error.connect(self.worker_thread.quit)
-        self.worker_thread.finished.connect(self._cleanup_worker)
-        self.worker_thread.start()
+        def run_check() -> None:
+            try:
+                from core.jobs import run_main_job
+
+                result = run_main_job(
+                    mode="check",
+                    pdf_input=pdf_input,
+                    excel_path=excel_path,
+                    settings=settings,
+                    dry_run=bool(ui_settings.get("dry_run_default", True)),
+                    progress_cb=self._on_processing_progress,
+                )
+                self._on_processing_finished(result)
+            except Exception as exc:
+                self._on_processing_error(ProcessingWorker._friendly_error(exc))
+
+        threading.Thread(target=run_check, name="lohnmail-pywebview-check", daemon=True).start()
 
         return json.dumps(self._processing_payload(settings), ensure_ascii=False)
 
@@ -1535,23 +1510,28 @@ class WebBridge(QObject):
         }
         self._emit_shipping_payload(settings)
 
-        self.worker_thread = QThread(self)
-        self.worker = ProcessingWorker(
-            mode="send",
-            pdf_input=pdf_input,
-            excel_path=excel_path,
-            settings=settings,
-            dry_run=dry_run,
-            selected_persnr=selected_persnr,
+        def run_shipping() -> None:
+            try:
+                from core.jobs import run_main_job
+
+                result = run_main_job(
+                    mode="send",
+                    pdf_input=pdf_input,
+                    excel_path=excel_path,
+                    settings=settings,
+                    dry_run=dry_run,
+                    selected_persnr=selected_persnr,
+                    progress_cb=self._on_shipping_progress,
+                )
+                self._on_shipping_finished(result)
+            except Exception as exc:
+                self._on_shipping_error(ProcessingWorker._friendly_error(exc))
+
+        self.worker_thread = threading.Thread(
+            target=run_shipping,
+            name="lohnmail-pywebview-shipping",
+            daemon=True,
         )
-        self.worker.moveToThread(self.worker_thread)
-        self.worker_thread.started.connect(self.worker.run)
-        self.worker.progress.connect(self._on_shipping_progress)
-        self.worker.finished.connect(self._on_shipping_finished)
-        self.worker.error.connect(self._on_shipping_error)
-        self.worker.finished.connect(self.worker_thread.quit)
-        self.worker.error.connect(self.worker_thread.quit)
-        self.worker_thread.finished.connect(self._cleanup_worker)
         self.worker_thread.start()
 
         return json.dumps(self._shipping_payload(settings), ensure_ascii=False)
@@ -1601,6 +1581,7 @@ class WebBridge(QObject):
         }
 
     def _emit_processing_payload(self, settings: dict) -> str:
+        self._persist_workflow_session(settings)
         serialized = json.dumps(self._processing_payload(settings), ensure_ascii=False)
         self.processingStateChanged.emit(serialized)
         return serialized
@@ -1627,7 +1608,14 @@ class WebBridge(QObject):
         ready_count = sum(1 for row in rows if row.get("status") in {"Bereit", "Dry-Run", "Gesendet"})
         sent_count = sum(1 for row in rows if row.get("status") == "Gesendet")
         dry_run_count = sum(1 for row in rows if row.get("status") == "Dry-Run")
-        skipped_count = sum(1 for row in rows if row.get("status") in {"Keine E-Mail", "Keine Dateien"})
+        skipped_count = sum(
+            1
+            for row in rows
+            if row.get("status") in {
+                "Keine E-Mail", "Keine Dateien", "Doppelte E-Mail", "Ungültige E-Mail",
+                "Ungültige Zeichen", "Ungültiges Format", "Domain nicht gefunden", "Keine MX-Einträge",
+            }
+        )
         error_count = sum(1 for row in rows if row.get("status") == "Fehler")
 
         # Never expose a stale running flag after the worker has stopped.
@@ -1726,6 +1714,90 @@ class WebBridge(QObject):
         self._reset_validation_and_shipping()
         self._mass_message_status = self._idle_mass_message_status()
         self._mass_message_preview = self._empty_mass_message_preview()
+
+    def _persist_workflow_session(self, settings: dict | None = None) -> None:
+        if not hasattr(self, "_workflow_sessions"):
+            return
+        resolved_settings = settings or load_settings()
+        company_id = self._active_company_id(resolved_settings)
+        if not company_id:
+            return
+        state = {
+            "processing_company_id": self._processing_company_id,
+            "processing_input_signature": list(self._processing_input_signature or ()),
+            "processing_status": deepcopy(self._processing_status),
+            "validation_company_id": self._validation_company_id,
+            "validation_input_signature": list(self._validation_input_signature or ()),
+            "validation_state": deepcopy(self._validation_state),
+            "shipping_company_id": self._shipping_company_id,
+            "shipping_input_signature": list(self._shipping_input_signature or ()),
+            "shipping_status": deepcopy(self._shipping_status),
+            "shipping_rows": deepcopy(self._shipping_rows),
+            "shipping_source_rows": deepcopy(self._shipping_source_rows),
+            "mass_message_status": deepcopy(self._mass_message_status),
+            "mass_message_preview": deepcopy(self._mass_message_preview),
+        }
+        self._workflow_sessions.save(company_id, state)
+
+    def _restore_workflow_session(self, settings: dict) -> None:
+        company_id = self._active_company_id(settings)
+        state = self._workflow_sessions.load(company_id) if company_id else {}
+        if not state:
+            return
+
+        def signature(key: str) -> tuple[str, str, str, str] | None:
+            value = state.get(key)
+            if isinstance(value, list) and len(value) == 4:
+                return tuple(str(item or "") for item in value)  # type: ignore[return-value]
+            return None
+
+        self._processing_company_id = str(state.get("processing_company_id") or "")
+        self._processing_input_signature = signature("processing_input_signature")
+        self._processing_status = {**self._idle_processing_status(), **dict(state.get("processing_status") or {})}
+        self._validation_company_id = str(state.get("validation_company_id") or "")
+        self._validation_input_signature = signature("validation_input_signature")
+        self._validation_state = {**self._empty_validation_state(), **dict(state.get("validation_state") or {})}
+        self._shipping_company_id = str(state.get("shipping_company_id") or "")
+        self._shipping_input_signature = signature("shipping_input_signature")
+        self._shipping_status = {**self._idle_shipping_status(), **dict(state.get("shipping_status") or {})}
+        self._shipping_rows = list(state.get("shipping_rows") or [])
+        self._shipping_source_rows = list(state.get("shipping_source_rows") or [])
+        self._mass_message_status = {**self._idle_mass_message_status(), **dict(state.get("mass_message_status") or {})}
+        self._mass_message_preview = {**self._empty_mass_message_preview(), **dict(state.get("mass_message_preview") or {})}
+
+        current_signature = self._input_signature(settings)
+        if self._processing_input_signature and self._processing_input_signature != current_signature:
+            self._reset_workflow_state()
+            return
+        if self._processing_status.get("running"):
+            self._processing_status.update(
+                running=False,
+                finished=False,
+                failed=False,
+                can_check=True,
+                current_step="Unterbrochene Prüfung",
+                message="Die vorherige Prüfung wurde unterbrochen. Sie kann mit den gespeicherten Eingaben erneut gestartet werden.",
+            )
+        if self._shipping_status.get("running"):
+            self._shipping_status.update(
+                running=False,
+                finished=False,
+                failed=False,
+                can_send=bool(self._validation_state.get("ready")),
+                current_step="Unterbrochener Versand",
+                message="Der vorherige Versand wurde unterbrochen. Bitte Vorschau prüfen und erneut starten.",
+            )
+        if self._mass_message_status.get("running"):
+            self._mass_message_status.update(
+                running=False,
+                finished=False,
+                failed=False,
+                current_step="Unterbrochene Nachricht",
+                message="Der vorherige Nachrichtenversand wurde unterbrochen und kann erneut gestartet werden.",
+            )
+        self._processing_running = False
+        self._shipping_running = False
+        self._mass_message_running = False
 
     def _input_signature(self, settings: dict) -> tuple[str, str, str, str]:
         company_id = self._active_company_id(settings)
@@ -1844,7 +1916,7 @@ class WebBridge(QObject):
         related_trial_key = str(state.get("related_trial_license_key", "") or "").strip()
         status = str(state.get("status", "") or "unregistered").strip().lower()
         license_type = str(state.get("type", "") or "none").strip().lower()
-        active = status in {"trialing", "active", "expiring_soon"}
+        active = status in {"trialing", "active", "expiring_soon", "license_problem"}
         status_label = self._license_label(status, license_type, state)
         status_level = self._license_status_level(status, active, manager.server_url)
         trial_ends_at = str(state.get("trial_ends_at", "") or "")
@@ -1857,15 +1929,18 @@ class WebBridge(QObject):
             or related_trial_ends_at
             or ""
         )
+        license_problem = status == "license_problem"
+        grace_ends_at = str(state.get("license_problem_grace_ends_at", "") or "")
         return {
             "status": status,
             "label": status_label,
             "status_level": status_level,
             "active": active,
             "key_masked": str(state.get("license_key_masked", "") or self._mask_license_key(raw_key)),
+            "key_label": "Bisheriger Lizenzschlüssel (nicht gefunden)" if license_problem else "Lizenzschlüssel",
             "key_present": bool(raw_key),
-            "type": self._license_type_label(license_type),
-            "plan": str(state.get("plan", "") or ("Trial" if license_type == "trial" else "Professional")),
+            "type": "Übergangsfrist" if license_problem else self._license_type_label(license_type),
+            "plan": "-" if license_problem else str(state.get("plan", "") or ("Trial" if license_type == "trial" else "Professional")),
             "seats": str(state.get("seats", "") or "1"),
             "server": str(state.get("server", "") or ("Verbunden" if manager.server_url else "Nicht konfiguriert")),
             "server_note": "Online-Prüfung aktiv" if manager.server_url else "Keine Serverlogik aktiv",
@@ -1874,11 +1949,12 @@ class WebBridge(QObject):
             "licensee": licensee,
             "machine_id": str(state.get("machine_id", "") or ""),
             "days_remaining": state.get("days_remaining"),
-            "trial_ends_at": trial_ends_at,
-            "current_period_end": current_period_end,
-            "access_ends_at": access_ends_at,
-            "related_trial_ends_at": related_trial_ends_at,
-            "related_trial_key_masked": self._mask_license_key(related_trial_key) if related_trial_key else "",
+            "trial_ends_at": "" if license_problem else trial_ends_at,
+            "current_period_end": "" if license_problem else current_period_end,
+            "access_ends_at": grace_ends_at if license_problem else access_ends_at,
+            "related_trial_ends_at": "" if license_problem else related_trial_ends_at,
+            "related_trial_key_masked": "" if license_problem else (self._mask_license_key(related_trial_key) if related_trial_key else ""),
+            "license_problem_grace_ends_at": grace_ends_at,
             "message": self._license_message(status, state),
             "state_list": self._license_state_list(status),
             "features": [
@@ -1973,6 +2049,9 @@ class WebBridge(QObject):
             return "Widerrufen"
         if status == "invalid":
             return "Ungültig"
+        if status == "license_problem":
+            suffix = f" · {days} Tage Übergangsfrist" if days is not None else ""
+            return f"Lizenzproblem{suffix}"
         if status == "expired":
             return "Abgelaufen"
         if status == "no_connection":
@@ -1983,7 +2062,7 @@ class WebBridge(QObject):
     def _license_status_level(status: str, active: bool, server_url: str) -> str:
         if status in {"past_due", "expired", "unpaid", "canceled", "refunded", "disputed", "revoked", "invalid"}:
             return "error"
-        if status in {"expiring_soon", "no_connection"}:
+        if status in {"expiring_soon", "no_connection", "license_problem"}:
             return "warning"
         if active:
             return "ready"
@@ -1991,6 +2070,8 @@ class WebBridge(QObject):
 
     @staticmethod
     def _license_message(status: str, state: dict) -> str:
+        if status == "invalid" and state.get("license_problem_started_at"):
+            return str(state.get("last_message", "") or "Die Übergangsfrist ist abgelaufen. Bitte aktivieren Sie eine neue Lizenz.")
         messages = {
             "trialing": "Testphase aktiv. LohnMail kann während der Testphase genutzt werden.",
             "active": "Lizenz aktiv. Alle freigeschalteten Aktionen sind verfügbar.",
@@ -2003,6 +2084,7 @@ class WebBridge(QObject):
             "disputed": "Zahlung angefochten. Lizenz gesperrt.",
             "revoked": "Lizenz wurde widerrufen.",
             "invalid": "Lizenz ist ungültig oder an einen anderen Computer gebunden.",
+            "license_problem": str(state.get("last_message", "") or "Lizenz nicht gefunden. Bitte aktivieren Sie innerhalb von 14 Tagen eine neue Lizenz."),
             "no_connection": "Lizenzserver nicht erreichbar. Offline-Gnadenfrist wird geprüft.",
             "unregistered": "Keine Lizenz hinterlegt.",
         }
@@ -2022,6 +2104,7 @@ class WebBridge(QObject):
             ("disputed", "Angefochten", "error"),
             ("revoked", "Widerrufen", "error"),
             ("invalid", "Ungültig", "error"),
+            ("license_problem", "Lizenzproblem", "warning"),
             ("no_connection", "Keine Verbindung", "warning"),
         ]
         return [
@@ -2111,6 +2194,7 @@ class WebBridge(QObject):
         }
 
     def _emit_mass_message_payload(self, settings: dict) -> str:
+        self._persist_workflow_session(settings)
         serialized = json.dumps(self._mass_message_payload(settings), ensure_ascii=False)
         self.massMessageStateChanged.emit(serialized)
         return serialized
@@ -2157,6 +2241,7 @@ class WebBridge(QObject):
         }
 
     def _emit_shipping_payload(self, settings: dict) -> str:
+        self._persist_workflow_session(settings)
         serialized = json.dumps(self._shipping_payload(settings), ensure_ascii=False)
         self.shippingStateChanged.emit(serialized)
         return serialized
@@ -2175,17 +2260,26 @@ class WebBridge(QObject):
         serialized = self._emit_processing_payload(settings)
         self.processingProgress.emit(serialized)
 
-    @Slot(str)
-    def _on_shipping_progress(self, message: str) -> None:
+    @Slot(object)
+    def _on_shipping_progress(self, message: object) -> None:
         settings = self._settings_with_company_mail(load_settings())
         if (
             self._shipping_company_id != self._active_company_id(settings)
             or self._shipping_input_signature != self._input_signature(settings)
         ):
             return
-        self._shipping_status["message"] = message
-        self._shipping_status["progress"] = min(92, int(self._shipping_status.get("progress", 8)) + 12)
-        self._shipping_status["current_step"] = "Versand wird vorbereitet"
+        if isinstance(message, dict) and message.get("kind") == "shipping_progress":
+            live_progress = dict(message)
+            current = max(0, int(live_progress.get("current", 0) or 0))
+            total = max(0, int(live_progress.get("total", 0) or 0))
+            phase = str(live_progress.get("phase", "preparing") or "preparing")
+            operation = str(live_progress.get("operation", "") or "")
+            self._shipping_status["live_progress"] = live_progress
+            self._shipping_status["message"] = operation
+            self._shipping_status["progress"] = min(99, round((current / total) * 100)) if total else 0
+            self._shipping_status["current_step"] = "Versand wird vorbereitet" if phase == "preparing" else "E-Mails werden gesendet"
+        else:
+            self._shipping_status["message"] = str(message or "")
         serialized = self._emit_shipping_payload(settings)
         self.shippingProgress.emit(serialized)
 
@@ -2394,8 +2488,6 @@ class WebBridge(QObject):
     def _cleanup_worker(self) -> None:
         if self.worker is not None:
             self.worker.deleteLater()
-        if self.worker_thread is not None:
-            self.worker_thread.deleteLater()
         self.worker = None
         self.worker_thread = None
 
@@ -2403,8 +2495,6 @@ class WebBridge(QObject):
     def _cleanup_update_worker(self) -> None:
         if self._update_worker is not None:
             self._update_worker.deleteLater()
-        if self._update_thread is not None:
-            self._update_thread.deleteLater()
         self._update_worker = None
         self._update_thread = None
 
@@ -2442,6 +2532,7 @@ class WebBridge(QObject):
             "sent": 0,
             "skipped": 0,
             "errors": 0,
+            "live_progress": {},
             "message": "Versanddaten werden geladen.",
         }
 
@@ -2568,6 +2659,17 @@ class WebBridge(QObject):
             severity = "warning"
             category = "E-Mail"
             description = "Für diesen Mitarbeiter fehlt eine E-Mail-Adresse."
+        elif status in {
+            "Doppelte E-Mail",
+            "Ungültige E-Mail",
+            "Ungültige Zeichen",
+            "Ungültiges Format",
+            "Domain nicht gefunden",
+            "Keine MX-Einträge",
+        }:
+            severity = "warning"
+            category = "E-Mail"
+            description = str(row.get("EmailValidationHint", "") or "Die E-Mail-Adresse ist nicht versandfähig.")
         else:
             severity = "success"
             category = "OK"
@@ -2680,6 +2782,49 @@ class WebBridge(QObject):
                 if str(company.get("id", "") or "").strip() == selected_company_id:
                     company["email_excel_file"] = excel_file
                     return
+
+    @staticmethod
+    def _set_company_pdf_input(
+        settings: dict,
+        pdf_input: str | None = None,
+        mode: str | None = None,
+    ) -> None:
+        selected_company_id = str(settings.get("selected_company_id", "") or "").strip()
+        for company in settings.get("companies", []):
+            if not isinstance(company, dict):
+                continue
+            if str(company.get("id", "") or "").strip() != selected_company_id:
+                continue
+            if pdf_input is not None:
+                company["pdf_input"] = str(pdf_input or "").strip()
+            if mode is not None:
+                resolved_mode = str(mode or "folder").strip()
+                company["pdf_input_mode"] = resolved_mode if resolved_mode in {"folder", "single_pdf"} else "folder"
+            return
+
+    def _store_active_company_pdf(self, settings: dict) -> None:
+        ui_settings = settings.get("ui", {})
+        self._set_company_pdf_input(
+            settings,
+            str(ui_settings.get("last_pdf_dir", "") or ""),
+            str(ui_settings.get("last_pdf_input_mode", "folder") or "folder"),
+        )
+
+    @staticmethod
+    def _load_active_company_pdf(settings: dict) -> None:
+        selected_company_id = str(settings.get("selected_company_id", "") or "").strip()
+        ui_settings = settings.setdefault("ui", {})
+        for company in settings.get("companies", []):
+            if not isinstance(company, dict):
+                continue
+            if str(company.get("id", "") or "").strip() != selected_company_id:
+                continue
+            ui_settings["last_pdf_dir"] = str(company.get("pdf_input", "") or "")
+            mode = str(company.get("pdf_input_mode", "folder") or "folder")
+            ui_settings["last_pdf_input_mode"] = mode if mode in {"folder", "single_pdf"} else "folder"
+            return
+        ui_settings["last_pdf_dir"] = ""
+        ui_settings["last_pdf_input_mode"] = "folder"
 
     def _activate_dialog_parent(self) -> None:
         if self._dialog_parent is None:

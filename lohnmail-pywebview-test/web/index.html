@@ -632,7 +632,7 @@
                     <span data-shipping-live="bar"></span>
                   </div>
                   <div class="shipping-live-progress-meta">
-                    <span>Gesendet <b data-shipping-live="sent">0</b></span>
+                    <span><span data-shipping-live="success-label">Gesendet</span> <b data-shipping-live="sent">0</b></span>
                     <span>Fehler <b data-shipping-live="errors">0</b></span>
                     <span>Verbleibend <b data-shipping-live="remaining">0</b></span>
                     <span class="shipping-live-current" data-shipping-live="current">Versand wird gestartet...</span>
@@ -756,7 +756,7 @@
                   </tbody>
                 </table>
               </div>
-              <div class="table-footer"><span data-reports="table-footer">Zeige 0 Einträge</span><div class="pagination"><button data-reports-action="page-prev" disabled>‹</button><button class="active" data-reports="page-current">1</button><button data-reports-action="page-next" disabled>›</button></div><button data-reports-action="page-size" data-reports="page-size-label">10 pro Seite⌄</button></div>
+              <div class="table-footer"><span data-reports="table-footer">Zeige 0 Einträge</span><div class="pagination"><button data-reports-action="page-prev" disabled>‹</button><button class="active" data-reports="page-current">1</button><button data-reports-action="page-next" disabled>›</button></div><select data-reports="page-size"><option value="10">10 pro Seite</option><option value="20">20 pro Seite</option><option value="50">50 pro Seite</option><option value="100">100 pro Seite</option></select></div>
             </article>
 
             <aside class="card report-details">
@@ -822,7 +822,7 @@
             <div class="report-recipient-footer">
               <span data-reports-recipients="footer">0 Einträge</span>
               <div class="pagination"><button data-reports-action="recipient-page-prev" disabled>‹</button><button class="active" data-reports-recipients="page-current">1</button><button data-reports-action="recipient-page-next" disabled>›</button></div>
-              <button data-reports-action="recipient-page-size" data-reports-recipients="page-size-label">20 pro Seite⌄</button>
+              <select data-reports-recipients="page-size"><option value="20">20 pro Seite</option><option value="50">50 pro Seite</option><option value="100">100 pro Seite</option></select>
             </div>
           </article>
         </section>
@@ -877,13 +877,16 @@
               <div class="company-actions">
                 <button data-company-action="choose-excel"><span data-icon="table"></span>Excel auswählen</button>
                 <button data-company-action="open-excel"><span data-icon="arrow-up-right"></span>Excel öffnen</button>
-                <button data-company-action="save-company"><span data-icon="checkcircle"></span>Speichern</button>
+                <button data-company-action="edit-company"><span data-icon="settings"></span>Mandant bearbeiten</button>
                 <button data-company-action="open-output"><span data-icon="report"></span>Ausgabeordner öffnen</button>
               </div>
             </article>
 
-            <article class="card company-edit-card">
-              <h2>Mandant bearbeiten</h2>
+            <article class="card company-edit-card" data-company-edit-card>
+              <div class="card-title-row company-edit-title">
+                <div><h2>Mandant bearbeiten</h2><p>Name und individuelle E-Mail-Einstellungen des aktiven Mandanten ändern.</p></div>
+                <button class="primary-company-save" data-company-action="save-company"><span data-icon="checkcircle"></span>Änderungen speichern</button>
+              </div>
               <div class="company-edit-grid">
                 <label>Name<input data-company-edit-field="name" placeholder="Unternehmensname"></label>
                 <label>Mandanten-ID<input data-company-edit-field="id" readonly></label>
@@ -956,7 +959,7 @@
                 <div class="card-title-row"><h2>License Manager</h2><span class="state warning" data-license="badge">Nicht registriert</span></div>
                 <div class="license-key-box">
                   <span data-icon="key"></span>
-                  <div><small>Lizenzschlüssel</small><strong data-license="key">Nicht hinterlegt</strong></div>
+                  <div><small data-license="key-label">Lizenzschlüssel</small><strong data-license="key">Nicht hinterlegt</strong></div>
                 </div>
                 <div class="license-detail-list">
                   <div><span data-icon="checkcircle"></span><span>Aktueller Modus</span><b data-license="detail-mode">Lokal</b></div>
@@ -964,7 +967,7 @@
                   <div><span data-icon="screen"></span><span>Computer-ID</span><b data-license="machine-id">-</b></div>
                   <div><span data-icon="clock"></span><span>Lizenz gültig bis</span><b data-license="access-end">-</b></div>
                   <div><span data-icon="clock"></span><span>Probezeit bis</span><b data-license="trial-end-detail">-</b></div>
-                  <div><span data-icon="clock"></span><span>Stripe Periode</span><b data-license="period-end">-</b></div>
+                  <div><span data-icon="clock"></span><span>Bezahlter Zeitraum</span><b data-license="period-end">-</b></div>
                   <div><span data-icon="key"></span><span>Trial-Quelle</span><b data-license="trial-source">-</b></div>
                   <div><span data-icon="clock"></span><span>Letzte Prüfung</span><b data-license="checked-at">Beim Start geladen</b></div>
                 </div>
@@ -1064,7 +1067,8 @@
                     <label>SMTP Benutzer<input data-settings-field="smtp.username"></label>
                     <label>SMTP Passwort<input data-settings-field="smtp.password" type="password" placeholder="Leer lassen = beibehalten"></label>
                     <label>Timeout (Sek.)<input data-settings-field="smtp.timeout_sec" type="number" min="5" max="300"></label>
-                    <label>Absender E-Mail<input data-settings-field="smtp.from_email" type="email"></label>
+                    <label data-settings-smtp-from>Absender E-Mail<input data-settings-field="smtp.from_email" type="email"></label>
+                    <label data-settings-outlook-from hidden>Outlook-Absender<select data-outlook-account-select><option value="">Outlook-Konten laden…</option></select></label>
                     <label>Absender Name<input data-settings-field="smtp.from_name"></label>
                   </div>
                   <div class="settings-inline-actions">
@@ -1072,6 +1076,12 @@
                     <button class="secondary-action" data-settings-action="load-outlook"><span data-icon="process"></span>Outlook-Konten laden</button>
                   </div>
                   <div class="settings-message compact" data-settings="mail-message">SMTP nutzt die eingetragenen Serverdaten. Outlook Classic wird unter Windows mit Microsoft 365 Desktop sowie Outlook 2016/2019/2021 unterstützt; das neue Outlook für Windows wird nicht unterstützt. Unter macOS ist eine Outlook-Version mit AppleScript-Unterstützung erforderlich.</div>
+                  <div class="settings-outlook-note" role="note">
+                    <strong>Wichtig bei Versand über Outlook Classic:</strong>
+                    Outlook Classic muss vor dem Verbindungstest und während des gesamten Versands geöffnet, angemeldet und vollständig verbunden sein.
+                    Unter Windows werden Microsoft 365 Desktop (Classic) sowie Outlook 2016, 2019 und 2021 unterstützt.
+                    Das neue Outlook für Windows wird nicht unterstützt. Unter macOS ist eine Outlook-Version mit AppleScript-Unterstützung erforderlich.
+                  </div>
                   <div class="settings-bottom-actions">
                     <button class="secondary-action" data-settings-action="reload"><span data-icon="process"></span>Abbrechen</button>
                     <button class="primary" data-settings-action="save-email"><span data-icon="checkcircle"></span>E-Mail speichern</button>
@@ -1207,6 +1217,11 @@
                     <label>Passwort-Basis<select data-settings-field="pdf_password.source"><option value="persnr">Personalnummer</option><option value="birth_date">Geburtsdatum (TTMMJJJJ)</option></select></label>
                     <label>Passwort Prefix<input data-settings-field="pdf_password.prefix"></label>
                     <label>Passwort Suffix<input data-settings-field="pdf_password.suffix"></label>
+                  </div>
+                  <div class="settings-message compact" data-settings="security-message">PDF-Verschlüsselung wird lokal angewendet.</div>
+                  <div class="settings-bottom-actions">
+                    <button class="secondary-action" data-settings-action="reload"><span data-icon="process"></span>Abbrechen</button>
+                    <button class="primary" data-settings-action="save-security"><span data-icon="checkcircle"></span>Verschlüsselung speichern</button>
                   </div>
                 </section>
               </article>
@@ -1348,7 +1363,7 @@
               <article class="card tech-card">
                 <h2>Technologie & Komponenten</h2>
                 <div class="tech-grid">
-                  <div><span class="tech-icon qt">Qt</span><strong>Frontend</strong><small>PySide6 6.7.2</small></div>
+                  <div><span class="tech-icon qt">Web</span><strong>Frontend</strong><small>pywebview 6.1</small></div>
                   <div><span class="tech-icon py">Py</span><strong>Backend</strong><small>Python 3.12</small></div>
                   <div><span class="tech-icon db"><span data-icon="table"></span></span><strong>Datenbank</strong><small>SQLite 3.45.1</small></div>
                   <div><span class="tech-icon pdf"><span data-icon="doc"></span></span><strong>PDF Engine</strong><small>PyPDF2 3.0.1</small></div>
@@ -1379,7 +1394,7 @@
                   <button class="active" data-about-action="privacy"><span data-icon="key"></span><strong>Datenschutzerklärung<small>Lokale Verarbeitung, keine Cloud-Übertragung von Lohnunterlagen</small></strong><i>›</i></button>
                   <button data-about-action="terms"><span data-icon="doc"></span><strong>Nutzungsbedingungen<small>Enterprise Desktop-Anwendung für interne Lohnabrechnungsprozesse</small></strong><i>›</i></button>
                   <button data-about-action="license"><span data-icon="doc"></span><strong>Lizenzvereinbarung<small>Aktive Edition, Nutzungsumfang und Aktivierung im Lizenzbereich</small></strong><i>›</i></button>
-                  <button data-about-action="oss"><span data-icon="settings"></span><strong>Open Source Lizenzen<small>PySide6, Python, SQLite, PyPDF2, openpyxl und weitere Komponenten</small></strong><i>›</i></button>
+                  <button data-about-action="oss"><span data-icon="settings"></span><strong>Open Source Lizenzen<small>pywebview, Python, SQLite, PyPDF2, openpyxl und weitere Komponenten</small></strong><i>›</i></button>
                 </div>
                 <div class="legal-summary">
                   <div><span>Datenschutz</span><b>DSGVO-konforme lokale Verarbeitung</b></div>
@@ -1537,6 +1552,23 @@
           <footer class="license-payment-modal-actions license-validation-modal-actions">
             <button class="secondary-action" data-license-validation-close>Abbrechen</button>
             <button class="primary" data-license-validation-edit>Lizenznehmer bearbeiten</button>
+          </footer>
+        </section>
+      </div>
+
+      <div class="license-payment-modal" data-new-run-modal hidden>
+        <button class="license-payment-modal-backdrop" data-new-run-close aria-label="Schliessen"></button>
+        <section class="license-payment-modal-panel license-validation-modal-panel" role="dialog" aria-modal="true" aria-labelledby="new-run-modal-title">
+          <header class="license-payment-modal-header">
+            <div><span data-icon="process"></span><div><small>Aktiver Mandant</small><h2 id="new-run-modal-title">Neuen Lauf beginnen?</h2></div></div>
+            <button class="license-payment-modal-close" data-new-run-close aria-label="Schliessen">x</button>
+          </header>
+          <div class="license-payment-modal-body">
+            <p class="license-validation-text">Der aktuelle Arbeitsstand dieses Mandanten wird zurückgesetzt. Bereits gespeicherte Berichte bleiben erhalten. Sitzungen anderer Mandanten werden nicht verändert.</p>
+          </div>
+          <footer class="license-payment-modal-actions license-validation-modal-actions">
+            <button class="secondary-action" data-new-run-close>Weiterarbeiten</button>
+            <button class="primary" data-new-run-confirm>Neuen Lauf beginnen</button>
           </footer>
         </section>
       </div>
