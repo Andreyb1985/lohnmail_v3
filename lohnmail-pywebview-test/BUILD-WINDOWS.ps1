@@ -88,12 +88,28 @@ if (-not (Test-Path (Join-Path $UpdatePackageApp "LohnMail.exe"))) {
     throw "Das EXE-Update enthält keine LohnMail.exe."
 }
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::CreateFromDirectory(
-    $UpdatePackageRoot,
+$ZipFile = [System.IO.Compression.ZipFile]::Open(
     $UpdateZip,
-    [System.IO.Compression.CompressionLevel]::Optimal,
-    $false
+    [System.IO.Compression.ZipArchiveMode]::Create
 )
+try {
+    Get-ChildItem -LiteralPath $UpdatePackageRoot -Recurse -File | ForEach-Object {
+        # ZIP entry names always use '/', including when the build runs on Windows.
+        # Backslashes produce archives that Explorer may interpret as damaged or
+        # multi-volume ZIP files.
+        $EntryName = $_.FullName.Substring($UpdatePackageRoot.Length).TrimStart(
+            [char[]]@([char]92, [char]47)
+        ).Replace([char]92, [char]47)
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+            $ZipFile,
+            $_.FullName,
+            $EntryName,
+            [System.IO.Compression.CompressionLevel]::Optimal
+        ) | Out-Null
+    }
+} finally {
+    $ZipFile.Dispose()
+}
 $ZipFile = [System.IO.Compression.ZipFile]::OpenRead($UpdateZip)
 try {
     $ExeEntry = $ZipFile.Entries | Where-Object { $_.FullName -eq "LohnMail/App/LohnMail.exe" } | Select-Object -First 1
