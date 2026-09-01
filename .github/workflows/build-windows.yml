@@ -40,9 +40,13 @@ jobs:
         run: |
           $Project = "lohnmail-pywebview-test"
           $Executable = Join-Path $Project "release\LohnMail\App\LohnMail.exe"
+          $CompaniesMarker = Join-Path $Project "release\LohnMail\Companies\.gitkeep"
+          $Settings = Join-Path $Project "release\LohnMail\Settings\settings.json"
           $UpdateZip = Get-ChildItem -Path (Join-Path $Project "release") -Filter "*-exe-update.zip" -File
           $UpdateJson = Get-ChildItem -Path (Join-Path $Project "release") -Filter "*-exe-update.json" -File
           if (-not (Test-Path $Executable)) { throw "LohnMail.exe fehlt." }
+          if (-not (Test-Path $CompaniesMarker)) { throw "Der leere Companies-Ordner fehlt." }
+          if (-not (Test-Path $Settings)) { throw "Settings/settings.json fehlt." }
           if ($UpdateZip.Count -ne 1) { throw "Genau ein EXE-Update-ZIP wurde erwartet." }
           if ($UpdateJson.Count -ne 1) { throw "Genau ein Update-Manifest wurde erwartet." }
 
@@ -51,6 +55,7 @@ jobs:
         with:
           name: LohnMail-Windows-${{ github.sha }}
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14
           path: |
             lohnmail-pywebview-test/release/LohnMail
