@@ -87,6 +87,7 @@ Copy-Item -Recurse -Force "dist\LohnMail\*" $UpdatePackageApp
 if (-not (Test-Path (Join-Path $UpdatePackageApp "LohnMail.exe"))) {
     throw "Das EXE-Update enthält keine LohnMail.exe."
 }
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $ZipFile = [System.IO.Compression.ZipFile]::Open(
     $UpdateZip,
