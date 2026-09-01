@@ -1,4 +1,4 @@
-LohnMail 2.0.3 - Windows pywebview (Build 2026.09.01.2)
+LohnMail 2.0.3 - Windows pywebview (Build 2026.09.01.3)
 =================================
 
 Ordnerstruktur:

@@ -51,7 +51,7 @@
   var UPDATE_STORAGE_KEY = 'lohnmail.update-ui.v1';
   var latestUpdateState = {
     installed_version: '2.0.3',
-    installed_build: '2026.09.01.2',
+    installed_build: '2026.09.01.3',
     last_checked_at: '',
     auto_check: true,
     status: 'idle',
