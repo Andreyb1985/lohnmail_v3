@@ -7,7 +7,9 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
-APP_NAME = "LohnMailPywebviewTest"
+from core.secret_store import SecretStore, SecretStoreError
+
+APP_NAME = "LohnMail"
 APP_TAGLINE = "Versand von Lohnabrechnungen \u2013 kompatibel mit DATEV"
 APP_COPYRIGHT = "\u00a9 2026 Andrii Bakanov"
 DEVELOPER_NAME = "Andrii Bakanov"
@@ -58,6 +60,8 @@ def build_default_settings(today: date | None = None) -> dict:
             "last_pdf_dir": "",
             "last_pdf_input_mode": "folder",
             "last_excel_file": "",
+            "last_pdf_dialog_dir": "",
+            "last_excel_dialog_dir": "",
             "window_width": 1100,
             "window_height": 720,
         },
@@ -165,12 +169,59 @@ USER_DATA_DIR = user_data_dir()
 APP_INSTALL_DIR = USER_DATA_DIR / "App"
 SETTINGS_DIR = user_config_dir()
 SETTINGS_PATH = SETTINGS_DIR / "settings.json"
+SECRETS_PATH = SETTINGS_DIR / "secrets.dat"
 COMPANIES_DIR = USER_DATA_DIR / "Companies"
 LEGACY_SETTINGS_DIR = USER_DATA_DIR
 LEGACY_GESOB_DIR = BASE_DIR / "Gesob_Lohn"
 # Backward-compatible alias for code that only needs the common output root.
 GESOB_DIR = COMPANIES_DIR
 _LAST_SETTINGS_WARNING = ""
+
+
+def _secret_store() -> SecretStore:
+    return SecretStore(SECRETS_PATH)
+
+
+def _smtp_secret_locations(settings: dict):
+    smtp = settings.get("smtp")
+    if isinstance(smtp, dict):
+        yield "smtp:global", smtp
+    for company in settings.get("companies", []):
+        if not isinstance(company, dict):
+            continue
+        company_id = str(company.get("id", "") or "").strip()
+        mail_settings = company.get("mail_settings")
+        if not company_id or not isinstance(mail_settings, dict):
+            continue
+        company_smtp = mail_settings.get("smtp")
+        if isinstance(company_smtp, dict):
+            yield f"smtp:company:{company_id}", company_smtp
+
+
+def _protect_and_strip_smtp_passwords(settings: dict) -> dict:
+    sanitized = deepcopy(settings)
+    store = _secret_store()
+    for secret_id, smtp in _smtp_secret_locations(sanitized):
+        password = str(smtp.get("password", "") or "")
+        if password:
+            store.set(secret_id, password)
+        smtp.pop("password", None)
+    return sanitized
+
+
+def _hydrate_smtp_passwords(settings: dict) -> dict:
+    hydrated = deepcopy(settings)
+    store = _secret_store()
+    for secret_id, smtp in _smtp_secret_locations(hydrated):
+        if not str(smtp.get("password", "") or ""):
+            smtp["password"] = store.get(secret_id)
+    return hydrated
+
+
+def delete_company_smtp_secret(company_id: str) -> None:
+    normalized = str(company_id or "").strip()
+    if normalized:
+        _secret_store().delete(f"smtp:company:{normalized}")
 
 
 def _merge_dict(defaults: dict, data: dict | None) -> dict:
@@ -316,14 +367,25 @@ def load_settings() -> dict:
         else:
             _LAST_SETTINGS_WARNING = f"settings.json konnte nicht gelesen werden: {exc}"
 
-    return _deep_merge_settings(data)
+    merged = _deep_merge_settings(data)
+    try:
+        sanitized = _protect_and_strip_smtp_passwords(merged)
+        if sanitized != data:
+            SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with SETTINGS_PATH.open("w", encoding="utf-8") as f:
+                json.dump(sanitized, f, ensure_ascii=False, indent=2)
+        return _hydrate_smtp_passwords(sanitized)
+    except SecretStoreError as exc:
+        _LAST_SETTINGS_WARNING = str(exc)
+        return merged
 
 
 def save_settings(settings: dict) -> None:
     merged = _deep_merge_settings(settings)
+    sanitized = _protect_and_strip_smtp_passwords(merged)
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     with SETTINGS_PATH.open("w", encoding="utf-8") as f:
-        json.dump(merged, f, ensure_ascii=False, indent=2)
+        json.dump(sanitized, f, ensure_ascii=False, indent=2)
 
 
 def get_company_name(settings: dict | None = None, company_id: str | None = None) -> str:

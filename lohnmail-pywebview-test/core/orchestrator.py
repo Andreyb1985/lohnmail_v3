@@ -1328,10 +1328,12 @@ def action_send(
                 sent_count += 1
                 _p(progress_cb, f"Gesendet via {mail_mode}: {persnr} -> {email}")
         except Exception as exc:
+            from .mailer import user_facing_mail_error
+
             row["Status"] = "Fehler"
-            row["Error"] = str(exc)
+            row["Error"] = user_facing_mail_error(exc)
             failed_count += 1
-            _p(progress_cb, f"Fehler bei {persnr}: {exc}")
+            _p(progress_cb, f"Fehler bei {persnr}: {row['Error']}")
 
         rows.append(row)
         _shipping_progress(

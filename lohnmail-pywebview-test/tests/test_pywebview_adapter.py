@@ -110,6 +110,7 @@ class PywebviewAdapterTests(unittest.TestCase):
         ):
             payload = json.loads(adapter.choosePdfInput())
         self.assertEqual(payload["pdf"], "/tmp/pdfs")
+        self.assertEqual(settings["ui"]["last_pdf_dialog_dir"], "/tmp/pdfs")
         self.assertEqual(bridge.reset_count, 1)
         self.assertEqual(len(saved), 1)
 
@@ -136,8 +137,30 @@ class PywebviewAdapterTests(unittest.TestCase):
         ), patch("pywebview_app.get_company_email_excel_file", return_value=""):
             payload = json.loads(adapter.chooseCompanyExcelInput())
         self.assertEqual(payload["selected_excel"]["path"], "/tmp/employees.xlsx")
+        self.assertEqual(settings["ui"]["last_excel_dialog_dir"], "/tmp")
         self.assertEqual(payload["companies"], [{"id": "test", "name": "Test"}])
         self.assertEqual(bridge.reset_count, 1)
+
+    def test_file_dialog_reuses_last_selected_directories(self) -> None:
+        bridge = FakeBridge()
+        adapter = ApiAdapter(bridge)  # type: ignore[arg-type]
+        window = FakeWindow(("/next/employees.xlsx",))
+        adapter.attach_window(window)  # type: ignore[arg-type]
+        settings = {
+            "ui": {
+                "last_excel_file": "/old/company.xlsx",
+                "last_excel_dialog_dir": "/remembered/imports",
+            }
+        }
+        with patch("pywebview_app.load_settings", side_effect=lambda: settings), patch(
+            "pywebview_app.save_settings"
+        ):
+            adapter.chooseExcelInput()
+        self.assertEqual(window.dialog_calls[0][1]["directory"], "/remembered/imports")
+
+    def test_empty_dialog_path_defaults_to_program_directory(self) -> None:
+        with patch("ui_web.bridge.BASE_DIR", Path("/portable/LohnMail/App")):
+            self.assertEqual(WebBridge._dialog_start_path(""), "/portable/LohnMail")
 
     def test_company_switch_clears_previous_company_files(self) -> None:
         settings = build_default_settings()
@@ -239,8 +262,9 @@ class PywebviewAdapterTests(unittest.TestCase):
         settings["selected_company_id"] = "test"
         with patch("ui_web.bridge.load_settings", side_effect=lambda: settings):
             bridge = WebBridge()
+            bridge._register_result_reports = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
             bridge._shipping_company_id = "test"
-            bridge._shipping_input_signature = bridge._input_signature(settings)
+            bridge._shipping_input_signature = bridge._shipping_signature(settings)
             bridge._shipping_running = True
             bridge._shipping_status = {
                 **bridge._idle_shipping_status(),
@@ -310,6 +334,88 @@ class PywebviewAdapterTests(unittest.TestCase):
         self.assertEqual(saved[-1]["smtp"]["password"], "already-saved-secret")
         self.assertTrue(public_state["smtp"]["password_set"])
         self.assertNotIn("password", public_state["smtp"])
+
+    def test_invalid_sender_email_is_not_saved(self) -> None:
+        settings = build_default_settings()
+        saved: list[dict] = []
+        with patch("ui_web.bridge.load_settings", side_effect=lambda: settings), patch(
+            "ui_web.bridge.save_settings", side_effect=lambda value: saved.append(value)
+        ):
+            bridge = WebBridge()
+            result = json.loads(
+                bridge.saveSettingsState(
+                    json.dumps(
+                        {
+                            "smtp": {
+                                "server": "smtp.example.de",
+                                "username": "payroll@example.de",
+                                "from_email": "payroll",
+                            }
+                        }
+                    )
+                )
+            )
+        self.assertFalse(result["ok"])
+        self.assertIn("vollständige gültige Adresse", result["message"])
+        self.assertEqual(saved, [])
+
+    def test_shipping_preparation_is_invalidated_when_mail_settings_change(self) -> None:
+        settings = build_default_settings()
+        settings["companies"] = [{"id": "test", "name": "Test"}]
+        settings["selected_company_id"] = "test"
+        settings["smtp"].update(
+            server="smtp.example.de",
+            port=587,
+            username="payroll@example.de",
+            from_email="payroll@example.de",
+        )
+        bridge = WebBridge()
+        before = bridge._shipping_signature(settings)
+        settings["smtp"]["from_email"] = "other@example.de"
+        after = bridge._shipping_signature(settings)
+        self.assertNotEqual(before, after)
+        self.assertEqual(before[:4], after[:4])
+
+    def test_failed_shipping_is_not_reported_as_success(self) -> None:
+        settings = build_default_settings()
+        settings["companies"] = [{"id": "test", "name": "Test"}]
+        settings["selected_company_id"] = "test"
+        with patch("ui_web.bridge.load_settings", side_effect=lambda: settings):
+            bridge = WebBridge()
+            bridge._register_result_reports = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
+            bridge._shipping_company_id = "test"
+            bridge._shipping_input_signature = bridge._shipping_signature(settings)
+            bridge._on_shipping_finished(
+                {
+                    "summary": {"dry_run": False, "prepared_or_sent_count": 0, "failed_count": 2},
+                    "table_rows": [{"PersNr": "1", "Status": "Fehler"}],
+                }
+            )
+        self.assertTrue(bridge._shipping_status["failed"])
+        self.assertFalse(bridge._shipping_status["finished"])
+        self.assertEqual(bridge._shipping_status["current_step"], "Versand fehlgeschlagen")
+        self.assertIn("Keine E-Mail wurde gesendet", bridge._shipping_status["message"])
+
+    def test_partial_shipping_reports_sent_and_failed_counts(self) -> None:
+        settings = build_default_settings()
+        settings["companies"] = [{"id": "test", "name": "Test"}]
+        settings["selected_company_id"] = "test"
+        with patch("ui_web.bridge.load_settings", side_effect=lambda: settings):
+            bridge = WebBridge()
+            bridge._register_result_reports = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
+            bridge._shipping_company_id = "test"
+            bridge._shipping_input_signature = bridge._shipping_signature(settings)
+            bridge._on_shipping_finished(
+                {
+                    "summary": {"dry_run": False, "prepared_or_sent_count": 3, "failed_count": 1},
+                    "table_rows": [{"PersNr": "1", "Status": "Gesendet"}],
+                }
+            )
+        self.assertFalse(bridge._shipping_status["failed"])
+        self.assertTrue(bridge._shipping_status["finished"])
+        self.assertEqual(bridge._shipping_status["current_step"], "Versand teilweise abgeschlossen")
+        self.assertIn("3 E-Mails", bridge._shipping_status["message"])
+        self.assertIn("1", bridge._shipping_status["message"])
 
     def test_pdf_encryption_settings_are_saved(self) -> None:
         settings = build_default_settings()

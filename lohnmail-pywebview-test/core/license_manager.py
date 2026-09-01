@@ -26,7 +26,7 @@ LIFETIME_OFFLINE_GRACE = timedelta(days=30)
 MISSING_LICENSE_GRACE = timedelta(days=14)
 
 ACTIVE_STATUSES = {"trialing", "active", "expiring_soon", "license_problem"}
-BLOCKED_STATUSES = {"past_due", "expired", "unpaid", "canceled", "refunded", "disputed", "revoked", "invalid"}
+BLOCKED_STATUSES = {"past_due", "expired", "unpaid", "canceled", "refunded", "disputed", "revoked", "invalid", "device_mismatch"}
 
 
 class LicenseNotFoundError(RuntimeError):
@@ -73,8 +73,23 @@ class LicenseManager:
         try:
             data = json.loads(LICENSE_PATH.read_text(encoding="utf-8"))
             if isinstance(data, dict):
-                self._preserve_state_machine_id(data)
                 state = {**self._empty_state(), **data}
+                current_machine_id = self._machine_id()
+                licensed_machine_id = str(data.get("machine_id", "") or "").strip()
+                if data.get("license_key") and licensed_machine_id and licensed_machine_id != current_machine_id:
+                    return {
+                        **state,
+                        "status": "device_mismatch",
+                        "machine_id": current_machine_id,
+                        "licensed_machine_id": licensed_machine_id,
+                        "days_remaining": None,
+                        "last_message": (
+                            "Diese Lizenz ist an einen anderen Computer gebunden. "
+                            "Bitte wenden Sie sich an den LohnMail-Support."
+                        ),
+                        "server": "Nicht geprüft",
+                    }
+                state["machine_id"] = current_machine_id
                 grace_end = _parse_dt(state.get("license_problem_grace_ends_at"))
                 if state.get("status") == "license_problem" and grace_end and grace_end < _now():
                     state["status"] = "invalid"
@@ -87,6 +102,8 @@ class LicenseManager:
 
     def refresh(self, force: bool = False, start_trial: bool = True) -> dict:
         state = self.load_state()
+        if state.get("status") == "device_mismatch":
+            return state
         if not self.server_url:
             return self._with_local_status(state, "no_connection", "Lizenzserver ist nicht konfiguriert.")
 
@@ -437,6 +454,7 @@ class LicenseManager:
             "type": "none",
             "plan": "",
             "machine_id": self._machine_id(),
+            "licensed_machine_id": "",
             "trial_started_at": None,
             "trial_ends_at": None,
             "current_period_end": None,
@@ -465,13 +483,19 @@ class LicenseManager:
         self._migrate_legacy_files()
         LICENSE_DIR.mkdir(parents=True, exist_ok=True)
         machine_file = LICENSE_DIR / "machine_id"
-        if machine_file.exists():
-            value = machine_file.read_text(encoding="utf-8").strip()
-            if value:
-                return value
-        value = str(uuid.uuid5(uuid.NAMESPACE_URL, f"lohnmail-device:{self._hardware_seed()}"))
-        machine_file.write_text(value, encoding="utf-8")
+        value = self._current_machine_id()
+        try:
+            stored = machine_file.read_text(encoding="utf-8").strip() if machine_file.exists() else ""
+            if stored != value:
+                machine_file.write_text(value, encoding="utf-8")
+        except OSError:
+            # The live hardware value remains authoritative even if a read-only
+            # portable directory cannot update its diagnostic cache file.
+            pass
         return value
+
+    def _current_machine_id(self) -> str:
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, f"lohnmail-device:{self._hardware_seed()}"))
 
     def machine_id(self) -> str:
         """Return the persistent device ID without creating or refreshing a license."""
@@ -565,7 +589,7 @@ class LicenseManager:
 
     @staticmethod
     def app_version() -> str:
-        return "v2.0.0"
+        return "v2.0.3"
 
     @staticmethod
     def block_message(status: str) -> str:
@@ -578,6 +602,7 @@ class LicenseManager:
             "revoked": "Diese Lizenz wurde widerrufen.",
             "canceled": "Diese Lizenz wurde gekündigt.",
             "invalid": "Diese Lizenz ist ungültig.",
+            "device_mismatch": "Diese Lizenz ist an einen anderen Computer gebunden. Bitte wenden Sie sich an den LohnMail-Support.",
         }
         return messages.get(status, "Lizenz ist nicht aktiv.")
 

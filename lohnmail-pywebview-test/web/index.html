@@ -4,14 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LohnMail v2 — Enterprise Edition</title>
-  <link rel="stylesheet" href="styles.css?v=validation-table-fit-20260728-006" />
+  <link rel="stylesheet" href="styles.css?v=update-flow-20260901-001" />
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">
-          <img data-brand-logo src="assets/brand/lohnmail-app-icon.png" alt="">
+          <img data-brand-logo src="assets/brand/lohnmail-app-icon-previous.png" alt="">
         </div>
         <div>
           <div class="brand-title">LohnMail v2</div>
@@ -42,7 +42,7 @@
           <div class="side-status-subtitle">Alle Dienste aktiv</div>
         </div>
       </div>
-      <div class="side-version">v2.0.0 Enterprise Edition</div>
+      <div class="side-version">v2.0.3 Enterprise Edition</div>
     </aside>
 
     <section class="main">
@@ -96,6 +96,11 @@
             <p>Überblick über Verarbeitung, Versand, Berichte und Systemstatus.</p>
           </div>
           <button class="primary" data-dashboard-action="new-run"><span data-icon="play"></span>Neuer Lauf</button>
+        </div>
+
+        <div class="info-banner ready dashboard-update-confirmation">
+          <span data-icon="checkcircle"></span>
+          Update-System für EXE vorbereitet · Version 2.0.3 · Build 2026.09.01.2
         </div>
 
         <section class="metrics-grid">
@@ -466,18 +471,7 @@
                 <thead>
                   <tr><th><input type="checkbox"></th><th>Typ</th><th>Mitarbeiter</th><th>Personalnr.</th><th>Kategorie</th><th>Beschreibung</th><th>E-Mail</th><th>Dokument</th><th>Zeile</th></tr>
                 </thead>
-                <tbody data-validation="table-body">
-                  <tr class="selected critical-row"><td><input type="checkbox"></td><td><span class="type-dot red"><span data-icon="x"></span></span></td><td>Max Mustermann</td><td>10025</td><td>Steuer</td><td>Steuerklasse fehlt oder ungültig</td><td>Lohnabrechnung_05_2025.pdf</td><td>23</td></tr>
-                  <tr class="critical-row"><td><input type="checkbox"></td><td><span class="type-dot red"><span data-icon="x"></span></span></td><td>Anna Schmitz</td><td>10038</td><td>Sozialversicherung</td><td>KV-Beitrag über Beitragsbemessungsgrenze</td><td>Lohnabrechnung_05_2025.pdf</td><td>45</td></tr>
-                  <tr class="critical-row"><td><input type="checkbox"></td><td><span class="type-dot red"><span data-icon="x"></span></span></td><td>Peter Müller</td><td>10012</td><td>Lohnart</td><td>Lohnart 4010 hat keinen Betrag</td><td>Stammdaten_05_2025.xlsx</td><td>178</td></tr>
-                  <tr><td><input type="checkbox"></td><td><span class="type-dot orange"><span data-icon="warning"></span></span></td><td>Lisa Wagner</td><td>10067</td><td>Arbeitszeit</td><td>Überstunden ohne Zuschlag</td><td>Lohnabrechnung_05_2025.pdf</td><td>67</td></tr>
-                  <tr><td><input type="checkbox"></td><td><span class="type-dot orange"><span data-icon="warning"></span></span></td><td>Thomas Becker</td><td>10014</td><td>Stammdaten</td><td>Geburtsdatum fehlt</td><td>Stammdaten_05_2025.xlsx</td><td>12</td></tr>
-                  <tr><td><input type="checkbox"></td><td><span class="type-dot orange"><span data-icon="warning"></span></span></td><td>Sophie Schneider</td><td>10081</td><td>Bankverbindung</td><td>IBAN-Prüfziffer ungültig</td><td>Stammdaten_05_2025.xlsx</td><td>32</td></tr>
-                  <tr><td><input type="checkbox"></td><td><span class="type-dot blue"><span data-icon="info"></span></span></td><td>Jan Hoffmann</td><td>10033</td><td>Info</td><td>Eintrittsdatum in der Zukunft</td><td>Stammdaten_05_2025.xlsx</td><td>5</td></tr>
-                  <tr><td><input type="checkbox"></td><td><span class="type-dot blue"><span data-icon="info"></span></span></td><td>Maria Klein</td><td>10047</td><td>Info</td><td>Sachbezug ohne Betrag</td><td>Lohnabrechnung_05_2025.pdf</td><td>91</td></tr>
-                  <tr><td><input type="checkbox"></td><td><span class="type-dot blue"><span data-icon="info"></span></span></td><td>Michael Braun</td><td>10022</td><td>Info</td><td>Mehrfachbeschäftigung vorhanden</td><td>Stammdaten_05_2025.xlsx</td><td>144</td></tr>
-                  <tr><td><input type="checkbox"></td><td><span class="type-dot blue"><span data-icon="info"></span></span></td><td>Julia Fischer</td><td>10058</td><td>Info</td><td>Befristung läuft in 30 Tagen aus</td><td>Stammdaten_05_2025.xlsx</td><td>8</td></tr>
-                </tbody>
+                <tbody data-validation="table-body"></tbody>
               </table>
               </div>
               <div class="table-footer"><span data-validation="table-footer">Zeige 0 Einträge</span><div class="pagination"><button data-validation-page="prev">‹</button><button class="active" data-validation="page-current">1</button><button data-validation-page="next">›</button></div><select data-validation="page-size"><option value="20">20 pro Seite</option><option value="50">50 pro Seite</option><option value="100">100 pro Seite</option></select></div>
@@ -645,16 +639,7 @@
                   <thead>
                     <tr><th><input type="checkbox"></th><th>Mitarbeiter</th><th>E-Mail</th><th>Dokument</th><th>Größe</th><th>Status</th><th>Geplant für</th><th></th></tr>
                   </thead>
-                  <tbody data-shipping="table-body">
-                    <tr class="selected"><td><input type="checkbox"></td><td><span class="avatar-mini">MM</span><b>Max Mustermann<small>10025</small></b></td><td>max.mustermann@example.de</td><td><span class="file-dot pdf"><span data-icon="doc"></span></span>Lohnabrechnung_05_2025.pdf</td><td>128 KB</td><td><span class="state ready">Bereit</span></td><td>15.05.2025 11:00</td><td>...</td></tr>
-                    <tr><td><input type="checkbox"></td><td><span class="avatar-mini">AS</span><b>Anna Schmitz<small>10038</small></b></td><td>anna.schmitz@example.de</td><td><span class="file-dot pdf"><span data-icon="doc"></span></span>Lohnabrechnung_05_2025.pdf</td><td>114 KB</td><td><span class="state ready">Bereit</span></td><td>15.05.2025 11:00</td><td>...</td></tr>
-                    <tr><td><input type="checkbox"></td><td><span class="avatar-mini">PM</span><b>Peter Müller<small>10012</small></b></td><td>peter.mueller@example.de</td><td><span class="file-dot xls"><span data-icon="table"></span></span>Stammdaten_05_2025.xlsx</td><td>45 KB</td><td><span class="state ready">Bereit</span></td><td>15.05.2025 11:00</td><td>...</td></tr>
-                    <tr><td><input type="checkbox"></td><td><span class="avatar-mini">LW</span><b>Lisa Wagner<small>10067</small></b></td><td>lisa.wagner@example.de</td><td><span class="file-dot pdf"><span data-icon="doc"></span></span>Lohnabrechnung_05_2025.pdf</td><td>122 KB</td><td><span class="state ready">Bereit</span></td><td>15.05.2025 11:00</td><td>...</td></tr>
-                    <tr><td><input type="checkbox"></td><td><span class="avatar-mini">TB</span><b>Thomas Becker<small>10014</small></b></td><td>thomas.becker@example.de</td><td><span class="file-dot xls"><span data-icon="table"></span></span>Stammdaten_05_2025.xlsx</td><td>47 KB</td><td><span class="state ready">Bereit</span></td><td>15.05.2025 11:00</td><td>...</td></tr>
-                    <tr><td><input type="checkbox"></td><td><span class="avatar-mini">SS</span><b>Sophie Schneider<small>10081</small></b></td><td>sophie.schneider@example.de</td><td><span class="file-dot pdf"><span data-icon="doc"></span></span>Lohnabrechnung_05_2025.pdf</td><td>130 KB</td><td><span class="state ready">Bereit</span></td><td>15.05.2025 11:00</td><td>...</td></tr>
-                    <tr><td><input type="checkbox"></td><td><span class="avatar-mini">JH</span><b>Jan Hoffmann<small>10033</small></b></td><td>jan.hoffmann@example.de</td><td><span class="file-dot xls"><span data-icon="table"></span></span>Stammdaten_05_2025.xlsx</td><td>44 KB</td><td><span class="state ready">Bereit</span></td><td>15.05.2025 11:00</td><td>...</td></tr>
-                    <tr><td><input type="checkbox"></td><td><span class="avatar-mini">MK</span><b>Maria Klein<small>10047</small></b></td><td>maria.klein@example.de</td><td><span class="file-dot pdf"><span data-icon="doc"></span></span>Lohnabrechnung_05_2025.pdf</td><td>118 KB</td><td><span class="state ready">Bereit</span></td><td>15.05.2025 11:00</td><td>...</td></tr>
-                  </tbody>
+                  <tbody data-shipping="table-body"></tbody>
                 </table>
               </div>
 
@@ -1123,90 +1108,60 @@
               </article>
 
               <article class="settings-panel settings-update-panel" data-settings-panel="updates">
-                <section class="card settings-reference-card update-overview-card">
-                  <div class="update-card-head">
-                    <div>
-                      <h2>Updates</h2>
-                      <p>Sicherheits- und Funktionsupdates für LohnMail.</p>
-                    </div>
-                    <span class="update-status-badge idle" data-update="badge">Noch nicht geprüft</span>
-                  </div>
-                  <div class="update-version-grid">
-                    <div class="update-version-item">
-                      <span data-icon="info"></span>
-                      <span>
-                        <small>Installierte Version</small>
-                        <strong data-update="installed-version">v2.0.0</strong>
-                        <em data-update="installed-build">Build 2025.05.15</em>
-                      </span>
-                    </div>
-                    <div class="update-version-item">
-                      <span data-icon="clock"></span>
-                      <span>
-                        <small>Letzte Prüfung</small>
-                        <strong data-update="last-checked">Noch nicht geprüft</strong>
-                        <em>Kanal: Stabil</em>
-                      </span>
-                    </div>
-                  </div>
-                </section>
-
-                <section class="card settings-reference-card">
-                  <div class="settings-toggle-list compact">
-                    <label>
-                      <span data-icon="process"></span>
-                      <strong>Automatisch nach Updates suchen<small>Prüft beim Start und danach regelmäßig im Hintergrund.</small></strong>
-                      <input data-update-pref="auto-check" type="checkbox" checked>
-                    </label>
-                  </div>
-                  <div class="update-action-row">
-                    <div>
-                      <strong data-update="status-title">Noch nicht geprüft</strong>
-                      <small data-update="status-detail">Die Update-Schnittstelle ist für den Desktop-Updater vorbereitet.</small>
-                    </div>
-                    <button class="secondary-action" data-update-action="check" type="button"><span data-icon="process"></span>Nach Updates suchen</button>
-                  </div>
-                  <div class="update-download" data-update-download hidden>
-                    <div class="update-download-head">
-                      <div>
-                        <strong data-update="download-title">Update wird heruntergeladen</strong>
-                        <small data-update="download-detail">0 MB von 0 MB</small>
+                <div class="update-page-head">
+                  <div><h2>Softwareupdate</h2><p>Sicherheits- und Funktionsupdates kontrolliert installieren.</p></div>
+                </div>
+                <div class="update-page-layout">
+                  <div class="update-page-main">
+                    <section class="card settings-reference-card update-overview-card">
+                      <div class="update-version-grid">
+                        <div class="update-version-item">
+                          <span data-icon="info"></span>
+                          <span><small>Installierte Version</small><strong data-update="installed-version">v2.0.3</strong><em data-update="installed-build">Build 2026.09.01.2</em></span>
+                        </div>
+                        <div class="update-version-item">
+                          <span data-icon="clock"></span>
+                          <span><small>Letzte Prüfung</small><strong data-update="last-checked">Noch nicht geprüft</strong><em>Kanal: Stabil</em></span>
+                        </div>
                       </div>
-                      <b data-update="progress-text">0%</b>
-                    </div>
-                    <div class="update-progress-track"><i data-update="progress-bar"></i></div>
-                    <button class="secondary-action" data-update-action="download" type="button"><span data-icon="arrow-up-right"></span>Update herunterladen</button>
-                  </div>
-                </section>
+                      <div class="settings-toggle-list compact update-auto-check">
+                        <label><span data-icon="process"></span><strong>Automatisch nach Updates suchen<small>Prüft beim Start und danach regelmäßig im Hintergrund.</small></strong><input data-update-pref="auto-check" type="checkbox" checked></label>
+                      </div>
+                      <div class="update-status-box">
+                        <div class="update-action-row">
+                          <div><span class="update-status-badge idle" data-update="badge">Noch nicht geprüft</span><strong data-update="status-title">Noch nicht geprüft</strong><small data-update="status-detail">Starten Sie die manuelle Update-Prüfung.</small></div>
+                          <button class="primary" data-update-action="check" data-update-primary-action="true" type="button"><span data-icon="process"></span><span class="button-label">Nach Updates suchen</span></button>
+                        </div>
+                        <div class="update-download" data-update-download hidden>
+                          <div class="update-download-head"><div><strong data-update="download-title">Update wird heruntergeladen</strong><small data-update="download-detail">0 MB von 0 MB</small></div><b data-update="progress-text">0%</b></div>
+                          <div class="update-progress-track"><i data-update="progress-bar"></i></div>
+                        </div>
+                      </div>
+                    </section>
 
-                <section class="card settings-reference-card">
-                  <div class="update-card-head compact">
-                    <div>
-                      <h2>Release Notes</h2>
-                      <p data-update="release-version">Installierte Version 2.0.0</p>
-                    </div>
-                  </div>
-                  <div class="update-release-notes" data-update="release-notes">
-                    <p>Release Notes werden hier angezeigt, sobald ein Update verfügbar ist.</p>
-                  </div>
-                </section>
+                    <section class="card settings-reference-card">
+                      <div class="update-card-head compact"><div><h2>Release Notes</h2><p data-update="release-version">Installierte Version 2.0.3</p></div></div>
+                      <div class="update-release-notes" data-update="release-notes"><p>Release Notes werden hier angezeigt, sobald ein Update verfügbar ist.</p></div>
+                    </section>
 
-                <section class="card settings-reference-card">
-                  <div class="settings-toggle-list compact">
-                    <label>
-                      <span data-icon="clock"></span>
-                      <strong>Beim Beenden installieren<small>Wird verfügbar, sobald ein Update vollständig heruntergeladen wurde.</small></strong>
-                      <input data-update-pref="install-on-exit" type="checkbox" disabled>
-                    </label>
+                    <section class="card settings-reference-card update-protection-card">
+                      <div class="update-policy-note"><span data-icon="key"></span><p><strong>Benutzerdaten bleiben geschützt</strong><small>Nur der Ordner App wird ersetzt. Settings, Unternehmen, Berichte und Lizenzdaten werden nicht durch das Update-Paket überschrieben. Bei einem Fehler wird die vorherige App-Version wiederhergestellt.</small></p></div>
+                    </section>
                   </div>
-                  <div class="update-policy-note">
-                    <span data-icon="info"></span>
-                    <p>
-                      <strong>Update-Richtlinie</strong>
-                      <small>Updates bleiben optional. Nur kritische Sicherheitslücken oder technische Inkompatibilität können eine Installation verpflichtend machen.</small>
-                    </p>
-                  </div>
-                </section>
+
+                  <aside class="card settings-reference-card update-flow-card">
+                    <div class="update-flow-head"><h2>Ablauf</h2><p>Jeder Schritt wird vor dem Neustart kontrolliert.</p></div>
+                    <div class="update-flow-list">
+                      <div class="update-flow-step active" data-update-step="check"><span>1</span><p><strong>Update prüfen</strong><small>Manifest, Version und Kanal</small></p></div>
+                      <div class="update-flow-step" data-update-step="download"><span>2</span><p><strong>Herunterladen</strong><small>Größe und SHA-256 prüfen</small></p></div>
+                      <div class="update-flow-step" data-update-step="preflight"><span>3</span><p><strong>Lokale Daten prüfen</strong><small>SQLite nur lesend öffnen</small></p></div>
+                      <div class="update-flow-step" data-update-step="backup"><span>4</span><p><strong>App sichern</strong><small>App.update-backup erstellen</small></p></div>
+                      <div class="update-flow-step" data-update-step="install"><span>5</span><p><strong>Update installieren</strong><small>Nur den Ordner App ersetzen</small></p></div>
+                      <div class="update-flow-step" data-update-step="verify"><span>6</span><p><strong>Ergebnis prüfen</strong><small>Version, Daten und SQLite</small></p></div>
+                      <div class="update-flow-step" data-update-step="restart"><span>7</span><p><strong>LohnMail neu starten</strong><small>Erfolg melden oder zurückrollen</small></p></div>
+                    </div>
+                  </aside>
+                </div>
               </article>
 
               <article class="settings-panel" data-settings-panel="security">
@@ -1240,20 +1195,6 @@
               </article>
             </div>
 
-            <aside class="settings-side-column">
-              <article class="card settings-side-card">
-                <h2>System Informationen</h2>
-                <div class="settings-info-list">
-                  <div><span data-icon="info"></span><span>Version</span><b>v2.0.0</b></div>
-                  <div><span data-icon="table"></span><span>Datenbank</span><b>SQLite lokal</b></div>
-                  <div><span data-icon="clock"></span><span>Eingerichtet am</span><b>--</b></div>
-                  <div><span data-icon="process"></span><span>Letzte Aktualisierung</span><b data-settings-summary="period">Automatisch</b></div>
-                  <div><span data-icon="screen"></span><span>Betriebssystem</span><b>Desktop</b></div>
-                  <div><span data-icon="settings"></span><span>Architektur</span><b>Lokal</b></div>
-                </div>
-              </article>
-
-            </aside>
           </section>
         </section>
 
@@ -1340,7 +1281,7 @@
               <article class="card product-card">
                 <div class="product-hero">
                   <div class="product-logo-mark">
-                    <img data-brand-logo src="assets/brand/lohnmail-app-icon.png" alt="LohnMail">
+                    <img data-brand-logo src="assets/brand/lohnmail-app-icon-previous.png" alt="LohnMail">
                   </div>
                   <div>
                     <h1>LohnMail v2</h1>
@@ -1349,9 +1290,9 @@
                   </div>
                 </div>
                 <div class="product-meta-list">
-                  <div><span data-icon="info"></span><span>Version</span><b>v2.0.0 (Build 2025.05.15)</b></div>
+                  <div><span data-icon="info"></span><span>Version</span><b>v2.0.3 (Build 2026.09.01.2)</b></div>
                   <div><span data-icon="key"></span><span>Edition</span><b class="success-text">Enterprise Edition</b></div>
-                  <div><span data-icon="clock"></span><span>Build Datum</span><b>15.05.2025 10:24</b></div>
+                  <div><span data-icon="clock"></span><span>Build Datum</span><b>28.08.2026</b></div>
                   <div><span data-icon="checkcircle"></span><span>Lizenz Status</span><b class="state ready">Aktiv</b></div>
                 </div>
                 <div class="about-actions">
@@ -1368,9 +1309,9 @@
                   <div><span class="tech-icon db"><span data-icon="table"></span></span><strong>Datenbank</strong><small>SQLite 3.45.1</small></div>
                   <div><span class="tech-icon pdf"><span data-icon="doc"></span></span><strong>PDF Engine</strong><small>PyPDF2 3.0.1</small></div>
                   <div><span class="tech-icon mail"><span data-icon="mail"></span></span><strong>E-Mail</strong><small>SMTP / Outlook Classic</small></div>
-                  <div><span class="tech-icon xls">X</span><strong>Excel Engine</strong><small>openpyxl 3.1.2</small></div>
-                  <div><span class="tech-icon qt">Qt</span><strong>UI Framework</strong><small>Qt 6.7</small></div>
-                  <div><span class="tech-icon build"><span data-icon="process"></span></span><strong>Build System</strong><small>PyInstaller 6.6</small></div>
+                  <div><span class="tech-icon xls">X</span><strong>Excel Engine</strong><small>openpyxl 3.1.5</small></div>
+                  <div><span class="tech-icon qt">UI</span><strong>Desktop WebView</strong><small>WebView2 / WKWebView</small></div>
+                  <div><span class="tech-icon build"><span data-icon="process"></span></span><strong>Build System</strong><small>PyInstaller 6.16+</small></div>
                 </div>
                 <button class="wide-button" data-about-action="details">Technische Details anzeigen</button>
               </article>
@@ -1398,7 +1339,7 @@
                 </div>
                 <div class="legal-summary">
                   <div><span>Datenschutz</span><b>DSGVO-konforme lokale Verarbeitung</b></div>
-                  <div><span>Datenstand</span><b>15.05.2025 10:24</b></div>
+                  <div><span>Datenstand</span><b>28.08.2026</b></div>
                   <div><span>Lizenzstatus</span><b>Enterprise Edition</b></div>
                 </div>
               </article>
@@ -1414,6 +1355,29 @@
         </section>
 
       </main>
+
+      <div class="license-payment-modal" data-app-dialog hidden>
+        <button class="license-payment-modal-backdrop" data-app-dialog-action="cancel" aria-label="Schliessen"></button>
+        <section class="license-payment-modal-panel license-validation-modal-panel" role="alertdialog" aria-modal="true" aria-labelledby="app-dialog-title">
+          <header class="license-payment-modal-header">
+            <div>
+              <span data-icon="info" data-app-dialog-icon></span>
+              <div>
+                <small data-app-dialog-kicker>LohnMail</small>
+                <h2 id="app-dialog-title" data-app-dialog-title>Hinweis</h2>
+              </div>
+            </div>
+            <button class="license-payment-modal-close" data-app-dialog-action="cancel" aria-label="Schliessen">x</button>
+          </header>
+          <div class="license-payment-modal-body">
+            <p class="license-validation-text app-dialog-message" data-app-dialog-message></p>
+          </div>
+          <footer class="license-payment-modal-actions license-validation-modal-actions">
+            <button class="secondary-action" data-app-dialog-action="cancel">Abbrechen</button>
+            <button class="primary" data-app-dialog-action="confirm">Bestätigen</button>
+          </footer>
+        </section>
+      </div>
 
       <div class="company-modal" data-company-modal hidden>
         <button class="company-modal-backdrop" data-company-modal-close aria-label="Schliessen"></button>
@@ -1675,6 +1639,6 @@
   </div>
 
   <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
-  <script src="app.js?v=shipping-progress-20260728-003"></script>
+  <script src="app.js?v=update-flow-20260901-001"></script>
 </body>
 </html>

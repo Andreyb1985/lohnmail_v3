@@ -22,6 +22,9 @@ class LicenseOfflineTests(unittest.TestCase):
         for active_patch in self.patches:
             active_patch.start()
             self.addCleanup(active_patch.stop)
+        machine_patch = patch.object(LicenseManager, "_current_machine_id", return_value="test-machine")
+        machine_patch.start()
+        self.addCleanup(machine_patch.stop)
         self.addCleanup(self.temp_dir.cleanup)
         self.manager = LicenseManager({})
 
@@ -120,6 +123,7 @@ class LicenseOfflineTests(unittest.TestCase):
             patch("core.license_manager.DEFAULT_LICENSE_DIR", target_dir),
             patch("core.license_manager.LICENSE_DIR", target_dir),
             patch("core.license_manager.LICENSE_PATH", target_dir / "license.json"),
+            patch.object(LicenseManager, "_current_machine_id", return_value="legacy-machine"),
         ):
             state = LicenseManager({}).load_state()
 
@@ -138,16 +142,24 @@ class LicenseOfflineTests(unittest.TestCase):
 
         self.assertEqual(first_id, second_id)
 
-    def test_existing_license_id_is_preserved_when_machine_file_is_missing(self) -> None:
+    def test_copied_license_is_blocked_on_a_different_computer(self) -> None:
         self.write_state(machine_id="already-activated-machine")
 
         state = self.manager.load_state()
 
-        self.assertEqual(state["machine_id"], "already-activated-machine")
-        self.assertEqual(
-            (self.license_dir / "machine_id").read_text(encoding="utf-8"),
-            "already-activated-machine",
-        )
+        self.assertEqual(state["status"], "device_mismatch")
+        self.assertEqual(state["machine_id"], "test-machine")
+        self.assertEqual(state["licensed_machine_id"], "already-activated-machine")
+        self.assertIn("anderen Computer", state["last_message"])
+        self.assertFalse(self.manager.require_action("processing")[0])
+
+    def test_machine_file_is_rechecked_against_hardware_on_every_start(self) -> None:
+        (self.license_dir / "machine_id").write_text("copied-machine", encoding="utf-8")
+
+        machine_id = self.manager.machine_id()
+
+        self.assertEqual(machine_id, "test-machine")
+        self.assertEqual((self.license_dir / "machine_id").read_text(encoding="utf-8"), "test-machine")
 
 
 if __name__ == "__main__":

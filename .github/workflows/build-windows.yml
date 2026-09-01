@@ -1,0 +1,58 @@
+name: Build LohnMail Windows
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lohnmail-windows-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Test and build Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.12 x64
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          architecture: "x64"
+          cache: "pip"
+          cache-dependency-path: |
+            lohnmail-pywebview-test/requirements*.txt
+
+      - name: Test and build LohnMail
+        shell: powershell
+        run: |
+          Set-Location lohnmail-pywebview-test
+          .\BUILD-WINDOWS.ps1
+
+      - name: Verify build outputs
+        shell: powershell
+        run: |
+          $Project = "lohnmail-pywebview-test"
+          $Executable = Join-Path $Project "release\LohnMail\App\LohnMail.exe"
+          $UpdateZip = Get-ChildItem -Path (Join-Path $Project "release") -Filter "*-exe-update.zip" -File
+          $UpdateJson = Get-ChildItem -Path (Join-Path $Project "release") -Filter "*-exe-update.json" -File
+          if (-not (Test-Path $Executable)) { throw "LohnMail.exe fehlt." }
+          if ($UpdateZip.Count -ne 1) { throw "Genau ein EXE-Update-ZIP wurde erwartet." }
+          if ($UpdateJson.Count -ne 1) { throw "Genau ein Update-Manifest wurde erwartet." }
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: LohnMail-Windows-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            lohnmail-pywebview-test/release/LohnMail
+            lohnmail-pywebview-test/release/*-exe-update.zip
+            lohnmail-pywebview-test/release/*-exe-update.json

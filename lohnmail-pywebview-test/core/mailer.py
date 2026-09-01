@@ -1,16 +1,90 @@
 # core/mailer.py
 import smtplib
+import socket
 import ssl
 import subprocess
 import sys
 from email.message import EmailMessage
 from pathlib import Path
 
+from core.email_validation import _local_validation
+
+
+def user_facing_mail_error(exc: Exception) -> str:
+    """Translate transport/system exceptions into actionable German messages."""
+    if isinstance(exc, ValueError):
+        return str(exc)
+    if isinstance(exc, smtplib.SMTPAuthenticationError):
+        return "SMTP-Anmeldung fehlgeschlagen. Bitte prüfen Sie Benutzername und Passwort."
+    if isinstance(exc, socket.gaierror) or "getaddrinfo failed" in str(exc).lower():
+        return (
+            "Der SMTP-Server konnte nicht gefunden werden. Bitte prüfen Sie die Serveradresse, "
+            "die Internetverbindung und die DNS-Einstellungen. Es wurden keine E-Mails gesendet."
+        )
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return (
+            "Der SMTP-Server hat nicht rechtzeitig geantwortet. Bitte prüfen Sie Internetverbindung, "
+            "Serveradresse, Port und Firewall. Es wurden keine E-Mails gesendet."
+        )
+    if isinstance(exc, ConnectionRefusedError):
+        return (
+            "Der SMTP-Server hat die Verbindung abgelehnt. Bitte prüfen Sie Port, Sicherheit "
+            "(TLS/SSL) und Firewall. Es wurden keine E-Mails gesendet."
+        )
+    if isinstance(exc, ssl.SSLCertVerificationError):
+        return (
+            "Das Sicherheitszertifikat des SMTP-Servers konnte nicht bestätigt werden. "
+            "Bitte prüfen Sie Serveradresse, Datum/Uhrzeit des Computers und die TLS-/SSL-Einstellung."
+        )
+    if isinstance(exc, ssl.SSLError):
+        return "Die sichere SMTP-Verbindung ist fehlgeschlagen. Bitte prüfen Sie Port und TLS-/SSL-Einstellung."
+    if isinstance(exc, smtplib.SMTPSenderRefused):
+        return "Der SMTP-Server hat die Absenderadresse abgelehnt. Bitte prüfen Sie die Absender-E-Mail."
+    if isinstance(exc, smtplib.SMTPRecipientsRefused):
+        return "Der SMTP-Server hat die Empfängeradresse abgelehnt. Bitte prüfen Sie die E-Mail-Adresse."
+    if isinstance(exc, smtplib.SMTPDataError):
+        return "Der SMTP-Server hat die Nachricht abgelehnt. Bitte prüfen Sie Größenlimit, Inhalt und Serverrichtlinien."
+    if isinstance(exc, smtplib.SMTPNotSupportedError):
+        return "Der SMTP-Server unterstützt die gewählte Anmeldung oder Verschlüsselung nicht."
+    if isinstance(exc, smtplib.SMTPServerDisconnected):
+        return "Die Verbindung zum SMTP-Server wurde unerwartet getrennt. Bitte versuchen Sie es erneut."
+    if isinstance(exc, smtplib.SMTPConnectError):
+        return "Die Verbindung zum SMTP-Server ist fehlgeschlagen. Bitte prüfen Sie Serveradresse und Port."
+    if isinstance(exc, PermissionError):
+        return "Auf eine benötigte Datei kann nicht zugegriffen werden. Bitte schließen Sie die Datei und prüfen Sie die Zugriffsrechte."
+    if isinstance(exc, FileNotFoundError):
+        return "Eine benötigte Datei wurde nicht gefunden. Bitte bereiten Sie den Versand erneut vor."
+    if isinstance(exc, OSError):
+        return "Die Netzwerkverbindung zum Mailserver ist fehlgeschlagen. Bitte prüfen Sie Internetverbindung und Firewall."
+    if isinstance(exc, smtplib.SMTPException):
+        return "Der SMTP-Versand ist fehlgeschlagen. Bitte prüfen Sie die E-Mail-Einstellungen und versuchen Sie es erneut."
+    message = str(exc or "").strip()
+    if message and not any(token in message.lower() for token in ("errno", "traceback", "winerror", "0x")):
+        return message
+    return "Der E-Mail-Versand ist fehlgeschlagen. Bitte prüfen Sie die Einstellungen und versuchen Sie es erneut."
+
+
+def _raise_user_facing_mail_error(exc: Exception) -> None:
+    if isinstance(exc, (ValueError, RuntimeError)) and str(exc).strip():
+        raise exc
+    raise RuntimeError(user_facing_mail_error(exc)) from exc
+
 
 def _build_from_header(from_email: str, from_name: str) -> str:
     if from_name and from_email:
         return f'{from_name} <{from_email}>'
     return from_email or from_name
+
+
+def validate_sender_email(from_email: str) -> str:
+    """Return a normalized sender address or raise a user-facing error."""
+    normalized = str(from_email or "").strip()
+    if _local_validation(normalized) is not None:
+        raise ValueError(
+            "Absender E-Mail muss eine vollständige gültige Adresse mit @ und Domain sein, "
+            "z. B. lohnbuchhaltung@firma.de."
+        )
+    return normalized
 
 
 def test_smtp_connection(smtp_settings: dict) -> None:
@@ -23,17 +97,21 @@ def test_smtp_connection(smtp_settings: dict) -> None:
 
     if not host or not port:
         raise ValueError("SMTP Server und Port müssen ausgefüllt werden.")
+    validate_sender_email(smtp_settings.get("from_email") or username)
 
-    if security == "ssl":
-        with smtplib.SMTP_SSL(host, port, timeout=timeout, context=ssl.create_default_context()) as server:
-            if username:
-                server.login(username, password)
-    else:
-        with smtplib.SMTP(host, port, timeout=timeout) as server:
-            if security == "tls":
-                server.starttls(context=ssl.create_default_context())
-            if username:
-                server.login(username, password)
+    try:
+        if security == "ssl":
+            with smtplib.SMTP_SSL(host, port, timeout=timeout, context=ssl.create_default_context()) as server:
+                if username:
+                    server.login(username, password)
+        else:
+            with smtplib.SMTP(host, port, timeout=timeout) as server:
+                if security == "tls":
+                    server.starttls(context=ssl.create_default_context())
+                if username:
+                    server.login(username, password)
+    except Exception as exc:
+        _raise_user_facing_mail_error(exc)
 
 
 def _run_osascript(script: str, args: list[str]) -> None:
@@ -303,8 +381,7 @@ def send_email(
     from_email = (smtp_settings.get("from_email") or smtp_settings.get("username") or "").strip()
     from_name = (smtp_settings.get("from_name") or "").strip()
 
-    if not from_email:
-        raise ValueError("Absender-E-Mail fehlt in den SMTP-Einstellungen.")
+    from_email = validate_sender_email(from_email)
 
     msg = EmailMessage()
     msg["From"] = _build_from_header(from_email, from_name)
@@ -322,20 +399,23 @@ def send_email(
     timeout = int(smtp_settings.get("timeout_sec", 30) or 30)
 
     if not host or not port:
-        raise ValueError("SMTP Server und Port mÃ¼ssen ausgefÃ¼llt werden.")
+        raise ValueError("SMTP Server und Port müssen ausgefüllt werden.")
 
-    if security == "ssl":
-        with smtplib.SMTP_SSL(host, port, timeout=timeout, context=ssl.create_default_context()) as server:
-            if username:
-                server.login(username, password)
-            server.send_message(msg)
-    else:
-        with smtplib.SMTP(host, port, timeout=timeout) as server:
-            if security == "tls":
-                server.starttls(context=ssl.create_default_context())
-            if username:
-                server.login(username, password)
-            server.send_message(msg)
+    try:
+        if security == "ssl":
+            with smtplib.SMTP_SSL(host, port, timeout=timeout, context=ssl.create_default_context()) as server:
+                if username:
+                    server.login(username, password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(host, port, timeout=timeout) as server:
+                if security == "tls":
+                    server.starttls(context=ssl.create_default_context())
+                if username:
+                    server.login(username, password)
+                server.send_message(msg)
+    except Exception as exc:
+        _raise_user_facing_mail_error(exc)
 
 
 def send_email_with_attachment(
@@ -352,8 +432,7 @@ def send_email_with_attachment(
     from_email = (smtp_settings.get("from_email") or smtp_settings.get("username") or "").strip()
     from_name = (smtp_settings.get("from_name") or "").strip()
 
-    if not from_email:
-        raise ValueError("Absender-E-Mail fehlt in den SMTP-Einstellungen.")
+    from_email = validate_sender_email(from_email)
 
     msg = EmailMessage()
     msg["From"] = _build_from_header(from_email, from_name)
@@ -381,18 +460,21 @@ def send_email_with_attachment(
     if not host or not port:
         raise ValueError("SMTP Server und Port müssen ausgefüllt werden.")
 
-    if security == "ssl":
-        with smtplib.SMTP_SSL(host, port, timeout=timeout, context=ssl.create_default_context()) as server:
-            if username:
-                server.login(username, password)
-            server.send_message(msg)
-    else:
-        with smtplib.SMTP(host, port, timeout=timeout) as server:
-            if security == "tls":
-                server.starttls(context=ssl.create_default_context())
-            if username:
-                server.login(username, password)
-            server.send_message(msg)
+    try:
+        if security == "ssl":
+            with smtplib.SMTP_SSL(host, port, timeout=timeout, context=ssl.create_default_context()) as server:
+                if username:
+                    server.login(username, password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(host, port, timeout=timeout) as server:
+                if security == "tls":
+                    server.starttls(context=ssl.create_default_context())
+                if username:
+                    server.login(username, password)
+                server.send_message(msg)
+    except Exception as exc:
+        _raise_user_facing_mail_error(exc)
 
 
 def send_outlook_email(

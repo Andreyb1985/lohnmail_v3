@@ -34,6 +34,8 @@
     "last_pdf_dir": "",
     "last_pdf_input_mode": "folder",
     "last_excel_file": "",
+    "last_pdf_dialog_dir": "",
+    "last_excel_dialog_dir": "",
     "window_width": 1100,
     "window_height": 720
   },

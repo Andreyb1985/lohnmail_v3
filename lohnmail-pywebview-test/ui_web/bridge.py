@@ -17,12 +17,14 @@ from ui_web.bridge_compat import QObject, Signal, Slot, QWidget
 from openpyxl import load_workbook
 
 from core.config import (
+    BASE_DIR,
     COMPANIES_DIR,
     GESOB_DIR,
     LEGACY_GESOB_DIR,
     LEGACY_SETTINGS_DIR,
     SETTINGS_DIR,
     company_output_dir,
+    delete_company_smtp_secret,
     get_company_email_excel_file,
     get_company_name,
     load_settings,
@@ -218,7 +220,7 @@ class WebBridge(QObject):
         self._shipping_running = False
         self._shipping_status = self._idle_shipping_status()
         self._shipping_company_id = ""
-        self._shipping_input_signature: tuple[str, str, str, str] | None = None
+        self._shipping_input_signature: tuple[str, ...] | None = None
         self._shipping_rows: list[dict] = []
         self._shipping_source_rows: list[dict] = []
         self._mass_message_running = False
@@ -682,6 +684,14 @@ class WebBridge(QObject):
             if "password" in smtp_data and str(smtp_data.get("password") or ""):
                 smtp["password"] = str(smtp_data.get("password") or "")
 
+            if mail_scope == "custom" and any(
+                str(smtp.get(key, "") or "").strip()
+                for key in ("server", "username", "from_email")
+            ):
+                from core.mailer import validate_sender_email
+
+                validate_sender_email(str(smtp.get("from_email") or smtp.get("username") or ""))
+
             save_settings(settings)
             settings = load_settings()
             self.processingStateChanged.emit(json.dumps(self._processing_payload(settings), ensure_ascii=False))
@@ -868,6 +878,14 @@ class WebBridge(QObject):
                 smtp["timeout_sec"] = max(5, min(300, int(smtp_data.get("timeout_sec") or 30)))
             if "password" in smtp_data and str(smtp_data.get("password") or ""):
                 smtp["password"] = str(smtp_data.get("password") or "")
+
+            if any(
+                str(smtp.get(key, "") or "").strip()
+                for key in ("server", "username", "from_email")
+            ):
+                from core.mailer import validate_sender_email
+
+                validate_sender_email(str(smtp.get("from_email") or smtp.get("username") or ""))
 
             text_data = data.get("mail_text") if isinstance(data.get("mail_text"), dict) else {}
             for key in ["subject", "body", "body_html"]:
@@ -1068,6 +1086,7 @@ class WebBridge(QObject):
                 settings["selected_company_id"] = str(companies[next_index].get("id", "") or "").strip()
 
             save_settings(settings)
+            delete_company_smtp_secret(requested_id)
             settings = load_settings()
             self._reset_workflow_state()
             self.processingStateChanged.emit(json.dumps(self._processing_payload(settings), ensure_ascii=False))
@@ -1342,7 +1361,7 @@ class WebBridge(QObject):
                 raise ValueError("Bitte warten, bis der aktuelle Lauf abgeschlossen ist.")
             if (
                 self._shipping_company_id != company_id
-                or self._shipping_input_signature != self._input_signature(settings)
+                or self._shipping_input_signature != self._shipping_signature(settings)
             ):
                 raise ValueError("Die Versandvorbereitung gehört nicht zum aktiven Mandanten. Bitte Versand erneut vorbereiten.")
             if not self._shipping_status.get("finished") or self._shipping_status.get("dry_run") is not True or not rows:
@@ -1450,6 +1469,7 @@ class WebBridge(QObject):
             return self._emit_shipping_payload(settings)
 
         current_input_signature = self._input_signature(settings)
+        current_shipping_signature = self._shipping_signature(settings)
         if self._validation_input_signature != current_input_signature:
             self._shipping_status = {
                 **self._idle_shipping_status(),
@@ -1462,7 +1482,7 @@ class WebBridge(QObject):
 
         if not dry_run and (
             self._shipping_company_id != company_id
-            or self._shipping_input_signature != current_input_signature
+            or self._shipping_input_signature != current_shipping_signature
             or not self._shipping_status.get("finished")
             or self._shipping_status.get("dry_run") is not True
             or not self._shipping_source_rows
@@ -1497,7 +1517,7 @@ class WebBridge(QObject):
             self._shipping_rows = []
             self._shipping_source_rows = []
         self._shipping_company_id = company_id
-        self._shipping_input_signature = current_input_signature
+        self._shipping_input_signature = current_shipping_signature
         self._shipping_running = True
         self._shipping_status = {
             **self._idle_shipping_status(),
@@ -1589,10 +1609,11 @@ class WebBridge(QObject):
     def _shipping_payload(self, settings: dict) -> dict:
         company_id = self._active_company_id(settings)
         current_input_signature = self._input_signature(settings)
+        current_shipping_signature = self._shipping_signature(settings)
         shipping_matches = bool(
             company_id
             and self._shipping_company_id == company_id
-            and self._shipping_input_signature == current_input_signature
+            and self._shipping_input_signature == current_shipping_signature
         )
         validation_matches = bool(
             company_id
@@ -1745,10 +1766,11 @@ class WebBridge(QObject):
         if not state:
             return
 
-        def signature(key: str) -> tuple[str, str, str, str] | None:
+        def signature(key: str) -> tuple[str, ...] | None:
             value = state.get(key)
-            if isinstance(value, list) and len(value) == 4:
-                return tuple(str(item or "") for item in value)  # type: ignore[return-value]
+            expected_length = 5 if key == "shipping_input_signature" else 4
+            if isinstance(value, list) and len(value) == expected_length:
+                return tuple(str(item or "") for item in value)
             return None
 
         self._processing_company_id = str(state.get("processing_company_id") or "")
@@ -1812,6 +1834,23 @@ class WebBridge(QObject):
             str(pdf_input.resolve(strict=False)) if pdf_input else "",
             str(excel_input.resolve(strict=False)) if excel_input else "",
         )
+
+    def _shipping_signature(self, settings: dict) -> tuple[str, ...]:
+        effective = self._settings_with_company_mail(settings)
+        smtp = effective.get("smtp", {}) if isinstance(effective.get("smtp"), dict) else {}
+        identity = {
+            "mail_mode": str(effective.get("mail_mode", "smtp") or "smtp").strip().lower(),
+            "server": str(smtp.get("server", "") or "").strip(),
+            "port": int(smtp.get("port", 0) or 0),
+            "security": str(smtp.get("security", "") or "").strip().lower(),
+            "username": str(smtp.get("username", "") or "").strip(),
+            "from_email": str(smtp.get("from_email", "") or "").strip().lower(),
+            "from_name": str(smtp.get("from_name", "") or "").strip(),
+        }
+        digest = hashlib.sha256(
+            json.dumps(identity, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        return (*self._input_signature(effective), digest)
 
     @staticmethod
     def _company_mail_settings(company: dict | None) -> dict:
@@ -1948,6 +1987,7 @@ class WebBridge(QObject):
             "company": licensee.get("name") or str(state.get("company_name", "") or "") or "-",
             "licensee": licensee,
             "machine_id": str(state.get("machine_id", "") or ""),
+            "licensed_machine_id": str(state.get("licensed_machine_id", "") or ""),
             "days_remaining": state.get("days_remaining"),
             "trial_ends_at": "" if license_problem else trial_ends_at,
             "current_period_end": "" if license_problem else current_period_end,
@@ -2049,6 +2089,8 @@ class WebBridge(QObject):
             return "Widerrufen"
         if status == "invalid":
             return "Ungültig"
+        if status == "device_mismatch":
+            return "Anderer Computer"
         if status == "license_problem":
             suffix = f" · {days} Tage Übergangsfrist" if days is not None else ""
             return f"Lizenzproblem{suffix}"
@@ -2060,7 +2102,7 @@ class WebBridge(QObject):
 
     @staticmethod
     def _license_status_level(status: str, active: bool, server_url: str) -> str:
-        if status in {"past_due", "expired", "unpaid", "canceled", "refunded", "disputed", "revoked", "invalid"}:
+        if status in {"past_due", "expired", "unpaid", "canceled", "refunded", "disputed", "revoked", "invalid", "device_mismatch"}:
             return "error"
         if status in {"expiring_soon", "no_connection", "license_problem"}:
             return "warning"
@@ -2084,6 +2126,7 @@ class WebBridge(QObject):
             "disputed": "Zahlung angefochten. Lizenz gesperrt.",
             "revoked": "Lizenz wurde widerrufen.",
             "invalid": "Lizenz ist ungültig oder an einen anderen Computer gebunden.",
+            "device_mismatch": "Diese Lizenz ist an einen anderen Computer gebunden. Bitte wenden Sie sich an den LohnMail-Support.",
             "license_problem": str(state.get("last_message", "") or "Lizenz nicht gefunden. Bitte aktivieren Sie innerhalb von 14 Tagen eine neue Lizenz."),
             "no_connection": "Lizenzserver nicht erreichbar. Offline-Gnadenfrist wird geprüft.",
             "unregistered": "Keine Lizenz hinterlegt.",
@@ -2104,6 +2147,7 @@ class WebBridge(QObject):
             ("disputed", "Angefochten", "error"),
             ("revoked", "Widerrufen", "error"),
             ("invalid", "Ungültig", "error"),
+            ("device_mismatch", "Anderer Computer", "error"),
             ("license_problem", "Lizenzproblem", "warning"),
             ("no_connection", "Keine Verbindung", "warning"),
         ]
@@ -2222,6 +2266,17 @@ class WebBridge(QObject):
         recipients = load_mass_message_rows(excel_path)
         if not recipients:
             raise ValueError("In der Excel-Datei wurden keine E-Mail-Adressen gefunden.")
+        invalid = [row for row in recipients if not row.get("EmailValidationSendable")]
+        if invalid:
+            counts: dict[str, int] = {}
+            for row in invalid:
+                label = str(row.get("EmailValidationLabel") or "Ungültige E-Mail")
+                counts[label] = counts.get(label, 0) + 1
+            details = ", ".join(f"{label}: {count}" for label, count in sorted(counts.items()))
+            raise ValueError(
+                f"Massennachricht ist blockiert: {len(invalid)} ungültige oder doppelte E-Mail-Adresse(n) "
+                f"({details}). Bitte Excel-Datei korrigieren und Vorschau neu laden."
+            )
 
         sample_persnr = str(recipients[0].get("PersNr", "") or "")
         context = build_mail_context(settings, sample_persnr, company_id=company_id)
@@ -2265,7 +2320,7 @@ class WebBridge(QObject):
         settings = self._settings_with_company_mail(load_settings())
         if (
             self._shipping_company_id != self._active_company_id(settings)
-            or self._shipping_input_signature != self._input_signature(settings)
+            or self._shipping_input_signature != self._shipping_signature(settings)
         ):
             return
         if isinstance(message, dict) and message.get("kind") == "shipping_progress":
@@ -2350,7 +2405,7 @@ class WebBridge(QObject):
         settings = self._settings_with_company_mail(load_settings())
         if (
             self._shipping_company_id != self._active_company_id(settings)
-            or self._shipping_input_signature != self._input_signature(settings)
+            or self._shipping_input_signature != self._shipping_signature(settings)
         ):
             self._shipping_running = False
             self._shipping_status = self._idle_shipping_status()
@@ -2379,18 +2434,40 @@ class WebBridge(QObject):
         self._shipping_running = False
         self._shipping_source_rows = [row for row in table_rows if isinstance(row, dict)]
         self._shipping_rows = [self._shipping_row(row) for row in table_rows if isinstance(row, dict)]
+        failed_count = int(summary.get("failed_count", 0) or 0)
+        if dry_run:
+            current_step = "Dry-Run abgeschlossen"
+            message = "Versand-Dry-Run abgeschlossen. Anhänge und Bericht wurden erstellt."
+            finished = True
+            failed = False
+        elif failed_count and completed_count:
+            current_step = "Versand teilweise abgeschlossen"
+            message = f"{completed_count} E-Mails wurden gesendet, {failed_count} konnten nicht gesendet werden."
+            finished = True
+            failed = False
+        elif failed_count:
+            current_step = "Versand fehlgeschlagen"
+            message = f"Keine E-Mail wurde gesendet. {failed_count} Versandfehler. Bitte Fehlerdetails prüfen."
+            finished = False
+            failed = True
+        else:
+            current_step = "Versand abgeschlossen"
+            message = f"Versand abgeschlossen. {completed_count} E-Mails wurden gesendet."
+            finished = True
+            failed = False
         self._shipping_status = {
             **self._idle_shipping_status(),
-            "finished": True,
+            "finished": finished,
+            "failed": failed,
             "can_send": True,
-            "current_step": "Dry-Run abgeschlossen" if dry_run else "Versand abgeschlossen",
+            "current_step": current_step,
             "progress": 100,
             "dry_run": dry_run,
             "prepared": completed_count if dry_run else 0,
             "sent": 0 if dry_run else completed_count,
             "skipped": int(summary.get("skipped_count", 0) or 0),
-            "errors": int(summary.get("failed_count", 0) or 0),
-            "message": "Versand-Dry-Run abgeschlossen. Anhänge und Bericht wurden erstellt." if dry_run else f"Versand abgeschlossen. {completed_count} E-Mails wurden gesendet.",
+            "errors": failed_count,
+            "message": message,
             "reports": {
                 "send_report_path": str(result.get("send_report_path") or ""),
                 "run_dir": str(result.get("run_dir") or ""),
@@ -2450,7 +2527,7 @@ class WebBridge(QObject):
         settings = self._settings_with_company_mail(load_settings())
         if (
             self._shipping_company_id != self._active_company_id(settings)
-            or self._shipping_input_signature != self._input_signature(settings)
+            or self._shipping_input_signature != self._shipping_signature(settings)
         ):
             self._shipping_running = False
             self._shipping_status = self._idle_shipping_status()
@@ -2835,7 +2912,7 @@ class WebBridge(QObject):
     @staticmethod
     def _dialog_start_path(raw_path: str) -> str:
         if not raw_path:
-            return str(Path.home())
+            return str(BASE_DIR.parent if BASE_DIR.name.casefold() == "app" else BASE_DIR)
         path = Path(raw_path).expanduser()
         if path.is_file():
             return str(path.parent)
@@ -2844,7 +2921,7 @@ class WebBridge(QObject):
         for parent in path.parents:
             if parent.exists() and parent.is_dir():
                 return str(parent)
-        return str(Path.home())
+        return str(BASE_DIR.parent if BASE_DIR.name.casefold() == "app" else BASE_DIR)
 
     @staticmethod
     def _empty_report_state(filename: str) -> dict[str, str | bool]:
@@ -3328,6 +3405,7 @@ class WebBridge(QObject):
     ) -> dict[str, str | bool]:
         company_id = self._active_company_id(settings)
         input_signature = self._input_signature(settings)
+        shipping_signature = self._shipping_signature(settings)
         if (
             filename in {"audit_check.xlsx", "ohne_email_gesamt.pdf"}
             and self._validation_company_id == company_id
@@ -3339,7 +3417,7 @@ class WebBridge(QObject):
         if (
             filename == "send_report.xlsx"
             and self._shipping_company_id == company_id
-            and self._shipping_input_signature == input_signature
+            and self._shipping_input_signature == shipping_signature
         ):
             raw_path = self._shipping_status.get("reports", {}).get("send_report_path", "")
             return self._report_state_from_path(str(raw_path or ""), filename)

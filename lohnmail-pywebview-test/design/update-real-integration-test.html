@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LohnMail – realer Update-UI-Test</title>
+  <style>
+    html,body,iframe{width:100%;height:100%;margin:0;border:0;background:#f4f7fa}
+  </style>
+</head>
+<body>
+  <iframe id="app" src="../web/index.html" title="LohnMail Update Integration Test"></iframe>
+  <script>
+    const frame = document.getElementById('app');
+    const scenario = new URLSearchParams(location.search).get('scenario') || 'success';
+    const available = {
+      status: 'available', installed_version: '2.0.1', installed_build: '2026.08.30.1',
+      available_version: '2.0.2', available_build: '2026.08.31.1', install_supported: true,
+      total_bytes: 1720112, downloaded_bytes: 0, progress: 0, test_mode: true,
+      release_notes: ['Neuer integrierter Update-Ablauf', 'SQLite-Prüfung und automatischer Rollback'],
+      message: 'Version 2.0.2 ist verfügbar.'
+    };
+    frame.addEventListener('load', function(){
+      const app = frame.contentWindow;
+      app.lohnmailBridge = {
+        navigate: function(){},
+        checkForUpdates: function(callback){ window.setTimeout(function(){ callback(available); }, 80); },
+        downloadUpdate: function(callback){
+          let progress = 0;
+          const timer = window.setInterval(function(){
+            progress += 25;
+            callback(Object.assign({}, available, {
+              status: progress === 100 ? 'ready' : 'downloading',
+              progress: progress,
+              downloaded_bytes: Math.round(available.total_bytes * progress / 100),
+              message: progress === 100 ? 'Update wurde geprüft und ist zur Installation bereit.' : 'Update wird heruntergeladen.'
+            }));
+            if (progress === 100) window.clearInterval(timer);
+          }, 60);
+        },
+        installUpdateNow: function(callback){
+          if (scenario === 'sqlite') {
+            callback({started:false,message:'Die lokale Berichtshistorie konnte nicht geprüft werden. LohnMail bleibt geöffnet und es wurden keine Dateien verändert.'});
+            return;
+          }
+          callback({started:true});
+          window.setTimeout(function(){
+            if (scenario === 'rollback') {
+              app.lohnmailApplyUpdateState(Object.assign({}, available, {
+                status:'error', message:'Die vorherige Version wurde wiederhergestellt. Rollback abgeschlossen.'
+              }));
+              return;
+            }
+            app.lohnmailApplyUpdateState({
+              status:'current', installed_version:'2.0.2', installed_build:'2026.08.31.1',
+              available_version:'', available_build:'', progress:100,
+              message:'Update auf Version 2.0.2 wurde erfolgreich installiert.'
+            });
+          }, 120);
+        }
+      };
+      app.lohnmailApplyUpdateState({
+        status: scenario === '403' ? 'error' : 'idle',
+        installed_version:'2.0.1', installed_build:'2026.08.30.1', install_supported:true,
+        last_checked_at:'', available_version:'', available_build:'', progress:0,
+        message: scenario === '403'
+          ? 'Die Update-Prüfung konnte nicht durchgeführt werden. Der Zugriff wurde vom Netzwerk oder Update-Server abgelehnt. Bitte prüfen Sie Firewall oder Proxy und versuchen Sie es erneut.'
+          : ''
+      });
+    });
+  </script>
+</body>
+</html>

@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Callable
 
 from .config import company_output_dir, get_company_name
+from .email_validation import validate_email_records
 from .excel_io import load_email_records
 from .message_templates import build_mail_context, format_message_template
 from .orchestrator import action_check, action_send
@@ -14,17 +15,46 @@ def _emit_progress(progress_cb: ProgressCb, message: str) -> None:
         progress_cb(message)
 
 
-def load_mass_message_rows(excel_path: Path) -> list[dict[str, str]]:
+def load_mass_message_rows(excel_path: Path) -> list[dict]:
     email_records = load_email_records(excel_path)
-    return [
-        {
+    validations = validate_email_records(email_records)
+    rows = []
+    for persnr, record in sorted(email_records.items()):
+        email = str(record.get("Email", "") or "").strip()
+        if not email:
+            continue
+        validation = validations.get(persnr, {})
+        rows.append({
             "PersNr": persnr,
             "Name": str(record.get("Name", "") or ""),
             "Vorname": str(record.get("Vorname", "") or ""),
-            "Email": str(record.get("Email", "") or ""),
+            "Email": email,
+            "EmailValidationCode": str(validation.get("code", "") or ""),
+            "EmailValidationLabel": str(validation.get("label", "") or ""),
+            "EmailValidationHint": str(validation.get("hint", "") or ""),
+            "EmailValidationSendable": bool(validation.get("sendable", False)),
+        })
+    return rows
+
+
+def validate_mass_message_recipients(recipients: list[dict], *, check_dns: bool) -> list[dict]:
+    records = {
+        str(index): {
+            "Email": str(row.get("Email", "") or "").strip(),
+            "ExcelRow": index + 1,
         }
-        for persnr, record in sorted(email_records.items())
-        if str(record.get("Email", "") or "").strip()
+        for index, row in enumerate(recipients)
+    }
+    validations = validate_email_records(records, check_dns=check_dns)
+    return [
+        {
+            **row,
+            "EmailValidationCode": str(validations[str(index)].get("code", "") or ""),
+            "EmailValidationLabel": str(validations[str(index)].get("label", "") or ""),
+            "EmailValidationHint": str(validations[str(index)].get("hint", "") or ""),
+            "EmailValidationSendable": bool(validations[str(index)].get("sendable", False)),
+        }
+        for index, row in enumerate(recipients)
     ]
 
 
@@ -67,6 +97,15 @@ def run_mass_message_job(
 ) -> dict:
     if not recipients:
         raise ValueError("Keine Empfänger vorhanden.")
+
+    recipients = validate_mass_message_recipients(recipients, check_dns=False)
+    invalid = [row for row in recipients if not row.get("EmailValidationSendable")]
+    if invalid:
+        labels = sorted({str(row.get("EmailValidationLabel") or "Ungültige E-Mail") for row in invalid})
+        raise ValueError(
+            f"Massennachricht wurde nicht gestartet: {len(invalid)} ungültige oder doppelte E-Mail-Adresse(n) "
+            f"({', '.join(labels)}). Bitte Excel-Datei korrigieren und Vorschau neu laden."
+        )
 
     mail_mode = str(settings.get("mail_mode", "smtp") or "smtp").strip().lower()
     smtp_settings = settings.get("smtp", {})
@@ -113,8 +152,11 @@ def run_mass_message_job(
             sent_count += 1
             _emit_progress(progress_cb, f"Nachricht gesendet ({index}/{total_count}): {persnr} -> {email}")
         except Exception as exc:
-            errors.append({"PersNr": persnr, "Email": email, "Error": str(exc)})
-            _emit_progress(progress_cb, f"Fehler ({index}/{total_count}): {persnr} -> {email}: {exc}")
+            from .mailer import user_facing_mail_error
+
+            message = user_facing_mail_error(exc)
+            errors.append({"PersNr": persnr, "Email": email, "Error": message})
+            _emit_progress(progress_cb, f"Fehler ({index}/{total_count}): {persnr} -> {email}: {message}")
 
     return {
         "mode": "mass_message",

@@ -187,9 +187,19 @@ ul, ol {
 <ul>
   <li><b>Versandmethode:</b> <code>SMTP</code> oder <code>Outlook Classic</code>.</li>
   <li><b>SMTP Server / Port / Sicherheit / Benutzer / Passwort / Timeout:</b> nur f&uuml;r SMTP-Versand.</li>
-  <li><b>Absender E-Mail:</b> Absenderadresse f&uuml;r SMTP oder Kennung des Outlook-Classic-Kontos.</li>
+  <li><b>Absender E-Mail:</b> F&uuml;r SMTP immer eine vollst&auml;ndige Adresse mit <code>@</code> und Domain eintragen, z.&nbsp;B. <code>lohnbuchhaltung@firma.de</code>. Ein Eintrag wie <code>lohnbuchhaltung</code> ist ung&uuml;ltig.</li>
   <li><b>Outlook-Classic-Konto:</b> auf Windows k&ouml;nnen gefundene Konten geladen und ausgew&auml;hlt werden.</li>
   <li><b>Absender Name:</b> erscheint im Absender und steht als Platzhalter <code>{from_name}</code> zur Verf&uuml;gung.</li>
+</ul>
+
+<h3>Globale und mandanteneigene Mail-Einstellungen</h3>
+<ul>
+  <li><b>Globale E-Mail Einstellungen verwenden:</b> Der Mandant verwendet die SMTP-/Outlook-Daten aus <b>Einstellungen &gt; E-Mail</b>.</li>
+  <li><b>Eigene SMTP Einstellungen:</b> Die SMTP-Daten in <b>Unternehmen</b> gelten nur f&uuml;r diesen Mandanten und ersetzen dort die globalen Werte.</li>
+  <li>Nach dem Umschalten oder Bearbeiten immer <b>&Auml;nderungen speichern</b> bzw. <b>E-Mail speichern</b> klicken.</li>
+  <li>Testen Sie globale Daten mit <b>Verbindung testen</b> und eigene Mandantendaten mit <b>Mandant SMTP testen</b>.</li>
+  <li>Nach einer &Auml;nderung der Versandmethode oder SMTP-Daten den Versand erneut vorbereiten. So verwenden Vorschau und echter Versand dieselben Einstellungen.</li>
+  <li>Eine erfolgreiche Verbindungspr&uuml;fung best&auml;tigt Server, TLS und Anmeldung. Die tats&auml;chliche Annahme jeder Nachricht steht im <code>send_report.xlsx</code>.</li>
 </ul>
 
 <h3>Outlook-Classic-Versand mit mehreren Konten</h3>
@@ -273,7 +283,8 @@ ul, ol {
 <ul>
   <li>Es werden <b>keine PDF-Anh&auml;nge</b> mitgesendet.</li>
   <li>Empf&auml;nger kommen aus der Excel-Datei des gew&auml;hlten Unternehmens.</li>
-  <li>Es werden nur Zeilen mit E-Mail-Adresse verwendet.</li>
+  <li>Es werden nur Zeilen mit E-Mail-Adresse verwendet. Format, Domain/MX und doppelte Adressen werden vor der Vorschau geprüft.</li>
+  <li>Bei einer ungültigen oder doppelten Adresse bleibt die gesamte Massennachricht blockiert, bis die Excel-Datei korrigiert und die Vorschau neu geladen wurde.</li>
   <li>Vor dem Start sehen Sie eine Vorschau von Betreff, Nachricht und Empf&auml;ngerliste.</li>
   <li>F&uuml;r diese Funktion gibt es keinen separaten Dry-Run-Modus.</li>
 </ul>
@@ -342,6 +353,10 @@ ul, ol {
   <tr>
     <td><b>SMTP-Verbindung fehlgeschlagen</b></td>
     <td>Pr&uuml;fen Sie Server, Port, Sicherheit, Benutzername, Passwort und ob Ihr Mailserver SMTP-Verbindungen zul&auml;sst.</td>
+  </tr>
+  <tr>
+    <td><b>sender address must contain a domain</b></td>
+    <td>Die Absenderadresse ist unvollst&auml;ndig. Tragen Sie unter <b>Absender E-Mail</b> die vollst&auml;ndige Adresse ein, z.&nbsp;B. <code>lohnbuchhaltung@firma.de</code>, speichern Sie und bereiten Sie den Versand erneut vor.</td>
   </tr>
 </table>
 

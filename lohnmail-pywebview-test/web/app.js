@@ -50,8 +50,8 @@
   var latestSettingsState = null;
   var UPDATE_STORAGE_KEY = 'lohnmail.update-ui.v1';
   var latestUpdateState = {
-    installed_version: '2.0.0',
-    installed_build: '2025.05.15',
+    installed_version: '2.0.3',
+    installed_build: '2026.09.01.2',
     last_checked_at: '',
     auto_check: true,
     status: 'idle',
@@ -76,13 +76,11 @@
   var currentHelpTopic = 'all';
   var helpSearchQuery = '';
   var helpShowAll = false;
+  var appDialogConfirm = null;
+  var appDialogCancel = null;
   function applyBrandLogoVariant(){
-    var params = new URLSearchParams(window.location.search);
-    var variant = params.get('logo') === 'current' ? 'current' : 'previous';
-    var source = variant === 'previous'
-      ? 'assets/brand/lohnmail-app-icon-previous.png'
-      : 'assets/brand/lohnmail-app-icon.png';
-    document.documentElement.setAttribute('data-logo-variant', variant);
+    var source = 'assets/brand/lohnmail-app-icon-previous.png';
+    document.documentElement.setAttribute('data-logo-variant', 'production');
     document.querySelectorAll('[data-brand-logo]').forEach(function(image){
       image.setAttribute('src', source);
     });
@@ -97,7 +95,7 @@
     }
   }
   function normalizeUpdateStatus(value){
-    var allowed = ['idle', 'checking', 'current', 'available', 'downloading', 'ready', 'required', 'error'];
+    var allowed = ['idle', 'checking', 'current', 'available', 'downloading', 'ready', 'installing', 'required', 'error'];
     var normalized = String(value || 'idle').toLowerCase();
     return allowed.indexOf(normalized) === -1 ? 'idle' : normalized;
   }
@@ -116,6 +114,36 @@
     if (!bytes) return '0 MB';
     if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0) + ' MB';
+  }
+  function closeAppDialog(confirmed){
+    var modal = document.querySelector('[data-app-dialog]');
+    if (modal) modal.hidden = true;
+    var callback = confirmed ? appDialogConfirm : appDialogCancel;
+    appDialogConfirm = null;
+    appDialogCancel = null;
+    if (typeof callback === 'function') callback();
+  }
+  function openAppDialog(options){
+    options = options || {};
+    var modal = document.querySelector('[data-app-dialog]');
+    if (!modal) {
+      if (typeof options.onConfirm === 'function') options.onConfirm();
+      return;
+    }
+    setText('[data-app-dialog-kicker]', options.kicker || 'LohnMail');
+    setText('[data-app-dialog-title]', options.title || 'Hinweis');
+    setText('[data-app-dialog-message]', options.message || '');
+    var confirmButton = modal.querySelector('[data-app-dialog-action="confirm"]');
+    var cancelButton = modal.querySelector('.license-validation-modal-actions [data-app-dialog-action="cancel"]');
+    if (confirmButton) confirmButton.textContent = options.confirmLabel || 'OK';
+    if (cancelButton) {
+      cancelButton.textContent = options.cancelLabel || 'Abbrechen';
+      cancelButton.hidden = options.cancelable === false;
+    }
+    appDialogConfirm = options.onConfirm || null;
+    appDialogCancel = options.onCancel || null;
+    modal.hidden = false;
+    if (confirmButton) window.setTimeout(function(){ confirmButton.focus(); }, 0);
   }
   function loadUpdatePreferences(){
     try {
@@ -145,17 +173,73 @@
   }
   function updateStatusCopy(state){
     var version = state.available_version ? 'Version ' + state.available_version : 'Eine neue Version';
+    var message = String(state.message || '');
+    var normalizedMessage = message.toLowerCase();
+    var errorTitle = 'Update-Prüfung nicht verfügbar';
+    if (normalizedMessage.indexOf('wiederhergestellt') !== -1 || normalizedMessage.indexOf('rollback') !== -1) {
+      errorTitle = 'Vorherige Version wiederhergestellt';
+    } else if (normalizedMessage.indexOf('sqlite') !== -1 || normalizedMessage.indexOf('berichtshistorie') !== -1 || normalizedMessage.indexOf('lokale historie') !== -1) {
+      errorTitle = 'Lokale Daten konnten nicht geprüft werden';
+    } else if (normalizedMessage.indexOf('zugriff') !== -1 || normalizedMessage.indexOf('firewall') !== -1 || normalizedMessage.indexOf('proxy') !== -1) {
+      errorTitle = 'Zugriff auf den Update-Server nicht möglich';
+    }
     var copies = {
-      idle: ['Noch nicht geprüft', 'Die Update-Schnittstelle ist für den Desktop-Updater vorbereitet.'],
+      idle: ['Noch nicht geprüft', 'Starten Sie die manuelle Update-Prüfung.'],
       checking: ['Suche läuft...', 'Der Update-Dienst wird nach einer neueren Version gefragt.'],
       current: ['LohnMail ist aktuell', 'Für diese Installation ist kein neueres Update verfügbar.'],
       available: ['Update verfügbar', version + ' kann heruntergeladen werden.'],
       downloading: ['Download läuft', version + ' wird sicher heruntergeladen.'],
-      ready: ['Bereit zur Installation', version + ' wurde heruntergeladen.'],
+      ready: state.preflight_error
+        ? ['Lokale Daten konnten nicht geprüft werden', state.preflight_error]
+        : ['Bereit zur Installation', version + ' wurde heruntergeladen und geprüft.'],
+      installing: ['Installation wird gestartet', 'LohnMail wird geschlossen und anschließend neu gestartet.'],
       required: ['Kritisches Update erforderlich', version + ' behebt eine kritische Sicherheitslücke oder technische Inkompatibilität.'],
-      error: ['Prüfung nicht verfügbar', state.message || 'Der Update-Dienst ist derzeit nicht erreichbar.']
+      error: [errorTitle, message || 'Der Update-Dienst ist derzeit nicht erreichbar.']
     };
     return copies[normalizeUpdateStatus(state.status)] || copies.idle;
+  }
+  function renderUpdateFlow(state){
+    var keys = ['check', 'download', 'preflight', 'backup', 'install', 'verify', 'restart'];
+    var status = normalizeUpdateStatus(state.status);
+    var message = String(state.message || '').toLowerCase();
+    var activeIndex = -1;
+    var doneThrough = -1;
+    var errorIndex = -1;
+    if (status === 'idle' || status === 'checking') activeIndex = 0;
+    else if (status === 'available' || status === 'required' || status === 'downloading') {
+      doneThrough = 0;
+      activeIndex = 1;
+    } else if (status === 'ready') {
+      doneThrough = 1;
+      if (state.preflight_error) errorIndex = 2;
+      else activeIndex = 2;
+    } else if (status === 'installing') {
+      doneThrough = 1;
+      activeIndex = 2;
+    } else if (status === 'current') {
+      if (message.indexOf('erfolgreich installiert') !== -1) doneThrough = keys.length - 1;
+      else doneThrough = 0;
+    } else if (status === 'error') {
+      if (message.indexOf('wiederhergestellt') !== -1 || message.indexOf('rollback') !== -1) {
+        doneThrough = 4;
+        errorIndex = 5;
+      } else if (message.indexOf('sqlite') !== -1 || message.indexOf('berichtshistorie') !== -1 || message.indexOf('lokale historie') !== -1) {
+        doneThrough = 1;
+        errorIndex = 2;
+      } else {
+        errorIndex = 0;
+      }
+    }
+    keys.forEach(function(key, index){
+      var node = document.querySelector('[data-update-step="' + key + '"]');
+      if (!node) return;
+      node.classList.remove('active', 'done', 'error');
+      if (index <= doneThrough) node.classList.add('done');
+      if (index === activeIndex) node.classList.add('active');
+      if (index === errorIndex) node.classList.add('error');
+      var marker = node.firstElementChild;
+      if (marker) marker.textContent = index <= doneThrough ? '✓' : (index === errorIndex ? '×' : String(index + 1));
+    });
   }
   function setButtonLabel(button, label){
     if (!button) return;
@@ -174,7 +258,7 @@
     var state = latestUpdateState;
     var status = normalizeUpdateStatus(state.status);
     var copy = updateStatusCopy(state);
-    setText('[data-update="installed-version"]', 'v' + String(state.installed_version || '2.0.0').replace(/^v/i, ''));
+    setText('[data-update="installed-version"]', 'v' + String(state.installed_version || '2.0.3').replace(/^v/i, ''));
     setText('[data-update="installed-build"]', 'Build ' + (state.installed_build || '-'));
     setText('[data-update="last-checked"]', state.last_checked_at ? formatDateTime(state.last_checked_at) : 'Noch nicht geprüft');
     setText('[data-update="status-title"]', copy[0]);
@@ -182,25 +266,41 @@
 
     var badge = document.querySelector('[data-update="badge"]');
     if (badge) {
-      badge.className = 'update-status-badge ' + status;
+      badge.className = 'update-status-badge ' + (state.preflight_error ? 'error' : status);
       badge.textContent = copy[0];
     }
     var autoCheck = document.querySelector('[data-update-pref="auto-check"]');
     if (autoCheck) autoCheck.checked = state.auto_check !== false;
-    var installOnExit = document.querySelector('[data-update-pref="install-on-exit"]');
-    if (installOnExit) {
-      var installSupported = state.install_supported === true;
-      installOnExit.disabled = status !== 'ready' || !installSupported;
-      installOnExit.checked = installSupported && status === 'ready' && state.install_on_exit === true;
-      installOnExit.title = installSupported
-        ? ''
-        : 'Die automatische Installation ist nur in der Windows-App verfügbar.';
+    var primaryButton = document.querySelector('[data-update-action="primary"], [data-update-primary-action]');
+    if (primaryButton) {
+      var primaryAction = 'check';
+      var primaryLabel = 'Nach Updates suchen';
+      if (status === 'available' || status === 'required') {
+        primaryAction = 'download';
+        primaryLabel = 'Update herunterladen';
+      } else if (status === 'downloading') {
+        primaryAction = 'download';
+        primaryLabel = 'Download läuft...';
+      } else if (status === 'ready') {
+        primaryAction = 'install-now';
+        primaryLabel = state.preflight_error ? 'Erneut prüfen' : 'Schließen und aktualisieren';
+      } else if (status === 'checking') {
+        primaryLabel = 'Suche läuft...';
+      } else if (status === 'installing') {
+        primaryAction = 'install-now';
+        primaryLabel = 'Installation läuft...';
+      }
+      primaryButton.setAttribute('data-update-action', primaryAction);
+      primaryButton.setAttribute('data-update-primary-action', 'true');
+      setButtonLabel(primaryButton, primaryLabel);
+      primaryButton.disabled = status === 'checking' || status === 'downloading' || status === 'installing'
+        || ((primaryAction === 'download' || primaryAction === 'install-now') && state.install_supported !== true);
+      primaryButton.title = primaryButton.disabled && state.install_supported !== true
+        ? 'Updates werden in dieser Version nur unter Windows installiert.'
+        : '';
     }
-
-    var checkButton = document.querySelector('[data-update-action="check"]');
-    if (checkButton) checkButton.disabled = status === 'checking' || status === 'downloading';
     var download = document.querySelector('[data-update-download]');
-    if (download) download.hidden = !updateIsAvailable(state);
+    if (download) download.hidden = status !== 'downloading' && status !== 'ready';
     var progress = Math.max(0, Math.min(100, Number(state.progress || 0)));
     setText('[data-update="progress-text"]', Math.round(progress) + '%');
     var progressBar = document.querySelector('[data-update="progress-bar"]');
@@ -210,15 +310,6 @@
       ? formatUpdateBytes(state.downloaded_bytes) + ' von ' + formatUpdateBytes(state.total_bytes)
       : [state.available_version ? 'Version ' + state.available_version : '', state.available_build ? 'Build ' + state.available_build : ''].filter(Boolean).join(' · ');
     setText('[data-update="download-detail"]', downloadDetail || 'Download noch nicht gestartet');
-    var downloadButton = document.querySelector('[data-update-action="download"]');
-    if (downloadButton) {
-      setButtonLabel(downloadButton, status === 'ready' ? 'Heruntergeladen' : (status === 'downloading' ? 'Download läuft...' : 'Update herunterladen'));
-      downloadButton.disabled = status === 'downloading' || status === 'ready' || state.install_supported !== true;
-      downloadButton.title = state.install_supported === true
-        ? ''
-        : 'Updates werden in dieser Version nur unter Windows installiert.';
-    }
-
     setText('[data-update="release-version"]', state.available_version ? 'Version ' + state.available_version : 'Installierte Version ' + state.installed_version);
     var notes = document.querySelector('[data-update="release-notes"]');
     if (notes) {
@@ -233,6 +324,7 @@
       });
       notes.appendChild(list);
     }
+    renderUpdateFlow(state);
   }
   function applyUpdateState(payload){
     var next = parseUpdatePayload(payload);
@@ -257,6 +349,7 @@
     if (action === 'check') {
       latestUpdateState.status = 'checking';
       latestUpdateState.message = '';
+      latestUpdateState.preflight_error = '';
       renderUpdateSettings();
       if (bridge && typeof bridge.checkForUpdates === 'function') {
         bridge.checkForUpdates(function(payload){ applyUpdateState(payload); });
@@ -270,15 +363,68 @@
       return;
     }
     if (action === 'download') {
-      if (bridge && typeof bridge.downloadUpdate === 'function') {
-        applyUpdateState({ status: 'downloading', progress: 0, downloaded_bytes: 0 });
-        bridge.downloadUpdate(function(payload){ applyUpdateState(payload); });
-      } else {
-        latestUpdateState.message = 'Der Download-Dienst ist in dieser Build noch nicht verbunden.';
-        latestUpdateState.status = updateIsMandatory(latestUpdateState) ? 'required' : 'available';
-        saveUpdatePreferences();
-        renderUpdateSettings();
-      }
+      var versionLabel = latestUpdateState.available_version ? 'Version ' + latestUpdateState.available_version : 'das Update';
+      openAppDialog({
+        kicker: 'Softwareupdate',
+        title: 'Update herunterladen?',
+        message: versionLabel + ' wird heruntergeladen. Danach entscheiden Sie ausdrücklich, wann LohnMail geschlossen und aktualisiert wird.',
+        confirmLabel: 'Herunterladen',
+        cancelLabel: 'Später',
+        onConfirm: function(){
+          if (bridge && typeof bridge.downloadUpdate === 'function') {
+            applyUpdateState({ status: 'downloading', progress: 0, downloaded_bytes: 0 });
+            bridge.downloadUpdate(function(payload){ applyUpdateState(payload); });
+          } else {
+            latestUpdateState.message = 'Der Download-Dienst ist in dieser Build noch nicht verbunden.';
+            latestUpdateState.status = updateIsMandatory(latestUpdateState) ? 'required' : 'available';
+            saveUpdatePreferences();
+            renderUpdateSettings();
+          }
+        }
+      });
+      return;
+    }
+    if (action === 'install-now') {
+      openAppDialog({
+        kicker: 'Softwareupdate',
+        title: 'LohnMail schließen und aktualisieren?',
+        message: 'Settings, Unternehmen und Berichte bleiben unverändert. Vor der Installation werden die lokalen Daten geprüft. Bei einem Fehler wird die vorherige Programmversion wiederhergestellt.',
+        confirmLabel: 'Schließen und aktualisieren',
+        cancelLabel: 'Abbrechen',
+        onConfirm: function(){
+          if (bridge && typeof bridge.installUpdateNow === 'function') {
+            latestUpdateState.status = 'installing';
+            latestUpdateState.preflight_error = '';
+            latestUpdateState.message = 'Lokale Daten werden vor dem Schließen geprüft.';
+            renderUpdateSettings();
+            bridge.installUpdateNow(function(payload){
+              var result = parseUpdatePayload(payload);
+              if (result && result.started === false) {
+                latestUpdateState.status = 'ready';
+                latestUpdateState.preflight_error = result.message || 'Die lokalen Daten konnten nicht geprüft werden.';
+                latestUpdateState.message = latestUpdateState.preflight_error;
+                saveUpdatePreferences();
+                renderUpdateSettings();
+                openAppDialog({
+                  kicker: 'Softwareupdate',
+                  title: 'Update konnte nicht gestartet werden',
+                  message: result.message || 'Bitte versuchen Sie es erneut.',
+                  confirmLabel: 'OK',
+                  cancelable: false
+                });
+              }
+            });
+          } else {
+            openAppDialog({
+              kicker: 'Softwareupdate',
+              title: 'Installation nicht verfügbar',
+              message: 'Die Update-Installation ist in dieser Version nicht verfügbar.',
+              confirmLabel: 'OK',
+              cancelable: false
+            });
+          }
+        }
+      });
     }
   }
   function persistUpdatePreferences(){
@@ -442,35 +588,32 @@
     if (!node || value === undefined || value === null) return;
     var path = String(value || '-');
     node.title = path === '-' ? '' : path;
-    if (node.parentElement && node.parentElement.classList.contains('file-field')) {
-      node.textContent = '';
-      var fieldSeparatorIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-      if (path === '-' || fieldSeparatorIndex < 0) {
-        node.textContent = path;
-        return;
+    node.dataset.fullPath = path;
+    fitPathFromEnd(node, path, 0);
+  }
+  function fitPathFromEnd(node, path, attempt){
+    if (!node) return;
+    node.textContent = path;
+    if (!node.clientWidth) {
+      if (attempt < 3) window.setTimeout(function(){ fitPathFromEnd(node, path, attempt + 1); }, 60);
+      return;
+    }
+    if (node.scrollWidth <= node.clientWidth || path.length < 5) return;
+    var low = 1;
+    var high = path.length - 1;
+    var best = path.slice(-1);
+    while (low <= high) {
+      var count = Math.floor((low + high) / 2);
+      var candidate = '…' + path.slice(-count);
+      node.textContent = candidate;
+      if (node.scrollWidth <= node.clientWidth) {
+        best = path.slice(-count);
+        low = count + 1;
+      } else {
+        high = count - 1;
       }
-      var fieldDirectory = document.createElement('span');
-      fieldDirectory.className = 'file-path-directory';
-      fieldDirectory.textContent = path.slice(0, fieldSeparatorIndex);
-      var fieldFilename = document.createElement('span');
-      fieldFilename.className = 'file-path-filename';
-      fieldFilename.textContent = path.slice(fieldSeparatorIndex);
-      node.append(fieldDirectory, fieldFilename);
-      return;
     }
-    node.textContent = '';
-    var separatorIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-    if (path === '-' || separatorIndex < 0) {
-      node.textContent = path;
-      return;
-    }
-    var directory = document.createElement('span');
-    directory.className = 'company-path-directory';
-    directory.textContent = path.slice(0, separatorIndex);
-    var filename = document.createElement('span');
-    filename.className = 'company-path-filename';
-    filename.textContent = path.slice(separatorIndex);
-    node.append(directory, filename);
+    node.textContent = '…' + best;
   }
   function setLabeledIconText(selector, value){
     var node = document.querySelector(selector);
@@ -1163,6 +1306,9 @@
   function licenseWarningText(license){
     license = license || {};
     var status = String(license.status || '').toLowerCase();
+    if (status === 'device_mismatch') {
+      return { level: 'error', title: 'Anderer Computer erkannt', text: 'Diese Lizenz ist an einen anderen Computer gebunden. Bitte wenden Sie sich an den LohnMail-Support.' };
+    }
     if (status === 'past_due' || status === 'unpaid') {
       return { title: 'Lizenzzahlung offen', text: 'Bitte offene Rechnung begleichen oder Zahlungsdaten im Kundenportal prüfen.' };
     }
@@ -1202,7 +1348,7 @@
     }
     if (workflowWarnings && license && !licenseIsUsable(license)) {
       var licenseWarning = licenseWarningText(license);
-      warnings.push({ level: 'warning', title: licenseWarning.title, text: licenseWarning.text, action: 'open-license' });
+      warnings.push({ level: licenseWarning.level || 'warning', title: licenseWarning.title, text: licenseWarning.text, action: 'open-license' });
     }
     if (workflowWarnings && processingInputs.pdf && !processingInputs.pdf.valid) {
       warnings.push({ level: 'info', title: 'PDF-Eingang fehlt', text: 'Für den nächsten Lauf muss ein PDF-Ordner oder Gesamt-PDF gewählt werden.', action: 'open-processing' });
@@ -1592,26 +1738,32 @@
         setCompanyMessage('Bitte zuerst einen Mandant auswählen.');
         return;
       }
-      if (!window.confirm('Mandant "' + companyName + '" wirklich löschen?\n\nExcel- und Ausgabedateien auf dem Datenträger bleiben erhalten.')) {
-        setCompanyMessage('Löschen wurde abgebrochen.');
-        return;
-      }
-      setCompanyMessage('Mandant wird gelöscht...');
-      bridge.deleteCompany(companyId, function(payload){
-        var state = consumeCompanyPayload(payload);
-        if (!state || state.ok === false) {
-          setCompanyMessage((state && state.message) || 'Mandant konnte nicht gelöscht werden.');
-          return;
+      openAppDialog({
+        kicker: 'Mandantenverwaltung',
+        title: 'Mandant löschen?',
+        message: 'Mandant "' + companyName + '" wird aus LohnMail entfernt. Excel- und Ausgabedateien auf dem Datenträger bleiben erhalten.',
+        confirmLabel: 'Mandant löschen',
+        cancelLabel: 'Abbrechen',
+        onCancel: function(){ setCompanyMessage('Löschen wurde abgebrochen.'); },
+        onConfirm: function(){
+          setCompanyMessage('Mandant wird gelöscht...');
+          bridge.deleteCompany(companyId, function(payload){
+            var state = consumeCompanyPayload(payload);
+            if (!state || state.ok === false) {
+              setCompanyMessage((state && state.message) || 'Mandant konnte nicht gelöscht werden.');
+              return;
+            }
+            resetWorkflowUiForCompanyChange();
+            loadProcessingState();
+            loadValidationState();
+            loadShippingState();
+            loadMassMessageState();
+            loadDashboardState();
+            loadReportsState();
+            loadSettingsState();
+            setCompanyMessage(state.message || 'Mandant wurde gelöscht.');
+          });
         }
-        resetWorkflowUiForCompanyChange();
-        loadProcessingState();
-        loadValidationState();
-        loadShippingState();
-        loadMassMessageState();
-        loadDashboardState();
-        loadReportsState();
-        loadSettingsState();
-        setCompanyMessage(state.message || 'Mandant wurde gelöscht.');
       });
       return;
     }
@@ -2520,15 +2672,16 @@
       ]
     },
     {
-      id: 'mail-settings', topic: 'settings', category: 'Einstellungen', tag: 'neutral', updated: '13.07.2026',
+      id: 'mail-settings', topic: 'settings', category: 'Einstellungen', tag: 'neutral', updated: '28.08.2026',
       title: 'E-Mail-Verbindung mit SMTP oder Outlook Classic einrichten',
       summary: 'Konfigurieren Sie genau die Versandmethode, die auf dem Arbeitsplatz verwendet werden soll, speichern Sie und führen Sie anschließend den Verbindungstest aus.',
       keywords: 'smtp outlook port tls ssl passwort absender verbindung testen email',
       sections: [
-        {title: 'SMTP einrichten', steps: ['Einstellungen > E-Mail öffnen und Versandmethode smtp wählen.', 'SMTP Server, Port, Sicherheit, Benutzer, Passwort, Absender E-Mail und Absender Name eintragen.', 'E-Mail speichern klicken.', 'Verbindung testen ausführen und das Ergebnis unter den Feldern lesen.']},
-        {title: 'Typische SMTP-Werte', bullets: ['TLS verwendet häufig Port 587.', 'SSL verwendet häufig Port 465.', 'Die verbindlichen Werte liefert der E-Mail-Anbieter oder Administrator.', 'Das Passwortfeld leer lassen, wenn ein bereits gespeichertes Passwort beibehalten werden soll.']},
+        {title: 'SMTP einrichten', steps: ['Einstellungen > E-Mail öffnen und Versandmethode SMTP wählen.', 'SMTP Server, Port, Sicherheit, Benutzer, Passwort, Absender E-Mail und Absender Name eintragen.', 'Als Absender E-Mail immer eine vollständige Adresse mit @ und Domain verwenden, zum Beispiel lohnbuchhaltung@firma.de.', 'E-Mail speichern klicken.', 'Verbindung testen ausführen und das Ergebnis unter den Feldern lesen.']},
+        {title: 'Typische SMTP-Werte', bullets: ['TLS verwendet häufig Port 587.', 'SSL verwendet häufig Port 465.', 'SMTP Benutzer ist meistens die vollständige E-Mail-Adresse.', 'Absender E-Mail darf nicht nur aus dem Postfachnamen bestehen; lohnbuchhaltung ohne @firma.de wird vom Server häufig abgelehnt.', 'Die verbindlichen Werte liefert der E-Mail-Anbieter oder Administrator.', 'Das Passwortfeld leer lassen, wenn ein bereits gespeichertes Passwort beibehalten werden soll.']},
         {title: 'Outlook Classic einrichten', steps: ['Versandmethode Outlook Classic wählen.', 'Unter Windows Microsoft 365 Desktop, Outlook 2016, 2019 oder 2021 öffnen und das gewünschte Konto anmelden.', 'Das neue Outlook für Windows wird nicht unterstützt; verwenden Sie dafür SMTP.', 'Unter macOS ist eine Outlook-Version mit AppleScript-Unterstützung erforderlich.', 'Outlook-Konten laden klicken.', 'Als Absender E-Mail eines der erkannten Konten verwenden und speichern.']},
-        {title: 'Globale oder mandanteneigene Einstellungen', text: ['Globale Einstellungen gelten standardmäßig für alle Mandanten. Unter Unternehmen kann ein Mandant auf eigene SMTP-Daten umgestellt werden. Testen Sie diese Verbindung anschließend direkt in der Mandantenkarte.']}
+        {title: 'Globale oder mandanteneigene Einstellungen', text: ['Globale Einstellungen gelten für alle Mandanten, die unter Unternehmen „Globale E-Mail Einstellungen verwenden“ ausgewählt haben. „Eigene SMTP Einstellungen“ überschreibt die globalen SMTP-Daten nur für den aktiven Mandanten. Nach dem Umschalten immer „Änderungen speichern“ klicken und anschließend „Mandant SMTP testen“ ausführen. Ein nur im Auswahlfeld angezeigter Wechsel ist noch nicht gespeichert.']},
+        {title: 'Vor dem echten Versand', bullets: ['Nach jeder Änderung an Versandmethode, SMTP-Server, Benutzer oder Absender die E-Mail-Einstellungen speichern.', 'Versand für den aktiven Mandanten erneut vorbereiten, damit Vorschau und echter Versand dieselben Einstellungen verwenden.', 'Im Versandbericht bedeutet nur der Status „Gesendet“, dass der SMTP-Server die Nachricht angenommen hat. „Fehler“ enthält die konkrete Ablehnung des Servers.', 'Eine erfolgreiche Verbindungsprüfung bestätigt Anmeldung und Erreichbarkeit, aber noch nicht die spätere Zustellung an das Empfängerpostfach.']}
       ]
     },
     {
@@ -4706,6 +4859,12 @@
         closeCompanyCreateModal();
       });
     });
+    document.querySelectorAll('[data-app-dialog-action]').forEach(function(button){
+      button.addEventListener('click', function(event){
+        event.preventDefault();
+        closeAppDialog(button.getAttribute('data-app-dialog-action') === 'confirm');
+      });
+    });
     document.querySelectorAll('[data-shipping-send-close]').forEach(function(button){
       button.addEventListener('click', function(event){
         event.preventDefault();
@@ -4810,8 +4969,6 @@
         var preference = input.getAttribute('data-update-pref');
         if (preference === 'auto-check') {
           latestUpdateState.auto_check = Boolean(input.checked);
-        } else if (preference === 'install-on-exit' && !input.disabled) {
-          latestUpdateState.install_on_exit = Boolean(input.checked);
         }
         persistUpdatePreferences();
       });
@@ -4950,10 +5107,17 @@
     });
     document.addEventListener('keydown', function(event){
       if (event.key === 'Escape') {
+        var appDialog = document.querySelector('[data-app-dialog]');
+        if (appDialog && !appDialog.hidden) closeAppDialog(false);
         closeAboutLegalModal();
         closeHelpArticle();
         closeCompanyCreateModal();
       }
+    });
+    window.addEventListener('resize', function(){
+      document.querySelectorAll('[data-full-path]').forEach(function(node){
+        fitPathFromEnd(node, node.dataset.fullPath || '-', 0);
+      });
     });
     document.querySelectorAll('.page-mailing [data-shipping-action]').forEach(function(button){
       button.addEventListener('click', function(event){

@@ -21,6 +21,7 @@ from ui_web.version import APP_VERSION
 
 ROOT = Path(__file__).resolve().parent
 HTML_PATH = ROOT / "web" / "index.html"
+WINDOWS_ICON_PATH = HTML_PATH.parent / "assets" / "brand" / "LohnMail.ico"
 SIGNALS = (
     "pageChanged",
     "processingStateChanged",
@@ -66,7 +67,9 @@ class ApiAdapter:
             return self._processing_payload_after_selection()
         ui_settings = settings.get("ui", {})
         mode = self._bridge._pdf_input_mode(settings)
-        start_path = self._bridge._dialog_start_path(str(ui_settings.get("last_pdf_dir", "") or ""))
+        start_path = self._bridge._dialog_start_path(
+            str(ui_settings.get("last_pdf_dialog_dir", "") or "")
+        )
         dialog_type = webview.FileDialog.OPEN if mode == "single_pdf" else webview.FileDialog.FOLDER
         file_types = ("PDF files (*.pdf)",) if mode == "single_pdf" else ()
         selected = self._window.create_file_dialog(
@@ -76,9 +79,13 @@ class ApiAdapter:
             file_types=file_types,
         )
         if selected:
-            settings.setdefault("ui", {})["last_pdf_dir"] = str(selected[0])
+            selected_path = Path(str(selected[0]))
+            settings.setdefault("ui", {})["last_pdf_dir"] = str(selected_path)
             settings["ui"]["last_pdf_input_mode"] = mode
-            self._bridge._set_company_pdf_input(settings, str(selected[0]), mode)
+            settings["ui"]["last_pdf_dialog_dir"] = str(
+                selected_path if mode == "folder" else selected_path.parent
+            )
+            self._bridge._set_company_pdf_input(settings, str(selected_path), mode)
             save_settings(settings)
             self._bridge._reset_workflow_state()
         return self._processing_payload_after_selection()
@@ -89,7 +96,7 @@ class ApiAdapter:
             return self._processing_payload_after_selection()
         ui_settings = settings.get("ui", {})
         start_path = self._bridge._dialog_start_path(
-            str(get_company_email_excel_file(settings) or ui_settings.get("last_excel_file", "") or "")
+            str(ui_settings.get("last_excel_dialog_dir", "") or "")
         )
         selected = self._window.create_file_dialog(
             webview.FileDialog.OPEN,
@@ -101,6 +108,7 @@ class ApiAdapter:
             path = str(selected[0])
             self._bridge._set_company_excel_file(settings, path)
             settings.setdefault("ui", {})["last_excel_file"] = path
+            settings["ui"]["last_excel_dialog_dir"] = str(Path(path).parent)
             save_settings(settings)
             self._bridge._reset_workflow_state()
         return self._processing_payload_after_selection()
@@ -145,6 +153,13 @@ class ApiAdapter:
         state = self._bridge._update_service.download(progress=self._bridge._on_update_progress)
         self._bridge._on_update_finished(state)
         return json.dumps(state, ensure_ascii=False)
+
+    def installUpdateNow(self) -> str:
+        self._bridge._update_service.set_preferences(install_on_exit=True)
+        result = self._bridge._update_service.install_on_exit()
+        if result.get("started") and self._window is not None:
+            self._window.destroy()
+        return json.dumps(result, ensure_ascii=False)
 
 
 def _proxy_method(name: str) -> Callable[..., Any]:
@@ -207,6 +222,40 @@ def _set_runtime_app_identity() -> None:
             pass
 
 
+def _set_windows_window_icon(window: webview.Window) -> None:
+    """Set small and large native icons, including source launches via python.exe."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        native = getattr(window, "native", None)
+        handle_value = getattr(native, "Handle", 0)
+        hwnd = int(handle_value.ToInt64()) if hasattr(handle_value, "ToInt64") else int(handle_value)
+        if not hwnd or not WINDOWS_ICON_PATH.exists():
+            return
+
+        user32 = ctypes.windll.user32
+        user32.LoadImageW.restype = ctypes.c_void_p
+        user32.SendMessageW.restype = ctypes.c_ssize_t
+        image_icon = 1
+        load_from_file = 0x0010
+        wm_seticon = 0x0080
+        for icon_type, size in ((0, 16), (1, 32)):
+            icon = user32.LoadImageW(
+                None,
+                str(WINDOWS_ICON_PATH),
+                image_icon,
+                size,
+                size,
+                load_from_file,
+            )
+            if icon:
+                user32.SendMessageW(hwnd, wm_seticon, icon_type, icon)
+    except Exception:
+        pass
+
+
 def run() -> None:
     _set_runtime_app_identity()
     ensure_settings_file()
@@ -214,7 +263,7 @@ def run() -> None:
     bridge = WebBridge()
     api = ApiAdapter(bridge)
     window = webview.create_window(
-        f"LohnMail {APP_VERSION} — pywebview Test",
+        f"LohnMail {APP_VERSION} — Enterprise Edition",
         str(HTML_PATH),
         js_api=api,
         width=1440,
@@ -233,6 +282,7 @@ def run() -> None:
             pass
 
     window.events.closing += on_closing
+    window.events.loaded += lambda: _set_windows_window_icon(window)
     webview.start(debug=False)
 
 

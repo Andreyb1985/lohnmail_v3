@@ -1,7 +1,7 @@
-# LohnMail pywebview test
+# LohnMail Desktop
 
-This is an isolated renderer prototype. The regular PySide6 application in the
-parent directory is not changed.
+Production desktop client based on pywebview. It uses WKWebView on macOS and
+Edge WebView2 on Windows.
 
 ## Start on macOS
 
@@ -13,9 +13,8 @@ cd /Users/strelok/Downloads/lm-13/lohnmail-pywebview-test
 The window uses WKWebView on macOS. On Windows pywebview selects Edge WebView2
 when the WebView2 Runtime is available.
 
-Test settings, the SQLite history and generated company folders are isolated in
-`~/Library/Application Support/LohnMailPywebviewTest` on macOS. They do not
-modify the regular LohnMail data directory.
+On macOS, settings, SQLite history and generated company folders are stored in
+`~/Library/Application Support/LohnMail`.
 
 For the portable Windows test package, use this approved layout:
 
@@ -32,16 +31,23 @@ different root when needed.
 
 ## Windows executable with the LohnMail taskbar icon
 
-Running `python main.py` shows the Python interpreter icon because pywebview's
-WinForms backend takes its Windows icon from the executable. Build the actual
-LohnMail executable in PowerShell:
+The runtime assigns the LohnMail icon to the native Windows window. For the
+installed application and Windows file metadata, build the actual LohnMail
+executable in PowerShell:
 
 ```powershell
 .\BUILD-WINDOWS.ps1
 ```
 
-The result is `dist\LohnMail\LohnMail.exe`. Its taskbar/window icon is embedded
-from `web\assets\brand\LohnMail.ico`.
+The result is `dist\LohnMail\LohnMail.exe`. Its multi-resolution taskbar/window
+icon is embedded from `web\assets\brand\LohnMail.ico`.
+
+The script also creates the clean portable directory `release\LohnMail` with
+`App`, `Settings` and `Companies`. It copies only `settings_template.json` as
+the initial `Settings\settings.json` and fails if license data, a machine ID,
+workflow sessions, SQLite history, company records or an SMTP password appear
+in the release directory. Create the customer ZIP only from this verified
+directory, never from a locally used `LohnMail` data folder.
 
 The runtime path no longer requires PySide6. Native file dialogs are provided
 by pywebview, background jobs use Python threads and files/URLs are opened with
