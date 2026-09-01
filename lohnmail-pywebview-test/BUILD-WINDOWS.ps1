@@ -2,7 +2,9 @@ $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
 if (-not (Test-Path ".venv\Scripts\python.exe")) {
-    py -m venv .venv
+    # Use the interpreter selected by the caller/CI. The Windows `py` launcher
+    # may otherwise silently choose a newer globally installed Python.
+    python -m venv .venv
     if ($LASTEXITCODE -ne 0) { throw "Die Windows-Build-Umgebung konnte nicht erstellt werden." }
 }
 

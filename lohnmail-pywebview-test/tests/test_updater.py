@@ -436,12 +436,14 @@ class UpdateServiceTests(unittest.TestCase):
 
     def test_install_preflight_accepts_valid_older_sqlite_schema(self) -> None:
         import sqlite3
+        from contextlib import closing
 
         with tempfile.TemporaryDirectory() as temp_dir:
             directory = Path(temp_dir)
             database = directory / "lohnmail_history.sqlite3"
-            with sqlite3.connect(database) as connection:
+            with closing(sqlite3.connect(database)) as connection:
                 connection.execute("CREATE TABLE legacy_history (id INTEGER PRIMARY KEY)")
+                connection.commit()
             service = self.make_service(SettingsStore(), directory)
             ok, message = service._check_history_database()
 

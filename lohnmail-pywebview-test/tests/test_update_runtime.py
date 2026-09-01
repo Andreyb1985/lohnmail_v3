@@ -5,6 +5,7 @@ import stat
 import tempfile
 import unittest
 import zipfile
+from contextlib import closing
 from pathlib import Path
 
 from ui_web.update_runtime import (
@@ -20,8 +21,9 @@ class UpdateRuntimeTests(unittest.TestCase):
     def test_database_check_accepts_valid_database_and_closes_it(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             database = Path(temp_dir) / "lohnmail_history.sqlite3"
-            with sqlite3.connect(database) as connection:
+            with closing(sqlite3.connect(database)) as connection:
                 connection.execute("CREATE TABLE history (id INTEGER PRIMARY KEY)")
+                connection.commit()
 
             check_history_database(database)
             renamed = database.with_suffix(".checked")
@@ -85,8 +87,9 @@ class UpdateRuntimeTests(unittest.TestCase):
     def test_self_test_checks_version_build_and_sqlite(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             database = Path(temp_dir) / "history.sqlite3"
-            with sqlite3.connect(database) as connection:
+            with closing(sqlite3.connect(database)) as connection:
                 connection.execute("CREATE TABLE history (id INTEGER PRIMARY KEY)")
+                connection.commit()
 
             run_self_test(APP_VERSION, APP_BUILD, database)
             with self.assertRaisesRegex(RuntimeError, "expected build"):
@@ -95,8 +98,9 @@ class UpdateRuntimeTests(unittest.TestCase):
     def test_command_router_returns_exit_codes_without_starting_ui(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             database = Path(temp_dir) / "history.sqlite3"
-            with sqlite3.connect(database) as connection:
+            with closing(sqlite3.connect(database)) as connection:
                 connection.execute("CREATE TABLE history (id INTEGER PRIMARY KEY)")
+                connection.commit()
 
             self.assertEqual(
                 run_update_command(["--lohnmail-update-check-db", str(database)]),

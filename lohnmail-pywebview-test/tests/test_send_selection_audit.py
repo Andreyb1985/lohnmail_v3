@@ -74,6 +74,17 @@ class SendSelectionAuditTests(unittest.TestCase):
         with (
             patch.object(orchestrator, "GESOB_DIR", self.output_dir),
             patch.object(orchestrator, "make_run_id", return_value="send_selection_test"),
+            patch.object(
+                orchestrator,
+                "validate_email_records",
+                side_effect=lambda records: {
+                    persnr: {
+                        "code": "missing" if not record.get("Email") else "valid",
+                        "sendable": bool(record.get("Email")),
+                    }
+                    for persnr, record in records.items()
+                },
+            ),
         ):
             result = orchestrator.action_send(
                 pdf_input=self.pdf_dir,

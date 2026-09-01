@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import venv
 import zipfile
+from contextlib import closing
 from pathlib import Path
 
 from ui_web.updater import UpdateService
@@ -31,9 +32,10 @@ class WindowsUpdaterEndToEndTests(unittest.TestCase):
             company_file = companies / "keep-me.txt"
             company_file.write_text("local company data\n", encoding="utf-8")
             database = settings / "lohnmail_history.sqlite3"
-            with sqlite3.connect(database) as connection:
+            with closing(sqlite3.connect(database)) as connection:
                 connection.execute("CREATE TABLE history (id INTEGER PRIMARY KEY, value TEXT)")
                 connection.execute("INSERT INTO history(value) VALUES ('keep-me')")
+                connection.commit()
 
             archive = updates / "LohnMail-2.0.3-test-update.zip"
             new_main = '''from __future__ import annotations
@@ -124,7 +126,7 @@ print("new")
             self.assertIn('APP_VERSION = "2.0.3"', (app / "ui_web" / "version.py").read_text(encoding="utf-8"))
             self.assertEqual(settings_json.read_text(encoding="utf-8"), '{"companies": [], "selected_company_id": ""}\n')
             self.assertEqual(company_file.read_text(encoding="utf-8"), "local company data\n")
-            with sqlite3.connect(database) as connection:
+            with closing(sqlite3.connect(database)) as connection:
                 self.assertEqual(connection.execute("PRAGMA quick_check").fetchone(), ("ok",))
                 self.assertEqual(connection.execute("SELECT value FROM history").fetchone(), ("keep-me",))
             self.assertIn("SUCCESS version=2.0.3", (updates / "update-install.log").read_text(encoding="utf-8-sig"))

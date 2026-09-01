@@ -102,15 +102,16 @@ class PywebviewAdapterTests(unittest.TestCase):
     def test_folder_selection_is_saved_and_emitted(self) -> None:
         bridge = FakeBridge()
         adapter = ApiAdapter(bridge)  # type: ignore[arg-type]
-        adapter.attach_window(FakeWindow(("/tmp/pdfs",)))  # type: ignore[arg-type]
+        selected = str(Path(tempfile.gettempdir()) / "pdfs")
+        adapter.attach_window(FakeWindow((selected,)))  # type: ignore[arg-type]
         settings = {"ui": {"last_pdf_dir": "", "last_pdf_input_mode": "folder"}}
         saved = []
         with patch("pywebview_app.load_settings", side_effect=lambda: settings), patch(
             "pywebview_app.save_settings", side_effect=lambda value: saved.append(value.copy())
         ):
             payload = json.loads(adapter.choosePdfInput())
-        self.assertEqual(payload["pdf"], "/tmp/pdfs")
-        self.assertEqual(settings["ui"]["last_pdf_dialog_dir"], "/tmp/pdfs")
+        self.assertEqual(payload["pdf"], selected)
+        self.assertEqual(settings["ui"]["last_pdf_dialog_dir"], selected)
         self.assertEqual(bridge.reset_count, 1)
         self.assertEqual(len(saved), 1)
 
@@ -126,7 +127,8 @@ class PywebviewAdapterTests(unittest.TestCase):
     def test_company_excel_uses_native_dialog_override(self) -> None:
         bridge = FakeBridge()
         adapter = ApiAdapter(bridge)  # type: ignore[arg-type]
-        adapter.attach_window(FakeWindow(("/tmp/employees.xlsx",)))  # type: ignore[arg-type]
+        selected = str(Path(tempfile.gettempdir()) / "employees.xlsx")
+        adapter.attach_window(FakeWindow((selected,)))  # type: ignore[arg-type]
         settings = {
             "ui": {"last_excel_file": ""},
             "selected_company_id": "test",
@@ -136,8 +138,8 @@ class PywebviewAdapterTests(unittest.TestCase):
             "pywebview_app.save_settings"
         ), patch("pywebview_app.get_company_email_excel_file", return_value=""):
             payload = json.loads(adapter.chooseCompanyExcelInput())
-        self.assertEqual(payload["selected_excel"]["path"], "/tmp/employees.xlsx")
-        self.assertEqual(settings["ui"]["last_excel_dialog_dir"], "/tmp")
+        self.assertEqual(payload["selected_excel"]["path"], selected)
+        self.assertEqual(settings["ui"]["last_excel_dialog_dir"], str(Path(selected).parent))
         self.assertEqual(payload["companies"], [{"id": "test", "name": "Test"}])
         self.assertEqual(bridge.reset_count, 1)
 
@@ -159,8 +161,9 @@ class PywebviewAdapterTests(unittest.TestCase):
         self.assertEqual(window.dialog_calls[0][1]["directory"], "/remembered/imports")
 
     def test_empty_dialog_path_defaults_to_program_directory(self) -> None:
-        with patch("ui_web.bridge.BASE_DIR", Path("/portable/LohnMail/App")):
-            self.assertEqual(WebBridge._dialog_start_path(""), "/portable/LohnMail")
+        base_dir = Path(tempfile.gettempdir()) / "portable" / "LohnMail" / "App"
+        with patch("ui_web.bridge.BASE_DIR", base_dir):
+            self.assertEqual(WebBridge._dialog_start_path(""), str(base_dir.parent))
 
     def test_company_switch_clears_previous_company_files(self) -> None:
         settings = build_default_settings()

@@ -589,7 +589,7 @@ function Wait-ForProcessExit([int]$Id,[int]$TimeoutSeconds) {
 try {
   Set-Step 'LohnMail wird beendet ...' 5
   Wait-ForProcessExit $ProcessId 60
-  if (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) {
+  if ($ProcessId -gt 0 -and (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)) {
     throw 'LohnMail konnte nicht vollständig beendet werden. Bitte schließen Sie das Programm und versuchen Sie das Update erneut.'
   }
   if ($ParentProcessId -gt 0) {
