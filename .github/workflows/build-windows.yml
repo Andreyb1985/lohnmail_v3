@@ -29,11 +29,16 @@ jobs:
           cache-dependency-path: |
             lohnmail-pywebview-test/requirements*.txt
 
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --yes --no-progress
+
       - name: Test and build LohnMail
         shell: powershell
         run: |
           Set-Location lohnmail-pywebview-test
           .\BUILD-WINDOWS.ps1
+          .\BUILD-STORE-INSTALLER.ps1
 
       - name: Verify build outputs
         shell: powershell
@@ -44,11 +49,58 @@ jobs:
           $Settings = Join-Path $Project "release\LohnMail\Settings\settings.json"
           $UpdateZip = Get-ChildItem -Path (Join-Path $Project "release") -Filter "*-exe-update.zip" -File
           $UpdateJson = Get-ChildItem -Path (Join-Path $Project "release") -Filter "*-exe-update.json" -File
+          $StoreInstaller = Get-ChildItem -Path (Join-Path $Project "release\store") -Filter "*-Setup-x64.exe" -File
+          $StoreManifest = Get-ChildItem -Path (Join-Path $Project "release\store") -Filter "*-Setup-x64.json" -File
           if (-not (Test-Path $Executable)) { throw "LohnMail.exe fehlt." }
           if (-not (Test-Path $CompaniesMarker)) { throw "Der leere Companies-Ordner fehlt." }
           if (-not (Test-Path $Settings)) { throw "Settings/settings.json fehlt." }
           if ($UpdateZip.Count -ne 1) { throw "Genau ein EXE-Update-ZIP wurde erwartet." }
           if ($UpdateJson.Count -ne 1) { throw "Genau ein Update-Manifest wurde erwartet." }
+          if ($StoreInstaller.Count -ne 1) { throw "Genau ein Store-Installer wurde erwartet." }
+          if ($StoreManifest.Count -ne 1) { throw "Genau ein Store-Manifest wurde erwartet." }
+          $StoreData = Get-Content $StoreManifest.FullName -Raw | ConvertFrom-Json
+          if ($StoreData.architecture -ne "x64") { throw "Der Store-Installer ist nicht als x64 markiert." }
+          if ($StoreData.size -ne $StoreInstaller.Length) { throw "Die Store-Installer-Größe stimmt nicht." }
+          $StoreHash = (Get-FileHash $StoreInstaller.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($StoreData.sha256 -ne $StoreHash) { throw "Der Store-Installer-Hash stimmt nicht." }
+
+      - name: Test Store installer lifecycle
+        shell: powershell
+        run: |
+          $Project = "lohnmail-pywebview-test"
+          $StoreInstaller = Get-ChildItem -Path (Join-Path $Project "release\store") -Filter "*-Setup-x64.exe" -File | Select-Object -First 1
+          $InstallDir = Join-Path $env:RUNNER_TEMP "LohnMail-Store-Test"
+          $InstallArguments = @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/SP-",
+            "/DIR=`"$InstallDir`""
+          )
+
+          $FirstInstall = Start-Process -FilePath $StoreInstaller.FullName -ArgumentList $InstallArguments -Wait -PassThru
+          if ($FirstInstall.ExitCode -ne 0) { throw "Die stille Erstinstallation ist fehlgeschlagen." }
+          if (-not (Test-Path (Join-Path $InstallDir "LohnMail.exe"))) { throw "Der Root-Launcher wurde nicht installiert." }
+          if (-not (Test-Path (Join-Path $InstallDir "App\LohnMail.exe"))) { throw "Die Anwendung wurde nicht installiert." }
+          if (-not (Test-Path (Join-Path $InstallDir "Settings\settings.json"))) { throw "Die initialen Einstellungen fehlen." }
+
+          $SettingsSentinel = Join-Path $InstallDir "Settings\store-preserve-test.txt"
+          $CompanySentinel = Join-Path $InstallDir "Companies\store-preserve-test.txt"
+          Set-Content -Path $SettingsSentinel -Value "settings-must-survive"
+          Set-Content -Path $CompanySentinel -Value "company-data-must-survive"
+
+          $UpgradeInstall = Start-Process -FilePath $StoreInstaller.FullName -ArgumentList $InstallArguments -Wait -PassThru
+          if ($UpgradeInstall.ExitCode -ne 0) { throw "Die stille Aktualisierung ist fehlgeschlagen." }
+          if (-not (Test-Path $SettingsSentinel)) { throw "Settings wurden bei der Aktualisierung entfernt." }
+          if (-not (Test-Path $CompanySentinel)) { throw "Companies wurden bei der Aktualisierung entfernt." }
+
+          $Uninstaller = Get-ChildItem -Path $InstallDir -Filter "unins*.exe" -File | Select-Object -First 1
+          if (-not $Uninstaller) { throw "Das Deinstallationsprogramm fehlt." }
+          $Uninstall = Start-Process -FilePath $Uninstaller.FullName -ArgumentList @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART") -Wait -PassThru
+          if ($Uninstall.ExitCode -ne 0) { throw "Die stille Deinstallation ist fehlgeschlagen." }
+          if (Test-Path (Join-Path $InstallDir "App\LohnMail.exe")) { throw "Programmdateien wurden nicht deinstalliert." }
+          if (-not (Test-Path $SettingsSentinel)) { throw "Settings wurden bei der Deinstallation entfernt." }
+          if (-not (Test-Path $CompanySentinel)) { throw "Companies wurden bei der Deinstallation entfernt." }
 
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
@@ -61,3 +113,5 @@ jobs:
             lohnmail-pywebview-test/release/LohnMail
             lohnmail-pywebview-test/release/*-exe-update.zip
             lohnmail-pywebview-test/release/*-exe-update.json
+            lohnmail-pywebview-test/release/store/*-Setup-x64.exe
+            lohnmail-pywebview-test/release/store/*-Setup-x64.json

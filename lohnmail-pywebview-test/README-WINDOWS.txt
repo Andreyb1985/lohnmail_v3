@@ -37,3 +37,21 @@ EXE auf Windows erstellen:
 
 Danach liegt die geprüfte portable Struktur unter release\LohnMail.
 Settings und Companies liegen neben dem Launcher und werden durch Updates nicht ersetzt.
+
+Autonomen Microsoft-Store-Installer erstellen:
+
+  1. Inno Setup 6 installieren.
+  2. .\BUILD-WINDOWS.ps1 ausführen.
+  3. .\BUILD-STORE-INSTALLER.ps1 ausführen.
+
+Der Offline-Installer liegt danach unter release\store. Er installiert LohnMail
+pro Benutzer unter %%LOCALAPPDATA%%\Programs\LohnMail. Bei einer Installation über
+eine vorhandene Version werden nur die Programmdateien in App ersetzt. Settings,
+Companies, Lizenzdaten, SQLite-Verlauf und Berichte bleiben erhalten.
+
+Parameter für die stille Installation:
+
+  /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-
+
+Vor der Einreichung im Microsoft Store müssen die EXE-Dateien und der Installer
+mit einem vertrauenswürdigen Code-Signing-Zertifikat signiert werden.
