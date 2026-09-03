@@ -158,14 +158,19 @@ try {
 }
 $UpdateHash = (Get-FileHash $UpdateZip -Algorithm SHA256).Hash.ToLowerInvariant()
 $UpdateSize = (Get-Item $UpdateZip).Length
-@{
+$UpdateManifestJson = @{
     version = $AppVersion
     build = $AppBuild
     package_kind = "windows-pyinstaller-onedir"
     filename = (Split-Path $UpdateZip -Leaf)
     sha256 = $UpdateHash
     size = $UpdateSize
-} | ConvertTo-Json | Set-Content -Path $UpdateManifest -Encoding UTF8
+} | ConvertTo-Json
+[System.IO.File]::WriteAllText(
+    $UpdateManifest,
+    $UpdateManifestJson,
+    (New-Object System.Text.UTF8Encoding($false))
+)
 Remove-Item -Recurse -Force $UpdatePackageRoot
 
 Write-Host ""
