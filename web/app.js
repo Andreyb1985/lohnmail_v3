@@ -2429,15 +2429,16 @@
       ]
     },
     {
-      id: 'mail-settings', topic: 'settings', category: 'Einstellungen', tag: 'neutral', updated: '13.07.2026',
+      id: 'mail-settings', topic: 'settings', category: 'Einstellungen', tag: 'neutral', updated: '28.08.2026',
       title: 'E-Mail-Verbindung mit SMTP oder Outlook Classic einrichten',
       summary: 'Konfigurieren Sie genau die Versandmethode, die auf dem Arbeitsplatz verwendet werden soll, speichern Sie und führen Sie anschließend den Verbindungstest aus.',
       keywords: 'smtp outlook port tls ssl passwort absender verbindung testen email',
       sections: [
-        {title: 'SMTP einrichten', steps: ['Einstellungen > E-Mail öffnen und Versandmethode smtp wählen.', 'SMTP Server, Port, Sicherheit, Benutzer, Passwort, Absender E-Mail und Absender Name eintragen.', 'E-Mail speichern klicken.', 'Verbindung testen ausführen und das Ergebnis unter den Feldern lesen.']},
-        {title: 'Typische SMTP-Werte', bullets: ['TLS verwendet häufig Port 587.', 'SSL verwendet häufig Port 465.', 'Die verbindlichen Werte liefert der E-Mail-Anbieter oder Administrator.', 'Das Passwortfeld leer lassen, wenn ein bereits gespeichertes Passwort beibehalten werden soll.']},
+        {title: 'SMTP einrichten', steps: ['Einstellungen > E-Mail öffnen und Versandmethode SMTP wählen.', 'SMTP Server, Port, Sicherheit, Benutzer, Passwort, Absender E-Mail und Absender Name eintragen.', 'Als Absender E-Mail immer eine vollständige Adresse mit @ und Domain verwenden, zum Beispiel lohnbuchhaltung@firma.de.', 'E-Mail speichern klicken.', 'Verbindung testen ausführen und das Ergebnis unter den Feldern lesen.']},
+        {title: 'Typische SMTP-Werte', bullets: ['TLS verwendet häufig Port 587.', 'SSL verwendet häufig Port 465.', 'SMTP Benutzer ist meistens die vollständige E-Mail-Adresse.', 'Absender E-Mail darf nicht nur aus dem Postfachnamen bestehen; lohnbuchhaltung ohne @firma.de wird vom Server häufig abgelehnt.', 'Die verbindlichen Werte liefert der E-Mail-Anbieter oder Administrator.', 'Das Passwortfeld leer lassen, wenn ein bereits gespeichertes Passwort beibehalten werden soll.']},
         {title: 'Outlook Classic einrichten', steps: ['Versandmethode Outlook Classic wählen.', 'Unter Windows Microsoft 365 Desktop, Outlook 2016, 2019 oder 2021 öffnen und das gewünschte Konto anmelden.', 'Das neue Outlook für Windows wird nicht unterstützt; verwenden Sie dafür SMTP.', 'Unter macOS ist eine Outlook-Version mit AppleScript-Unterstützung erforderlich.', 'Outlook-Konten laden klicken.', 'Als Absender E-Mail eines der erkannten Konten verwenden und speichern.']},
-        {title: 'Globale oder mandanteneigene Einstellungen', text: ['Globale Einstellungen gelten standardmäßig für alle Mandanten. Unter Unternehmen kann ein Mandant auf eigene SMTP-Daten umgestellt werden. Testen Sie diese Verbindung anschließend direkt in der Mandantenkarte.']}
+        {title: 'Globale oder mandanteneigene Einstellungen', text: ['Globale Einstellungen gelten für alle Mandanten, die unter Unternehmen „Globale E-Mail Einstellungen verwenden“ ausgewählt haben. „Eigene SMTP Einstellungen“ überschreibt die globalen SMTP-Daten nur für den aktiven Mandanten. Nach dem Umschalten immer „Änderungen speichern“ klicken und anschließend „Mandant SMTP testen“ ausführen. Ein nur im Auswahlfeld angezeigter Wechsel ist noch nicht gespeichert.']},
+        {title: 'Vor dem echten Versand', bullets: ['Nach jeder Änderung an Versandmethode, SMTP-Server, Benutzer oder Absender die E-Mail-Einstellungen speichern.', 'Versand für den aktiven Mandanten erneut vorbereiten, damit Vorschau und echter Versand dieselben Einstellungen verwenden.', 'Im Versandbericht bedeutet nur der Status „Gesendet“, dass der SMTP-Server die Nachricht angenommen hat. „Fehler“ enthält die konkrete Ablehnung des Servers.', 'Eine erfolgreiche Verbindungsprüfung bestätigt Anmeldung und Erreichbarkeit, aber noch nicht die spätere Zustellung an das Empfängerpostfach.']}
       ]
     },
     {

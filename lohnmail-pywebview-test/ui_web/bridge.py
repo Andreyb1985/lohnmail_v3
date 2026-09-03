@@ -117,6 +117,7 @@ class MassMessageWorker(QObject):
         subject_template: str,
         body_template: str,
         recipients: list[dict],
+        attachment_paths: list[Path] | None = None,
     ) -> None:
         super().__init__()
         self.settings = settings
@@ -124,6 +125,7 @@ class MassMessageWorker(QObject):
         self.subject_template = subject_template
         self.body_template = body_template
         self.recipients = recipients
+        self.attachment_paths = list(attachment_paths or [])
 
     @Slot()
     def run(self) -> None:
@@ -136,6 +138,7 @@ class MassMessageWorker(QObject):
                 subject_template=self.subject_template,
                 body_template=self.body_template,
                 recipients=self.recipients,
+                attachment_paths=self.attachment_paths,
                 progress_cb=self.progress.emit,
             )
             self.finished.emit(result)
@@ -204,6 +207,8 @@ class WebBridge(QObject):
     }
     REPORT_INDEX_PATH = GESOB_DIR / "lohnmail_reports_index.json"
     REPORT_HISTORY_PATH = SETTINGS_DIR / "lohnmail_history.sqlite3"
+    MASS_ATTACHMENT_LIMIT = 10
+    MASS_ATTACHMENT_BYTES_LIMIT = 18 * 1024 * 1024
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -226,6 +231,7 @@ class WebBridge(QObject):
         self._mass_message_running = False
         self._mass_message_status = self._idle_mass_message_status()
         self._mass_message_preview = self._empty_mass_message_preview()
+        self._mass_message_attachments: list[Path] = []
         self._license_manager = LicenseManager(load_settings())
         self._update_service = UpdateService()
         self._update_service.recover_interrupted_state()
@@ -441,6 +447,23 @@ class WebBridge(QObject):
     @Slot(result=str)
     def getMassMessageState(self) -> str:
         return json.dumps(self._mass_message_payload(self._settings_with_company_mail(load_settings())), ensure_ascii=False)
+
+    @Slot(result=str)
+    def clearMassMessageAttachments(self) -> str:
+        return self._set_mass_message_attachments([])
+
+    def _set_mass_message_attachments(self, attachments: list[Path]) -> str:
+        self._mass_message_attachments = list(attachments)
+        self._mass_message_preview = self._empty_mass_message_preview()
+        self._mass_message_status = {
+            **self._idle_mass_message_status(),
+            "message": (
+                f"{len(attachments)} Anhang/Anhänge ausgewählt. Bitte Vorschau neu laden."
+                if attachments
+                else "Anhänge entfernt. Bitte Vorschau neu laden."
+            ),
+        }
+        return self._emit_mass_message_payload(self._settings_with_company_mail(load_settings()))
 
     @Slot(result=str)
     def getCompanyState(self) -> str:
@@ -835,6 +858,7 @@ class WebBridge(QObject):
                     subject_template=subject,
                     body_template=body,
                     recipients=preview["recipients"],
+                    attachment_paths=[Path(path) for path in preview.get("attachment_paths", [])],
                     progress_cb=self._on_mass_message_progress,
                 )
                 self._on_mass_message_finished(result)
@@ -1336,6 +1360,10 @@ class WebBridge(QObject):
     def startShippingDryRun(self) -> str:
         return self._start_shipping(dry_run=True)
 
+    @Slot(str, result=str)
+    def startSelectedShippingDryRun(self, selected_json: str) -> str:
+        return self._start_shipping(dry_run=True, selected_persnr=self._parse_selected_persnr(selected_json))
+
     @Slot(result=str)
     def startShippingSend(self) -> str:
         return self._start_shipping(dry_run=False)
@@ -1735,6 +1763,7 @@ class WebBridge(QObject):
         self._reset_validation_and_shipping()
         self._mass_message_status = self._idle_mass_message_status()
         self._mass_message_preview = self._empty_mass_message_preview()
+        self._mass_message_attachments = []
 
     def _persist_workflow_session(self, settings: dict | None = None) -> None:
         if not hasattr(self, "_workflow_sessions"):
@@ -1786,6 +1815,12 @@ class WebBridge(QObject):
         self._shipping_source_rows = list(state.get("shipping_source_rows") or [])
         self._mass_message_status = {**self._idle_mass_message_status(), **dict(state.get("mass_message_status") or {})}
         self._mass_message_preview = {**self._empty_mass_message_preview(), **dict(state.get("mass_message_preview") or {})}
+        if self._mass_message_preview.get("attachments"):
+            self._mass_message_status = {
+                **self._idle_mass_message_status(),
+                "message": "Bitte Dateianhänge erneut auswählen und die Vorschau neu laden.",
+            }
+            self._mass_message_preview = self._empty_mass_message_preview()
 
         current_signature = self._input_signature(settings)
         if self._processing_input_signature and self._processing_input_signature != current_signature:
@@ -2224,7 +2259,7 @@ class WebBridge(QObject):
         preview_payload = {
             key: value
             for key, value in self._mass_message_preview.items()
-            if key != "recipients"
+            if key not in {"recipients", "attachment_paths"}
         }
         return {
             "status": {**self._mass_message_status},
@@ -2235,6 +2270,7 @@ class WebBridge(QObject):
             },
             "excel": self._path_state(excel_file, expected="excel"),
             "mail_mode": str(settings.get("mail_mode", "smtp") or "smtp"),
+            "attachments": self._mass_attachment_payload(),
         }
 
     def _emit_mass_message_payload(self, settings: dict) -> str:
@@ -2253,6 +2289,7 @@ class WebBridge(QObject):
         ).expanduser()
         subject_template = str(subject or "").strip()
         body_template = str(body or "")
+        attachment_paths = self._validated_mass_message_attachments()
 
         if not company_id:
             raise ValueError("Bitte ein Unternehmen auswählen.")
@@ -2293,7 +2330,37 @@ class WebBridge(QObject):
             "total_count": len(recipients),
             "recipients": recipients,
             "rows": recipients,
+            "attachments": self._mass_attachment_payload(attachment_paths),
+            "attachment_paths": [str(path) for path in attachment_paths],
         }
+
+    def _validated_mass_message_attachments(self) -> list[Path]:
+        attachments = [Path(path).expanduser().resolve() for path in self._mass_message_attachments]
+        if len(attachments) > self.MASS_ATTACHMENT_LIMIT:
+            raise ValueError(f"Es können höchstens {self.MASS_ATTACHMENT_LIMIT} Anhänge versendet werden.")
+        total_size = 0
+        for attachment_path in attachments:
+            if not attachment_path.is_file():
+                raise ValueError(f"Der ausgewählte Anhang ist nicht mehr verfügbar: {attachment_path.name}")
+            total_size += attachment_path.stat().st_size
+        if total_size > self.MASS_ATTACHMENT_BYTES_LIMIT:
+            raise ValueError("Die Anhänge sind zusammen größer als 18 MB. Bitte kleinere Dateien auswählen.")
+        return attachments
+
+    def _mass_attachment_payload(self, attachments: list[Path] | None = None) -> list[dict]:
+        result = []
+        for path in self._mass_message_attachments if attachments is None else attachments:
+            attachment_path = Path(path)
+            try:
+                size = attachment_path.stat().st_size if attachment_path.is_file() else 0
+            except OSError:
+                size = 0
+            result.append({
+                "name": attachment_path.name,
+                "path": str(attachment_path),
+                "size": size,
+            })
+        return result
 
     def _emit_shipping_payload(self, settings: dict) -> str:
         self._persist_workflow_session(settings)

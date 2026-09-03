@@ -6,6 +6,12 @@ set "APP_DIR=%ROOT_DIR%App"
 set "PYTHON_EXE=%APP_DIR%\.venv\Scripts\python.exe"
 cd /d "%ROOT_DIR%"
 
+if exist "%ROOT_DIR%LohnMail.exe" (
+    "%ROOT_DIR%LohnMail.exe"
+    if errorlevel 1 goto :error
+    exit /b 0
+)
+
 if exist "%APP_DIR%\LohnMail.exe" (
     "%APP_DIR%\LohnMail.exe"
     if errorlevel 1 goto :error

@@ -6,11 +6,24 @@ import sys
 from email.message import EmailMessage
 from pathlib import Path
 
+from core.email_validation import _local_validation
+
 
 def _build_from_header(from_email: str, from_name: str) -> str:
     if from_name and from_email:
         return f'{from_name} <{from_email}>'
     return from_email or from_name
+
+
+def validate_sender_email(from_email: str) -> str:
+    """Return a normalized sender address or raise a user-facing error."""
+    normalized = str(from_email or "").strip()
+    if _local_validation(normalized) is not None:
+        raise ValueError(
+            "Absender E-Mail muss eine vollständige gültige Adresse mit @ und Domain sein, "
+            "z. B. lohnbuchhaltung@firma.de."
+        )
+    return normalized
 
 
 def test_smtp_connection(smtp_settings: dict) -> None:
@@ -23,6 +36,7 @@ def test_smtp_connection(smtp_settings: dict) -> None:
 
     if not host or not port:
         raise ValueError("SMTP Server und Port müssen ausgefüllt werden.")
+    validate_sender_email(smtp_settings.get("from_email") or username)
 
     if security == "ssl":
         with smtplib.SMTP_SSL(host, port, timeout=timeout, context=ssl.create_default_context()) as server:
@@ -234,8 +248,7 @@ def send_email(
     from_email = (smtp_settings.get("from_email") or smtp_settings.get("username") or "").strip()
     from_name = (smtp_settings.get("from_name") or "").strip()
 
-    if not from_email:
-        raise ValueError("Absender-E-Mail fehlt in den SMTP-Einstellungen.")
+    from_email = validate_sender_email(from_email)
 
     msg = EmailMessage()
     msg["From"] = _build_from_header(from_email, from_name)
@@ -253,7 +266,7 @@ def send_email(
     timeout = int(smtp_settings.get("timeout_sec", 30) or 30)
 
     if not host or not port:
-        raise ValueError("SMTP Server und Port mÃ¼ssen ausgefÃ¼llt werden.")
+        raise ValueError("SMTP Server und Port müssen ausgefüllt werden.")
 
     if security == "ssl":
         with smtplib.SMTP_SSL(host, port, timeout=timeout, context=ssl.create_default_context()) as server:
@@ -283,8 +296,7 @@ def send_email_with_attachment(
     from_email = (smtp_settings.get("from_email") or smtp_settings.get("username") or "").strip()
     from_name = (smtp_settings.get("from_name") or "").strip()
 
-    if not from_email:
-        raise ValueError("Absender-E-Mail fehlt in den SMTP-Einstellungen.")
+    from_email = validate_sender_email(from_email)
 
     msg = EmailMessage()
     msg["From"] = _build_from_header(from_email, from_name)

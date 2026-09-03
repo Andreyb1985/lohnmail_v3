@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LohnMail v2 — Enterprise Edition</title>
-  <link rel="stylesheet" href="styles.css?v=update-flow-20260901-001" />
+  <link rel="stylesheet" href="styles.css?v=release-ui-20260903-001" />
 </head>
 <body>
   <div class="app-shell">
@@ -245,6 +245,19 @@
               <div class="mass-form-grid">
                 <label>Betreff<input data-mass-field="subject" placeholder="Betreff eingeben"></label>
                 <label class="mass-body">Nachricht<textarea data-mass-field="body" rows="8" placeholder="Nachricht eingeben"></textarea></label>
+              </div>
+              <div class="mass-attachment-box">
+                <div class="mass-attachment-head">
+                  <div>
+                    <strong><span data-icon="doc"></span>Dateianhänge <small>(optional)</small></strong>
+                    <span>Bis zu 10 Dateien, zusammen maximal 18 MB.</span>
+                  </div>
+                  <div class="mass-attachment-actions">
+                    <button class="secondary-action" data-mass-action="choose-attachments">Dateien auswählen</button>
+                    <button class="secondary-action" data-mass-action="clear-attachments" data-mass-clear hidden>Entfernen</button>
+                  </div>
+                </div>
+                <div class="mass-attachment-list" data-mass="attachments"><span>Keine Dateien ausgewählt.</span></div>
               </div>
               <div class="mass-preview">
                 <div>
@@ -1560,6 +1573,10 @@
               <label><span>Betreff</span><input data-mass-preview="subject" readonly></label>
               <label><span>Nachricht</span><textarea data-mass-preview="body" rows="7" readonly></textarea></label>
             </div>
+            <div class="mass-send-attachments">
+              <strong>Dateianhänge</strong>
+              <div data-mass-preview="attachments"><span>Keine Anhänge.</span></div>
+            </div>
             <div class="shipping-send-notes mass-send-notes">
               <span>Alle Empfänger stammen aus der Excel-Datei des aktiven Unternehmens.</span>
               <span>Platzhalter werden für jeden Empfänger individuell eingesetzt.</span>
@@ -1639,6 +1656,6 @@
   </div>
 
   <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
-  <script src="app.js?v=update-flow-20260901-001"></script>
+  <script src="app.js?v=release-ui-20260902-001"></script>
 </body>
 </html>

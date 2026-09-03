@@ -16,6 +16,20 @@ if ($LASTEXITCODE -ne 0) { throw "Die Windows-Build-Abhängigkeiten konnten nich
 & ".venv\Scripts\python.exe" -m pytest -q
 if ($LASTEXITCODE -ne 0) { throw "Die Tests sind fehlgeschlagen. Es wird keine Windows-Version erstellt." }
 
+$RootLauncherBuildDir = Join-Path $PSScriptRoot "build-tools"
+$RootLauncher = Join-Path $RootLauncherBuildDir "LohnMail.RootLauncher.exe"
+New-Item -ItemType Directory -Force $RootLauncherBuildDir | Out-Null
+if (Test-Path $RootLauncher) { Remove-Item -Force $RootLauncher }
+$LauncherIcon = (Resolve-Path "web\assets\brand\LohnMail.ico").Path
+$LauncherCompilerOptions = "/target:winexe /optimize+ /win32icon:`"$LauncherIcon`""
+Add-Type `
+    -TypeDefinition (Get-Content "windows_root_launcher.cs" -Raw) `
+    -Language CSharp `
+    -ReferencedAssemblies @("System.dll", "System.Windows.Forms.dll") `
+    -CompilerOptions $LauncherCompilerOptions `
+    -OutputAssembly $RootLauncher
+if (-not (Test-Path $RootLauncher)) { throw "Der Windows-Root-Launcher konnte nicht erstellt werden." }
+
 & ".venv\Scripts\python.exe" -m PyInstaller `
     --noconfirm `
     --clean `
@@ -26,6 +40,7 @@ if ($LASTEXITCODE -ne 0) { throw "Die Tests sind fehlgeschlagen. Es wird keine W
     --icon "web\assets\brand\LohnMail.ico" `
     --version-file "windows_version_info.txt" `
     --collect-all webview `
+    --add-binary "$RootLauncher;." `
     --add-data "web;web" `
     --add-data "settings_template.json;." `
     main.py
@@ -42,6 +57,7 @@ if (Test-Path $ReleaseRoot) {
 
 New-Item -ItemType Directory -Force $ReleaseApp, $ReleaseSettings, $ReleaseCompanies | Out-Null
 Copy-Item -Recurse -Force "dist\LohnMail\*" $ReleaseApp
+Copy-Item -Force $RootLauncher (Join-Path $ReleaseRoot "LohnMail.exe")
 Copy-Item -Force "settings_template.json" (Join-Path $ReleaseSettings "settings.json")
 Copy-Item -Force "INSTALL-AND-START-WINDOWS.cmd" (Join-Path $ReleaseRoot "INSTALL-AND-START-WINDOWS.cmd")
 Copy-Item -Force "README-WINDOWS.txt" (Join-Path $ReleaseRoot "README-WINDOWS.txt")
@@ -66,6 +82,12 @@ if ($ReleaseSettingsData.companies.Count -ne 0 -or $ReleaseSettingsData.selected
 }
 if ($ReleaseSettingsData.smtp.password) {
     throw "Release-settings.json enthält ein SMTP-Passwort."
+}
+if (-not (Test-Path (Join-Path $ReleaseRoot "LohnMail.exe"))) {
+    throw "Der komfortable LohnMail.exe-Launcher im Hauptordner fehlt."
+}
+if (-not (Test-Path (Join-Path $ReleaseApp "LohnMail.RootLauncher.exe"))) {
+    throw "Das App-Paket enthält den Root-Launcher für bestehende Installationen nicht."
 }
 
 $VersionSource = Get-Content "ui_web\version.py" -Raw

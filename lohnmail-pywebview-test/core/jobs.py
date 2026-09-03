@@ -93,6 +93,7 @@ def run_mass_message_job(
     subject_template: str,
     body_template: str,
     recipients: list[dict],
+    attachment_paths: list[Path] | None = None,
     progress_cb: ProgressCb = None,
 ) -> dict:
     if not recipients:
@@ -110,29 +111,51 @@ def run_mass_message_job(
     mail_mode = str(settings.get("mail_mode", "smtp") or "smtp").strip().lower()
     smtp_settings = settings.get("smtp", {})
     from_email = str(smtp_settings.get("from_email", "") or "").strip()
+    attachments = [Path(path) for path in (attachment_paths or [])]
+    for attachment_path in attachments:
+        if not attachment_path.is_file():
+            raise ValueError(f"Der ausgewählte Anhang ist nicht mehr verfügbar: {attachment_path.name}")
 
     if mail_mode == "smtp":
-        from .mailer import send_email, test_smtp_connection
+        from .mailer import send_email, send_email_with_attachments, test_smtp_connection
 
         _emit_progress(progress_cb, "SMTP-Verbindung wird geprüft...")
         test_smtp_connection(smtp_settings)
-        send_message = lambda to_email, subject, body: send_email(
-            smtp_settings=smtp_settings,
-            to_email=to_email,
-            subject=subject,
-            body=body,
-        )
+        if attachments:
+            send_message = lambda to_email, subject, body: send_email_with_attachments(
+                smtp_settings=smtp_settings,
+                to_email=to_email,
+                subject=subject,
+                body=body,
+                attachment_paths=attachments,
+            )
+        else:
+            send_message = lambda to_email, subject, body: send_email(
+                smtp_settings=smtp_settings,
+                to_email=to_email,
+                subject=subject,
+                body=body,
+            )
     elif mail_mode == "outlook":
-        from .mailer import send_outlook_email, test_outlook_connection
+        from .mailer import send_outlook_email, send_outlook_email_with_attachments, test_outlook_connection
 
         _emit_progress(progress_cb, "Outlook-Verbindung wird geprüft...")
         test_outlook_connection(from_email)
-        send_message = lambda to_email, subject, body: send_outlook_email(
-            to_email=to_email,
-            subject=subject,
-            body=body,
-            from_email=from_email,
-        )
+        if attachments:
+            send_message = lambda to_email, subject, body: send_outlook_email_with_attachments(
+                to_email=to_email,
+                subject=subject,
+                body=body,
+                attachment_paths=attachments,
+                from_email=from_email,
+            )
+        else:
+            send_message = lambda to_email, subject, body: send_outlook_email(
+                to_email=to_email,
+                subject=subject,
+                body=body,
+                from_email=from_email,
+            )
     else:
         raise ValueError(f"Unbekannte Versandmethode: {mail_mode}")
 
@@ -164,5 +187,6 @@ def run_mass_message_job(
         "error_count": len(errors),
         "total_count": total_count,
         "errors": errors,
+        "attachment_count": len(attachments),
         "company_name": get_company_name(settings, company_id),
     }

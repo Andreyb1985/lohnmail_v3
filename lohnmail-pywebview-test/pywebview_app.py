@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import shutil
 import sys
 from pathlib import Path
 from typing import Any, Callable
@@ -22,6 +23,7 @@ from ui_web.version import APP_VERSION
 ROOT = Path(__file__).resolve().parent
 HTML_PATH = ROOT / "web" / "index.html"
 WINDOWS_ICON_PATH = HTML_PATH.parent / "assets" / "brand" / "LohnMail.ico"
+WINDOWS_ROOT_LAUNCHER_NAME = "LohnMail.RootLauncher.exe"
 SIGNALS = (
     "pageChanged",
     "processingStateChanged",
@@ -116,6 +118,34 @@ class ApiAdapter:
     def chooseCompanyExcelInput(self) -> str:
         self.chooseExcelInput()
         return json.dumps(self._bridge._company_payload(load_settings()), ensure_ascii=False)
+
+    def chooseMassMessageAttachments(self) -> str:
+        settings = load_settings()
+        if self._bridge._workflow_running() or self._window is None:
+            return self._bridge.getMassMessageState()
+        ui_settings = settings.setdefault("ui", {})
+        start_path = self._bridge._dialog_start_path(
+            str(ui_settings.get("last_mass_attachment_dir", "") or "")
+        )
+        selected = self._window.create_file_dialog(
+            webview.FileDialog.OPEN,
+            directory=start_path,
+            allow_multiple=True,
+            file_types=("Alle Dateien (*.*)",),
+        )
+        if not selected:
+            return self._bridge.getMassMessageState()
+        attachments = []
+        seen = set()
+        for raw_path in selected:
+            path = Path(str(raw_path)).expanduser().resolve()
+            key = str(path).casefold()
+            if key not in seen:
+                attachments.append(path)
+                seen.add(key)
+        ui_settings["last_mass_attachment_dir"] = str(attachments[0].parent)
+        save_settings(settings)
+        return self._bridge._set_mass_message_attachments(attachments)
 
     def createCompany(self, payload: str) -> str:
         try:
@@ -222,8 +252,33 @@ def _set_runtime_app_identity() -> None:
             pass
 
 
-def _set_windows_window_icon(window: webview.Window) -> None:
-    """Set small and large native icons, including source launches via python.exe."""
+def _install_windows_root_launcher() -> None:
+    """Expose a stable root launcher while keeping the replaceable runtime in App."""
+    if sys.platform != "win32" or not getattr(sys, "frozen", False):
+        return
+    try:
+        app_directory = Path(sys.executable).resolve().parent
+        if app_directory.name.casefold() != "app":
+            return
+        launcher_source = app_directory / WINDOWS_ROOT_LAUNCHER_NAME
+        launcher_target = app_directory.parent / "LohnMail.exe"
+        if launcher_source.is_file() and not launcher_target.exists():
+            temporary_target = launcher_target.with_suffix(".exe.new")
+            shutil.copy2(launcher_source, temporary_target)
+            temporary_target.replace(launcher_target)
+    except Exception:
+        # The App executable remains a valid fallback if the portable root is read-only.
+        pass
+
+
+def _windows_colorref(hex_color: str) -> int:
+    value = hex_color.lstrip("#")
+    red, green, blue = (int(value[index:index + 2], 16) for index in (0, 2, 4))
+    return red | (green << 8) | (blue << 16)
+
+
+def _configure_windows_window(window: webview.Window) -> None:
+    """Apply crisp icons and a light native caption matching the application."""
     if sys.platform != "win32":
         return
     try:
@@ -232,32 +287,46 @@ def _set_windows_window_icon(window: webview.Window) -> None:
         native = getattr(window, "native", None)
         handle_value = getattr(native, "Handle", 0)
         hwnd = int(handle_value.ToInt64()) if hasattr(handle_value, "ToInt64") else int(handle_value)
-        if not hwnd or not WINDOWS_ICON_PATH.exists():
+        if not hwnd:
             return
 
         user32 = ctypes.windll.user32
-        user32.LoadImageW.restype = ctypes.c_void_p
-        user32.SendMessageW.restype = ctypes.c_ssize_t
-        image_icon = 1
-        load_from_file = 0x0010
-        wm_seticon = 0x0080
-        for icon_type, size in ((0, 16), (1, 32)):
-            icon = user32.LoadImageW(
-                None,
-                str(WINDOWS_ICON_PATH),
-                image_icon,
-                size,
-                size,
-                load_from_file,
-            )
-            if icon:
-                user32.SendMessageW(hwnd, wm_seticon, icon_type, icon)
+        if WINDOWS_ICON_PATH.exists():
+            user32.LoadImageW.restype = ctypes.c_void_p
+            user32.SendMessageW.restype = ctypes.c_ssize_t
+            image_icon = 1
+            load_from_file = 0x0010
+            wm_seticon = 0x0080
+            for icon_type, size in ((0, 20), (1, 48)):
+                icon = user32.LoadImageW(
+                    None,
+                    str(WINDOWS_ICON_PATH),
+                    image_icon,
+                    size,
+                    size,
+                    load_from_file,
+                )
+                if icon:
+                    user32.SendMessageW(hwnd, wm_seticon, icon_type, icon)
+
+        dwmapi = ctypes.windll.dwmapi
+
+        def set_dwm_attribute(attribute: int, value: int) -> None:
+            data = ctypes.c_int(value)
+            dwmapi.DwmSetWindowAttribute(hwnd, attribute, ctypes.byref(data), ctypes.sizeof(data))
+
+        for immersive_dark_attribute in (20, 19):
+            set_dwm_attribute(immersive_dark_attribute, 0)
+        set_dwm_attribute(35, _windows_colorref("#f5f8fb"))  # caption
+        set_dwm_attribute(36, _windows_colorref("#0f172a"))  # caption text
+        set_dwm_attribute(34, _windows_colorref("#d7e0ea"))  # border
     except Exception:
         pass
 
 
 def run() -> None:
     _set_runtime_app_identity()
+    _install_windows_root_launcher()
     ensure_settings_file()
     LicenseManager({}).machine_id()
     bridge = WebBridge()
@@ -282,7 +351,7 @@ def run() -> None:
             pass
 
     window.events.closing += on_closing
-    window.events.loaded += lambda: _set_windows_window_icon(window)
+    window.events.loaded += lambda: _configure_windows_window(window)
     webview.start(debug=False)
 
 

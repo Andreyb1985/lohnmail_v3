@@ -2425,6 +2425,28 @@
     var modal = document.querySelector('[data-mass-send-modal]');
     if (modal) modal.hidden = true;
   }
+  function formatFileSize(bytes){
+    var size = Number(bytes || 0);
+    if (size < 1024) return size + ' B';
+    if (size < 1024 * 1024) return Math.round(size / 1024) + ' KB';
+    return (size / (1024 * 1024)).toFixed(1).replace('.', ',') + ' MB';
+  }
+  function renderMassAttachments(attachments, previewMode){
+    attachments = attachments || [];
+    var selector = previewMode ? '[data-mass-preview="attachments"]' : '[data-mass="attachments"]';
+    var node = document.querySelector(selector);
+    if (!node) return;
+    node.innerHTML = attachments.length
+      ? attachments.map(function(file){
+          return '<span class="mass-attachment-chip"><span data-icon="doc"></span><b>' +
+            escapeHtml(file.name || 'Datei') + '</b><small>' + formatFileSize(file.size) + '</small></span>';
+        }).join('')
+      : '<span>Keine Dateien ausgewählt.</span>';
+    if (!previewMode) {
+      var clearButton = document.querySelector('[data-mass-clear]');
+      if (clearButton) clearButton.hidden = !attachments.length;
+    }
+  }
   function openMassSendPreview(){
     var state = latestMassMessageState || {};
     var preview = state.preview || {};
@@ -2440,6 +2462,7 @@
     setMassPreviewText('subject', preview.subject_preview || massSubject());
     setMassPreviewText('body', preview.body_preview || massBody());
     setMassPreviewText('message', 'Bitte Empfänger, Betreff und Nachricht vor dem Senden prüfen.');
+    renderMassAttachments(preview.attachments || state.attachments || [], true);
 
     var tbody = document.querySelector('[data-mass-preview="rows"]');
     if (tbody) {
@@ -2512,6 +2535,7 @@
       sendButton.title = preview.ready ? 'Öffnet die finale Prüfung vor dem Versand.' : 'Bitte zuerst Vorschau laden.';
     }
     renderMassRecipients(preview.rows || []);
+    renderMassAttachments(state.attachments || preview.attachments || [], false);
   }
   function consumeMassMessagePayload(payload){
     try {
@@ -2553,6 +2577,23 @@
       }
       setMassMessage('Vorschau wird geladen...');
       bridge.previewMassMessage(massSubject(), massBody(), function(payload){
+        consumeMassMessagePayload(payload);
+      });
+      return;
+    }
+    if (action === 'choose-attachments') {
+      if (!bridge || !bridge.chooseMassMessageAttachments) {
+        setMassMessage('Dateiauswahl ist noch nicht bereit.');
+        return;
+      }
+      bridge.chooseMassMessageAttachments(function(payload){
+        consumeMassMessagePayload(payload);
+      });
+      return;
+    }
+    if (action === 'clear-attachments') {
+      if (!bridge || !bridge.clearMassMessageAttachments) return;
+      bridge.clearMassMessageAttachments(function(payload){
         consumeMassMessagePayload(payload);
       });
       return;
@@ -2636,15 +2677,26 @@
       ]
     },
     {
-      id: 'shipping-safe', topic: 'shipping', category: 'Versand', tag: 'blue', updated: '13.07.2026',
+      id: 'shipping-safe', topic: 'shipping', category: 'Versand', tag: 'blue', updated: '02.09.2026',
       title: 'Versand sicher vorbereiten, kontrollieren und starten',
       summary: 'Der Versand besteht bewusst aus Auswahl, Vorbereitung, Vorschau und finaler Bestätigung. Keine dieser Kontrollen sollte übersprungen werden.',
       keywords: 'versand vorbereiten jetzt senden vorschau empfänger checkbox testversand',
       sections: [
-        {title: '1. Empfänger auswählen', steps: ['Öffnen Sie den Filter Versandbereit.', 'Kontrollieren Sie Name, Personalnummer, E-Mail und Dokument.', 'Nutzen Sie die Kopf-Checkbox für alle sichtbaren sendbaren Einträge oder wählen Sie einzelne Mitarbeiter manuell.']},
-        {title: '2. Versand vorbereiten', text: ['Versand vorbereiten erstellt die Warteschlange für die markierten Empfänger. Einträge ohne E-Mail-Adresse bleiben ausgeschlossen und können nicht versehentlich versendet werden.']},
+        {title: '1. Empfänger auswählen', steps: ['Die Prüfung erfasst weiterhin alle importierten Mitarbeiter und dokumentiert auch Datensätze ohne E-Mail-Adresse.', 'Öffnen Sie den Filter Versandbereit.', 'Kontrollieren Sie Name, Personalnummer, E-Mail und Dokument.', 'Nutzen Sie die Kopf-Checkbox für alle sichtbaren sendbaren Einträge oder wählen Sie einzelne Mitarbeiter manuell.']},
+        {title: '2. Versand vorbereiten', text: ['Versand vorbereiten erstellt die Warteschlange ausschließlich für die markierten, sendbaren Empfänger. Einträge ohne E-Mail-Adresse und nicht markierte Mitarbeiter bleiben ausgeschlossen.']},
         {title: '3. Vorschau prüfen', bullets: ['Empfängeradresse', 'Betreff und Nachrichtentext', 'Dateiname und Anzahl der Anhänge', 'Versandmethode SMTP oder Outlook Classic', 'Ausgewählter Mandant und Abrechnungszeitraum']},
-        {title: '4. Final senden', text: ['Jetzt senden öffnet den abschließenden Bestätigungsdialog. Erst Versand starten löst die tatsächliche Übergabe an SMTP oder Outlook Classic aus.'], note: 'Für einen Funktionstest zunächst nur einen internen Empfänger markieren und Testversand verwenden.'}
+        {title: '4. Final senden', text: ['Jetzt senden öffnet den abschließenden Bestätigungsdialog und übernimmt ebenfalls nur die zuvor markierten Empfänger. Erst Versand starten löst die tatsächliche Übergabe an SMTP oder Outlook Classic aus.'], note: 'Für einen Funktionstest zunächst nur einen internen Empfänger markieren und Testversand verwenden.'}
+      ]
+    },
+    {
+      id: 'mass-message', topic: 'shipping', category: 'Nachricht', tag: 'blue', updated: '02.09.2026',
+      title: 'Freie Nachricht mit Dateien versenden',
+      summary: 'Unter Nachricht können Sie eine freie E-Mail an ausgewählte Empfänger senden und bei Bedarf mehrere Dateien anhängen.',
+      keywords: 'nachricht datei anhang anhänge auswählen massenmail empfänger',
+      sections: [
+        {title: 'Empfänger und Inhalt', steps: ['Öffnen Sie Nachricht und wählen Sie die gewünschten Empfänger.', 'Tragen Sie Betreff und Nachrichtentext ein.', 'Kontrollieren Sie die Empfängerzahl vor dem Öffnen der Vorschau.']},
+        {title: 'Dateien anhängen', text: ['Mit Dateien auswählen können Sie bis zu 10 Dateien mit insgesamt höchstens 18 MB hinzufügen. Entfernen löscht die Auswahl wieder. Die Dateien werden erst beim bestätigten Versand als Anhänge übernommen.']},
+        {title: 'Vor dem Versand prüfen', bullets: ['Empfängerliste vollständig', 'Betreff und Text korrekt', 'Dateinamen und Gesamtgröße der Anhänge plausibel', 'SMTP oder Outlook Classic für den aktiven Mandanten korrekt gespeichert'], note: 'Wenn eine ausgewählte Datei verschoben oder gelöscht wurde, stoppt LohnMail vor dem Versand und fordert eine neue Auswahl an.'}
       ]
     },
     {
@@ -4215,13 +4267,18 @@
   }
   function startShippingDryRun(){
     var bridge = window.lohnmailBridge;
-    if (!bridge || !bridge.startShippingDryRun) {
+    if (!bridge || !bridge.startSelectedShippingDryRun) {
       setShippingMessage('Bridge ist noch nicht bereit.');
       return;
     }
+    var selected = selectedShippingList();
+    if (!selected.length) {
+      setShippingMessage('Bitte mindestens einen sendbaren Mitarbeiter für die Versandvorbereitung auswählen.');
+      return;
+    }
     shippingTerminalState = null;
-    resetShippingLiveProgress();
-    bridge.startShippingDryRun(function(payload){
+    resetShippingLiveProgress(activeCompanyId(), selectedShippingRows());
+    bridge.startSelectedShippingDryRun(JSON.stringify(selected), function(payload){
       // State updates arrive through shippingStateChanged/shippingFinished.
       // Applying this start response can overwrite a fast finished signal.
       void payload;

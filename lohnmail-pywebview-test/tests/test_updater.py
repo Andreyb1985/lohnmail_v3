@@ -433,6 +433,24 @@ class UpdateServiceTests(unittest.TestCase):
         self.assertIn('(Settings|Companies)', text)
         self.assertIn('Get-FileHash $UpdateZip -Algorithm SHA256', text)
         self.assertNotIn('Copy-Item -Recurse -Force ".\\*" $UpdatePackageApp', text)
+        self.assertIn('windows_root_launcher.cs', text)
+        self.assertIn('LohnMail.RootLauncher.exe', text)
+        self.assertIn('(Join-Path $ReleaseRoot "LohnMail.exe")', text)
+
+    def test_root_launcher_starts_replaceable_app_runtime(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        source = (root / "windows_root_launcher.cs").read_text(encoding="utf-8")
+        self.assertIn('Path.Combine(rootDirectory, "App", "LohnMail.exe")', source)
+        self.assertIn("UseShellExecute = true", source)
+        runtime = (root / "pywebview_app.py").read_text(encoding="utf-8")
+        self.assertIn("_install_windows_root_launcher()", runtime)
+        self.assertIn('app_directory.parent / "LohnMail.exe"', runtime)
+
+    def test_windows_native_caption_is_forced_to_light_application_colors(self) -> None:
+        runtime = (Path(__file__).resolve().parent.parent / "pywebview_app.py").read_text(encoding="utf-8")
+        self.assertIn('_windows_colorref("#f5f8fb")', runtime)
+        self.assertIn('_windows_colorref("#0f172a")', runtime)
+        self.assertIn("DwmSetWindowAttribute", runtime)
 
     def test_install_preflight_accepts_valid_older_sqlite_schema(self) -> None:
         import sqlite3

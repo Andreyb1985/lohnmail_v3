@@ -259,6 +259,54 @@ class PywebviewAdapterTests(unittest.TestCase):
             self.assertEqual(final["status"]["progress"], 100)
             self.assertTrue(final["status"]["dry_run"])
 
+    def test_selected_shipping_dry_run_passes_only_selected_personnel_numbers(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            pdf_path = root / "journal.pdf"
+            excel_path = root / "employees.xlsx"
+            pdf_path.write_bytes(b"test")
+            excel_path.write_bytes(b"test")
+            settings = build_default_settings()
+            settings["companies"] = [{"id": "test", "name": "Test", "email_excel_file": str(excel_path)}]
+            settings["selected_company_id"] = "test"
+            settings["ui"]["last_pdf_input_mode"] = "single_pdf"
+            settings["ui"]["last_pdf_dir"] = str(pdf_path)
+            finished = threading.Event()
+
+            with patch("ui_web.bridge.load_settings", side_effect=lambda: settings), patch(
+                "ui_web.bridge.LicenseManager.require_action", return_value=(True, {})
+            ), patch("ui_web.bridge.company_output_dir", return_value=root / "output"), patch(
+                "core.jobs.run_main_job",
+                return_value={"summary": {"dry_run": True}, "table_rows": []},
+            ) as run_job:
+                bridge = WebBridge()
+                bridge._register_result_reports = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
+                bridge._validation_company_id = "test"
+                bridge._validation_input_signature = bridge._input_signature(settings)
+                bridge._validation_state = {"ready": True}
+                bridge.shippingFinished.connect(lambda _payload: finished.set())
+                json.loads(bridge.startSelectedShippingDryRun('["100", "200"]'))
+                self.assertTrue(finished.wait(2), "selected shipping dry-run did not finish")
+
+            self.assertEqual(run_job.call_args.kwargs["selected_persnr"], {"100", "200"})
+
+    def test_mass_message_attachment_dialog_updates_state_and_remembers_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            attachment = Path(temp_dir) / "Hinweis.pdf"
+            attachment.write_bytes(b"pdf")
+            settings = build_default_settings()
+            bridge = WebBridge()
+            adapter = ApiAdapter(bridge)
+            adapter.attach_window(FakeWindow((str(attachment),)))  # type: ignore[arg-type]
+            with patch("pywebview_app.load_settings", side_effect=lambda: settings), patch(
+                "pywebview_app.save_settings"
+            ), patch("ui_web.bridge.load_settings", side_effect=lambda: settings):
+                payload = json.loads(adapter.chooseMassMessageAttachments())
+
+            self.assertEqual(payload["attachments"][0]["name"], "Hinweis.pdf")
+            self.assertEqual(settings["ui"]["last_mass_attachment_dir"], str(Path(temp_dir).resolve()))
+            self.assertFalse(payload["status"]["preview_ready"])
+
     def test_structured_shipping_progress_uses_exact_recipient_count(self) -> None:
         settings = build_default_settings()
         settings["companies"] = [{"id": "test", "name": "Test"}]

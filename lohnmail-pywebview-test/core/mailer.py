@@ -4,6 +4,7 @@ import socket
 import ssl
 import subprocess
 import sys
+import mimetypes
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -426,8 +427,28 @@ def send_email_with_attachment(
     attachment_path: Path,
     html_body: str = "",
 ) -> None:
-    if not attachment_path.exists():
-        raise FileNotFoundError(f"Anhang nicht gefunden: {attachment_path}")
+    send_email_with_attachments(
+        smtp_settings=smtp_settings,
+        to_email=to_email,
+        subject=subject,
+        body=body,
+        attachment_paths=[attachment_path],
+        html_body=html_body,
+    )
+
+
+def send_email_with_attachments(
+    smtp_settings: dict,
+    to_email: str,
+    subject: str,
+    body: str,
+    attachment_paths: list[Path],
+    html_body: str = "",
+) -> None:
+    attachments = [Path(path) for path in attachment_paths]
+    for attachment_path in attachments:
+        if not attachment_path.is_file():
+            raise FileNotFoundError(f"Anhang nicht gefunden: {attachment_path}")
 
     from_email = (smtp_settings.get("from_email") or smtp_settings.get("username") or "").strip()
     from_name = (smtp_settings.get("from_name") or "").strip()
@@ -442,13 +463,15 @@ def send_email_with_attachment(
     if html_body:
         msg.add_alternative(html_body, subtype="html")
 
-    data = attachment_path.read_bytes()
-    msg.add_attachment(
-        data,
-        maintype="application",
-        subtype="pdf",
-        filename=attachment_path.name,
-    )
+    for attachment_path in attachments:
+        mime_type, _ = mimetypes.guess_type(attachment_path.name)
+        maintype, subtype = (mime_type or "application/octet-stream").split("/", 1)
+        msg.add_attachment(
+            attachment_path.read_bytes(),
+            maintype=maintype,
+            subtype=subtype,
+            filename=attachment_path.name,
+        )
 
     host = smtp_settings.get("server", "").strip()
     port = int(smtp_settings.get("port", 0) or 0)
@@ -537,10 +560,29 @@ def send_outlook_email_with_attachment(
     from_email: str = "",
     html_body: str = "",
 ) -> None:
-    _ensure_outlook_supported()
+    send_outlook_email_with_attachments(
+        to_email=to_email,
+        subject=subject,
+        body=body,
+        attachment_paths=[attachment_path],
+        from_email=from_email,
+        html_body=html_body,
+    )
 
-    if not attachment_path.exists():
-        raise FileNotFoundError(f"Anhang nicht gefunden: {attachment_path}")
+
+def send_outlook_email_with_attachments(
+    to_email: str,
+    subject: str,
+    body: str,
+    attachment_paths: list[Path],
+    from_email: str = "",
+    html_body: str = "",
+) -> None:
+    _ensure_outlook_supported()
+    attachments = [Path(path) for path in attachment_paths]
+    for attachment_path in attachments:
+        if not attachment_path.is_file():
+            raise FileNotFoundError(f"Anhang nicht gefunden: {attachment_path}")
 
     if sys.platform == "win32":
         def _send() -> None:
@@ -555,7 +597,8 @@ def send_outlook_email_with_attachment(
             else:
                 message.Body = body
             _assign_windows_outlook_account(message, account, from_email)
-            message.Attachments.Add(str(attachment_path))
+            for attachment_path in attachments:
+                message.Attachments.Add(str(attachment_path))
             try:
                 message.Send()
             except Exception as exc:
@@ -573,16 +616,17 @@ on run argv
     set toEmail to item 1 of argv
     set subjectText to item 2 of argv
     set bodyText to item 3 of argv
-    set attachmentPath to item 4 of argv
-
     tell application "Microsoft Outlook"
         set newMessage to make new outgoing message with properties {subject:subjectText, content:bodyText & return & return}
         tell newMessage
             make new recipient with properties {email address:{address:toEmail}}
-            make new attachment with properties {file:(POSIX file attachmentPath as alias)}
+            repeat with argumentIndex from 4 to count of argv
+                set attachmentPath to item argumentIndex of argv
+                make new attachment with properties {file:(POSIX file attachmentPath as alias)}
+            end repeat
             send
         end tell
     end tell
 end run
 """
-    _run_osascript(script, [to_email, subject, body, str(attachment_path)])
+    _run_osascript(script, [to_email, subject, body, *[str(path) for path in attachments]])
