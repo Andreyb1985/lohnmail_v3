@@ -435,6 +435,8 @@ class UpdateServiceTests(unittest.TestCase):
         self.assertNotIn('Copy-Item -Recurse -Force ".\\*" $UpdatePackageApp', text)
         self.assertIn('windows_root_launcher.cs', text)
         self.assertIn('LohnMail.RootLauncher.exe', text)
+        self.assertIn('Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe', text)
+        self.assertNotIn('-CompilerOptions', text)
         self.assertIn('(Join-Path $ReleaseRoot "LohnMail.exe")', text)
 
     def test_root_launcher_starts_replaceable_app_runtime(self) -> None:

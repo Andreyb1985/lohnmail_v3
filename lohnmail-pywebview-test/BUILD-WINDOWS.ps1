@@ -21,13 +21,23 @@ $RootLauncher = Join-Path $RootLauncherBuildDir "LohnMail.RootLauncher.exe"
 New-Item -ItemType Directory -Force $RootLauncherBuildDir | Out-Null
 if (Test-Path $RootLauncher) { Remove-Item -Force $RootLauncher }
 $LauncherIcon = (Resolve-Path "web\assets\brand\LohnMail.ico").Path
-$LauncherCompilerOptions = "/target:winexe /optimize+ /win32icon:`"$LauncherIcon`""
-Add-Type `
-    -TypeDefinition (Get-Content "windows_root_launcher.cs" -Raw) `
-    -Language CSharp `
-    -ReferencedAssemblies @("System.dll", "System.Windows.Forms.dll") `
-    -CompilerOptions $LauncherCompilerOptions `
-    -OutputAssembly $RootLauncher
+$CSharpCompiler = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+if (-not (Test-Path $CSharpCompiler)) {
+    $CSharpCompiler = Join-Path $env:WINDIR "Microsoft.NET\Framework\v4.0.30319\csc.exe"
+}
+if (-not (Test-Path $CSharpCompiler)) {
+    throw "Der Windows-C#-Compiler für den Root-Launcher wurde nicht gefunden."
+}
+& $CSharpCompiler `
+    /nologo `
+    /target:winexe `
+    /optimize+ `
+    "/win32icon:$LauncherIcon" `
+    /reference:System.dll `
+    /reference:System.Windows.Forms.dll `
+    "/out:$RootLauncher" `
+    "windows_root_launcher.cs"
+if ($LASTEXITCODE -ne 0) { throw "Der Windows-Root-Launcher konnte nicht kompiliert werden." }
 if (-not (Test-Path $RootLauncher)) { throw "Der Windows-Root-Launcher konnte nicht erstellt werden." }
 
 & ".venv\Scripts\python.exe" -m PyInstaller `
