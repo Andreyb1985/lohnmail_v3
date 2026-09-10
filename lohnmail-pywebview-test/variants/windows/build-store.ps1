@@ -66,13 +66,14 @@ New-Item -ItemType Directory -Force $StageRoot, $ValidationRoot, $OutputRoot | O
 Copy-Item -Recurse -Force "$StandaloneRoot\*" $StageRoot
 Copy-Item -Recurse -Force $AssetsSource (Join-Path $StageRoot "Assets")
 
-$Manifest = Get-Content $TemplatePath -Raw
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$Manifest = [System.IO.File]::ReadAllText($TemplatePath, $Utf8NoBom)
 $Manifest = $Manifest.Replace("@@IDENTITY_NAME@@", (Escape-Xml $IdentityName))
 $Manifest = $Manifest.Replace("@@PUBLISHER@@", (Escape-Xml $Publisher))
 $Manifest = $Manifest.Replace("@@PUBLISHER_DISPLAY_NAME@@", (Escape-Xml $PublisherDisplayName))
 $Manifest = $Manifest.Replace("@@APPLICATION_ID@@", (Escape-Xml $ApplicationId))
 $Manifest = $Manifest.Replace("@@MSIX_VERSION@@", $MsixVersion)
-[System.IO.File]::WriteAllText($ManifestPath, $Manifest, (New-Object System.Text.UTF8Encoding($false)))
+[System.IO.File]::WriteAllText($ManifestPath, $Manifest, $Utf8NoBom)
 
 $RequiredStageFiles = @(
     "LohnMail.exe",
@@ -119,13 +120,18 @@ foreach ($RelativePath in @("LohnMail.exe", "AppxManifest.xml", "lohnmail_distri
     }
 }
 
-[xml]$ValidatedManifest = Get-Content (Join-Path $ValidationRoot "AppxManifest.xml") -Raw
+$ValidatedManifestPath = Join-Path $ValidationRoot "AppxManifest.xml"
+$ValidatedManifestText = [System.IO.File]::ReadAllText($ValidatedManifestPath, $Utf8NoBom)
+[xml]$ValidatedManifest = $ValidatedManifestText
 if ($ValidatedManifest.Package.Identity.Version -ne $MsixVersion) { throw "Die MSIX-Version stimmt nicht." }
 if ($ValidatedManifest.Package.Identity.ProcessorArchitecture -ne "x64") { throw "Die MSIX-Architektur ist nicht x64." }
+if ($ValidatedManifestText -notlike '*Lohnabrechnungen prüfen, schützen und sicher versenden*') {
+    throw "Die UTF-8-Zeichen im MSIX-Manifest wurden beschädigt."
+}
 
 $Hash = (Get-FileHash $OutputMsix -Algorithm SHA256).Hash.ToLowerInvariant()
 $HashPath = "$OutputMsix.sha256"
-[System.IO.File]::WriteAllText($HashPath, "$Hash  $(Split-Path $OutputMsix -Leaf)`n", (New-Object System.Text.UTF8Encoding($false)))
+[System.IO.File]::WriteAllText($HashPath, "$Hash  $(Split-Path $OutputMsix -Leaf)`n", $Utf8NoBom)
 Copy-Item -Force $ManifestPath (Join-Path $OutputRoot "AppxManifest.xml")
 
 $Commit = if ($env:GITHUB_SHA) { [string]$env:GITHUB_SHA } else { (& git rev-parse HEAD).Trim() }
@@ -147,7 +153,7 @@ $BuildInfoJson = $BuildInfo | ConvertTo-Json
 [System.IO.File]::WriteAllText(
     (Join-Path $OutputRoot "build_info.json"),
     $BuildInfoJson,
-    (New-Object System.Text.UTF8Encoding($false))
+    $Utf8NoBom
 )
 
 Write-Host "MSIX erstellt: $OutputMsix" -ForegroundColor Green

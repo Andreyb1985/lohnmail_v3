@@ -45,6 +45,8 @@ def test_store_build_excludes_user_data_and_uses_makeappx() -> None:
     assert "pdf|xlsx?|xlsm|csv" in script
     assert "build_info.json" in script
     assert "Get-FileHash $OutputMsix -Algorithm SHA256" in script
+    assert "[System.IO.File]::ReadAllText($TemplatePath, $Utf8NoBom)" in script
+    assert "Lohnabrechnungen prüfen, schützen und sicher versenden" in script
 
 
 def test_store_workflow_builds_validates_and_uploads_msix() -> None:
