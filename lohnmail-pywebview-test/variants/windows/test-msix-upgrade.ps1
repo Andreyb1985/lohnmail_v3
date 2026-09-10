@@ -47,7 +47,7 @@ $PfxPath = Join-Path $TestRoot "test-signing.pfx"
 $CerPath = Join-Path $TestRoot "test-signing.cer"
 Export-PfxCertificate -Cert $Certificate -FilePath $PfxPath -Password $Password | Out-Null
 Export-Certificate -Cert $Certificate -FilePath $CerPath | Out-Null
-Import-Certificate -FilePath $CerPath -CertStoreLocation "Cert:\CurrentUser\TrustedPeople" | Out-Null
+Import-Certificate -FilePath $CerPath -CertStoreLocation "Cert:\LocalMachine\TrustedPeople" | Out-Null
 $DataSentinelsCreated = $false
 
 try {
@@ -79,7 +79,7 @@ try {
 } finally {
     Get-AppxPackage -Name $IdentityName | Remove-AppxPackage -ErrorAction SilentlyContinue
     Remove-Item "Cert:\CurrentUser\My\$($Certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
-    Remove-Item "Cert:\CurrentUser\TrustedPeople\$($Certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
+    Remove-Item "Cert:\LocalMachine\TrustedPeople\$($Certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
 }
 if ($DataSentinelsCreated) {
     if (-not (Test-Path $SettingsSentinel)) { throw "Settings wurden bei der Deinstallation entfernt." }
