@@ -177,16 +177,13 @@ class ApiAdapter:
         return self._bridge.activateLicenseKey(str(value))
 
     def checkForUpdates(self) -> str:
-        return json.dumps(self._bridge._update_service.check(), ensure_ascii=False)
+        return self._bridge.checkForUpdates()
 
     def downloadUpdate(self) -> str:
-        state = self._bridge._update_service.download(progress=self._bridge._on_update_progress)
-        self._bridge._on_update_finished(state)
-        return json.dumps(state, ensure_ascii=False)
+        return self._bridge.downloadUpdate()
 
     def installUpdateNow(self) -> str:
-        self._bridge._update_service.set_preferences(install_on_exit=True)
-        result = self._bridge._update_service.install_on_exit()
+        result = json.loads(self._bridge.installUpdateOnExit())
         if result.get("started") and self._window is not None:
             self._window.destroy()
         return json.dumps(result, ensure_ascii=False)

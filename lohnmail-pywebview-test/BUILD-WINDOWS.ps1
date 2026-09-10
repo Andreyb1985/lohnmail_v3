@@ -16,45 +16,11 @@ if ($LASTEXITCODE -ne 0) { throw "Die Windows-Build-Abhängigkeiten konnten nich
 & ".venv\Scripts\python.exe" -m pytest -q
 if ($LASTEXITCODE -ne 0) { throw "Die Tests sind fehlgeschlagen. Es wird keine Windows-Version erstellt." }
 
-$RootLauncherBuildDir = Join-Path $PSScriptRoot "build-tools"
-$RootLauncher = Join-Path $RootLauncherBuildDir "LohnMail.RootLauncher.exe"
-New-Item -ItemType Directory -Force $RootLauncherBuildDir | Out-Null
-if (Test-Path $RootLauncher) { Remove-Item -Force $RootLauncher }
-$LauncherIcon = (Resolve-Path "web\assets\brand\LohnMail.ico").Path
-$CSharpCompiler = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-if (-not (Test-Path $CSharpCompiler)) {
-    $CSharpCompiler = Join-Path $env:WINDIR "Microsoft.NET\Framework\v4.0.30319\csc.exe"
-}
-if (-not (Test-Path $CSharpCompiler)) {
-    throw "Der Windows-C#-Compiler für den Root-Launcher wurde nicht gefunden."
-}
-& $CSharpCompiler `
-    /nologo `
-    /target:winexe `
-    /optimize+ `
-    "/win32icon:$LauncherIcon" `
-    /reference:System.dll `
-    /reference:System.Windows.Forms.dll `
-    "/out:$RootLauncher" `
-    "windows_root_launcher.cs"
-if ($LASTEXITCODE -ne 0) { throw "Der Windows-Root-Launcher konnte nicht kompiliert werden." }
-if (-not (Test-Path $RootLauncher)) { throw "Der Windows-Root-Launcher konnte nicht erstellt werden." }
+& ".\variants\windows\build-standalone.ps1" -Distribution direct
+if ($LASTEXITCODE -ne 0) { throw "Die Direct-Standalone-Sammlung ist fehlgeschlagen." }
 
-& ".venv\Scripts\python.exe" -m PyInstaller `
-    --noconfirm `
-    --clean `
-    --windowed `
-    --onedir `
-    --contents-directory . `
-    --name LohnMail `
-    --icon "web\assets\brand\LohnMail.ico" `
-    --version-file "windows_version_info.txt" `
-    --collect-all webview `
-    --add-binary "$RootLauncher;." `
-    --add-data "web;web" `
-    --add-data "settings_template.json;." `
-    main.py
-if ($LASTEXITCODE -ne 0) { throw "PyInstaller konnte LohnMail.exe nicht erstellen." }
+$DirectStandalone = Join-Path $PSScriptRoot "dist\direct\LohnMail"
+$RootLauncher = Join-Path $DirectStandalone "LohnMail.RootLauncher.exe"
 
 $ReleaseRoot = Join-Path $PSScriptRoot "release\LohnMail"
 $ReleaseApp = Join-Path $ReleaseRoot "App"
@@ -66,7 +32,7 @@ if (Test-Path $ReleaseRoot) {
 }
 
 New-Item -ItemType Directory -Force $ReleaseApp, $ReleaseSettings, $ReleaseCompanies | Out-Null
-Copy-Item -Recurse -Force "dist\LohnMail\*" $ReleaseApp
+Copy-Item -Recurse -Force "$DirectStandalone\*" $ReleaseApp
 Copy-Item -Force $RootLauncher (Join-Path $ReleaseRoot "LohnMail.exe")
 Copy-Item -Force "settings_template.json" (Join-Path $ReleaseSettings "settings.json")
 Copy-Item -Force "INSTALL-AND-START-WINDOWS.cmd" (Join-Path $ReleaseRoot "INSTALL-AND-START-WINDOWS.cmd")
@@ -115,7 +81,7 @@ $UpdateManifest = Join-Path $PSScriptRoot "release\LohnMail-$AppVersion-build-$A
 if (Test-Path $UpdatePackageRoot) { Remove-Item -Recurse -Force $UpdatePackageRoot }
 if (Test-Path $UpdateZip) { Remove-Item -Force $UpdateZip }
 New-Item -ItemType Directory -Force $UpdatePackageApp | Out-Null
-Copy-Item -Recurse -Force "dist\LohnMail\*" $UpdatePackageApp
+Copy-Item -Recurse -Force "$DirectStandalone\*" $UpdatePackageApp
 if (-not (Test-Path (Join-Path $UpdatePackageApp "LohnMail.exe"))) {
     throw "Das EXE-Update enthält keine LohnMail.exe."
 }
@@ -174,7 +140,7 @@ $UpdateManifestJson = @{
 Remove-Item -Recurse -Force $UpdatePackageRoot
 
 Write-Host ""
-Write-Host "Build fertig: dist\LohnMail\LohnMail.exe" -ForegroundColor Green
+Write-Host "Build fertig: dist\direct\LohnMail\LohnMail.exe" -ForegroundColor Green
 Write-Host "Saubere portable Struktur: release\LohnMail" -ForegroundColor Green
 Write-Host "EXE-Update: $UpdateZip" -ForegroundColor Green
 Write-Host "SHA-256: $UpdateHash" -ForegroundColor Green

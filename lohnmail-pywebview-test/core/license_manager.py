@@ -589,7 +589,9 @@ class LicenseManager:
 
     @staticmethod
     def app_version() -> str:
-        return "v2.0.3"
+        from ui_web.version import APP_VERSION
+
+        return f"v{APP_VERSION}"
 
     @staticmethod
     def block_message(status: str) -> str:

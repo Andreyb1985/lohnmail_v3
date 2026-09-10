@@ -21,6 +21,29 @@ backups/
 *.tmp
 *.bak
 
+# Build outputs and signing material
+**/build/
+**/dist/
+**/release/
+*.pfx
+*.p12
+*.cer
+secrets/
+.env
+.env.*
+!.env.example
+
+# Runtime data must never be packaged or committed
+**/Settings/
+**/Companies/
+**/license.json
+**/machine_id
+**/secrets.dat
+**/workflow_sessions.json
+**/*.sqlite3
+**/*.sqlite3-wal
+**/*.sqlite3-shm
+
 # License server is maintained as a separate repository
 license-server/
 

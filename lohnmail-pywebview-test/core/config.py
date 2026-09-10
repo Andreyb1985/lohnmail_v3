@@ -8,6 +8,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from core.secret_store import SecretStore, SecretStoreError
+from core.distribution import is_store_build
 
 APP_NAME = "LohnMail"
 APP_TAGLINE = "Versand von Lohnabrechnungen \u2013 kompatibel mit DATEV"
@@ -171,11 +172,62 @@ SETTINGS_DIR = user_config_dir()
 SETTINGS_PATH = SETTINGS_DIR / "settings.json"
 SECRETS_PATH = SETTINGS_DIR / "secrets.dat"
 COMPANIES_DIR = USER_DATA_DIR / "Companies"
+LOGS_DIR = USER_DATA_DIR / "logs"
 LEGACY_SETTINGS_DIR = USER_DATA_DIR
 LEGACY_GESOB_DIR = BASE_DIR / "Gesob_Lohn"
 # Backward-compatible alias for code that only needs the common output root.
 GESOB_DIR = COMPANIES_DIR
 _LAST_SETTINGS_WARNING = ""
+
+
+def _copy_missing_tree(source: Path, target: Path) -> int:
+    copied = 0
+    if not source.is_dir():
+        return copied
+    for source_path in source.rglob("*"):
+        relative = source_path.relative_to(source)
+        target_path = target / relative
+        if source_path.is_dir():
+            target_path.mkdir(parents=True, exist_ok=True)
+        elif source_path.is_file() and not target_path.exists():
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_path, target_path)
+            copied += 1
+    return copied
+
+
+def migrate_windows_store_data(legacy_root: Path | None = None) -> int:
+    """Import data from the former per-user direct installer once, without overwrite."""
+    if sys.platform != "win32" or not is_store_build():
+        return 0
+    marker = SETTINGS_DIR / ".store-migration-v1.json"
+    if marker.exists():
+        return 0
+    if legacy_root is None:
+        local_app_data = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+        if not local_app_data:
+            return 0
+        legacy_root = Path(local_app_data) / "Programs" / APP_NAME
+    legacy_root = Path(legacy_root).expanduser().resolve()
+    if not legacy_root.is_dir() or legacy_root == USER_DATA_DIR.resolve():
+        return 0
+
+    copied = _copy_missing_tree(legacy_root / "Settings", SETTINGS_DIR)
+    copied += _copy_missing_tree(legacy_root / "Companies", COMPANIES_DIR)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(
+        json.dumps(
+            {
+                "source": str(legacy_root),
+                "copied_files": copied,
+                "completed_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return copied
 
 
 def _secret_store() -> SecretStore:
@@ -306,6 +358,7 @@ def _deep_merge_settings(data: dict) -> dict:
 
 
 def ensure_default_config() -> None:
+    migrate_windows_store_data()
     if SETTINGS_PATH.exists():
         return
 

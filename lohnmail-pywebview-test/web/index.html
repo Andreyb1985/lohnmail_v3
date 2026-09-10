@@ -42,7 +42,7 @@
           <div class="side-status-subtitle">Alle Dienste aktiv</div>
         </div>
       </div>
-      <div class="side-version">v2.0.3 Enterprise Edition</div>
+      <div class="side-version" data-app-version>v2.1.0 Enterprise Edition</div>
     </aside>
 
     <section class="main">
@@ -96,11 +96,6 @@
             <p>Überblick über Verarbeitung, Versand, Berichte und Systemstatus.</p>
           </div>
           <button class="primary" data-dashboard-action="new-run"><span data-icon="play"></span>Neuer Lauf</button>
-        </div>
-
-        <div class="info-banner ready dashboard-update-confirmation">
-          <span data-icon="checkcircle"></span>
-          Update-System für EXE vorbereitet · Version 2.0.3 · Build 2026.09.01.3
         </div>
 
         <section class="metrics-grid">
@@ -1130,14 +1125,14 @@
                       <div class="update-version-grid">
                         <div class="update-version-item">
                           <span data-icon="info"></span>
-                          <span><small>Installierte Version</small><strong data-update="installed-version">v2.0.3</strong><em data-update="installed-build">Build 2026.09.01.3</em></span>
+                          <span><small>Installierte Version</small><strong data-update="installed-version">v2.1.0</strong><em data-update="installed-build">Build 2026.09.10.1</em></span>
                         </div>
                         <div class="update-version-item">
                           <span data-icon="clock"></span>
-                          <span><small>Letzte Prüfung</small><strong data-update="last-checked">Noch nicht geprüft</strong><em>Kanal: Stabil</em></span>
+                          <span><small>Letzte Prüfung</small><strong data-update="last-checked">Noch nicht geprüft</strong><em data-update="channel">Kanal: Direct</em></span>
                         </div>
                       </div>
-                      <div class="settings-toggle-list compact update-auto-check">
+                      <div class="settings-toggle-list compact update-auto-check" data-update-direct-only>
                         <label><span data-icon="process"></span><strong>Automatisch nach Updates suchen<small>Prüft beim Start und danach regelmäßig im Hintergrund.</small></strong><input data-update-pref="auto-check" type="checkbox" checked></label>
                       </div>
                       <div class="update-status-box">
@@ -1150,19 +1145,20 @@
                           <div class="update-progress-track"><i data-update="progress-bar"></i></div>
                         </div>
                       </div>
+                      <div class="update-policy-note" data-update-store-only hidden><span data-icon="checkcircle"></span><p><strong>Updates über Microsoft Store</strong><small>Updates werden über den Microsoft Store bereitgestellt. LohnMail lädt in dieser Version keine eigenen Update-Pakete herunter.</small></p></div>
                     </section>
 
                     <section class="card settings-reference-card">
-                      <div class="update-card-head compact"><div><h2>Release Notes</h2><p data-update="release-version">Installierte Version 2.0.3</p></div></div>
+                      <div class="update-card-head compact"><div><h2>Release Notes</h2><p data-update="release-version">Installierte Version 2.1.0</p></div></div>
                       <div class="update-release-notes" data-update="release-notes"><p>Release Notes werden hier angezeigt, sobald ein Update verfügbar ist.</p></div>
                     </section>
 
-                    <section class="card settings-reference-card update-protection-card">
+                    <section class="card settings-reference-card update-protection-card" data-update-direct-only>
                       <div class="update-policy-note"><span data-icon="key"></span><p><strong>Benutzerdaten bleiben geschützt</strong><small>Nur der Ordner App wird ersetzt. Settings, Unternehmen, Berichte und Lizenzdaten werden nicht durch das Update-Paket überschrieben. Bei einem Fehler wird die vorherige App-Version wiederhergestellt.</small></p></div>
                     </section>
                   </div>
 
-                  <aside class="card settings-reference-card update-flow-card">
+                  <aside class="card settings-reference-card update-flow-card" data-update-direct-only>
                     <div class="update-flow-head"><h2>Ablauf</h2><p>Jeder Schritt wird vor dem Neustart kontrolliert.</p></div>
                     <div class="update-flow-list">
                       <div class="update-flow-step active" data-update-step="check"><span>1</span><p><strong>Update prüfen</strong><small>Manifest, Version und Kanal</small></p></div>
@@ -1303,13 +1299,15 @@
                   </div>
                 </div>
                 <div class="product-meta-list">
-                  <div><span data-icon="info"></span><span>Version</span><b>v2.0.3 (Build 2026.09.01.3)</b></div>
+                  <div><span data-icon="info"></span><span>Version</span><b data-about="version">v2.1.0 (Build 2026.09.10.1)</b></div>
+                  <div><span data-icon="screen"></span><span>Distribution</span><b data-about="distribution">Direct</b></div>
                   <div><span data-icon="key"></span><span>Edition</span><b class="success-text">Enterprise Edition</b></div>
-                  <div><span data-icon="clock"></span><span>Build Datum</span><b>28.08.2026</b></div>
+                  <div><span data-icon="clock"></span><span>Build Datum</span><b data-about="build-date">10.09.2026</b></div>
                   <div><span data-icon="checkcircle"></span><span>Lizenz Status</span><b class="state ready">Aktiv</b></div>
                 </div>
                 <div class="about-actions">
                   <button class="secondary-action" data-about-action="website"><span data-icon="screen"></span>lohn-mail.de besuchen</button>
+                  <button class="secondary-action" data-about-action="privacy-website"><span data-icon="key"></span>Datenschutz online</button>
                   <button class="secondary-action green-outline" data-about-action="release"><span data-icon="arrow-up-right"></span>Release Notes</button>
                 </div>
               </article>

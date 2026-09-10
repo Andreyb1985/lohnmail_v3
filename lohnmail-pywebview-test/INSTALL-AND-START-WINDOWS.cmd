@@ -36,10 +36,10 @@ if not exist "%PYTHON_EXE%" (
     if errorlevel 1 goto :error
 )
 
-if not exist "%APP_DIR%\.venv\.lohnmail-requirements-2.0.3" (
+if not exist "%APP_DIR%\.venv\.lohnmail-requirements-2.1.0" (
     "%PYTHON_EXE%" -m pip install -r "%APP_DIR%\requirements-windows.txt"
     if errorlevel 1 goto :error
-    > "%APP_DIR%\.venv\.lohnmail-requirements-2.0.3" echo 2.0.3
+    > "%APP_DIR%\.venv\.lohnmail-requirements-2.1.0" echo 2.1.0
 )
 
 "%PYTHON_EXE%" "%APP_DIR%\main.py"

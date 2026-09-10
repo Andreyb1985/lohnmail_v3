@@ -1,4 +1,4 @@
-LohnMail 2.0.3 - Windows pywebview (Build 2026.09.03.1)
+LohnMail 2.1.0 - Windows pywebview (Build 2026.09.10.1)
 =================================
 
 Ordnerstruktur:
@@ -38,20 +38,21 @@ EXE auf Windows erstellen:
 Danach liegt die geprüfte portable Struktur unter release\LohnMail.
 Settings und Companies liegen neben dem Launcher und werden durch Updates nicht ersetzt.
 
-Autonomen Microsoft-Store-Installer erstellen:
+WINDOWS-DISTRIBUTIONEN
+=====================
 
-  1. Inno Setup 6 installieren.
-  2. .\BUILD-WINDOWS.ps1 ausführen.
-  3. .\BUILD-STORE-INSTALLER.ps1 ausführen.
+Direct-Build mit integriertem LohnMail-Updater:
 
-Der Offline-Installer liegt danach unter release\store. Er installiert LohnMail
-pro Benutzer unter %%LOCALAPPDATA%%\Programs\LohnMail. Bei einer Installation über
-eine vorhandene Version werden nur die Programmdateien in App ersetzt. Settings,
-Companies, Lizenzdaten, SQLite-Verlauf und Berichte bleiben erhalten.
+  .\variants\windows\build.ps1
 
-Parameter für die stille Installation:
+Microsoft-Store-Build als MSIX (Updates ausschließlich über Microsoft Store):
 
-  /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-
+  .\variants\windows\build-store.ps1
 
-Vor der Einreichung im Microsoft Store müssen die EXE-Dateien und der Installer
-mit einem vertrauenswürdigen Code-Signing-Zertifikat signiert werden.
+Der Store-Build schreibt Einstellungen, Unternehmen, Lizenzstatus, Logs und
+Berichtshistorie nach %LOCALAPPDATA%\LohnMail. Diese Daten sind nicht im MSIX
+enthalten und bleiben bei Store-Updates erhalten.
+
+Für eine Partner-Center-Einreichung müssen die Variablen MSIX_IDENTITY_NAME,
+MSIX_PUBLISHER, MSIX_PUBLISHER_DISPLAY_NAME und MSIX_APPLICATION_ID exakt mit
+der reservierten App-Identität übereinstimmen.

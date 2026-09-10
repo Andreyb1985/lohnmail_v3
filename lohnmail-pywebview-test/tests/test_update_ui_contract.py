@@ -33,3 +33,24 @@ def test_update_primary_action_stacks_before_laptop_layout_becomes_too_narrow() 
     assert ".settings-update-panel .update-action-row .primary" in css
     assert "grid-template-columns:1fr" in css
     assert "min-width:0" in css
+
+
+def test_update_page_has_microsoft_store_mode_without_direct_controls() -> None:
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    javascript = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    assert "Updates werden über den Microsoft Store bereitgestellt" in html
+    assert "data-update-store-only" in html
+    assert "data-update-direct-only" in html
+    assert "latestUpdateState.supported === false" in javascript
+    assert "Kanal: Microsoft Store" in javascript
+
+
+def test_about_version_build_date_and_distribution_are_runtime_values() -> None:
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    javascript = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    assert 'data-about="version"' in html
+    assert 'data-about="build-date"' in html
+    assert 'data-about="distribution"' in html
+    assert "[data-about=\"build-date\"]" in javascript

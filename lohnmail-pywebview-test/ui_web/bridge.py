@@ -30,11 +30,30 @@ from core.config import (
     load_settings,
     save_settings,
 )
+from core.distribution import distribution_label, get_distribution_channel, is_store_build
 from core.license_manager import LicenseManager
 from ui_web.report_history import ReportHistoryStore
 from ui_web.updater import UpdateService
 from ui_web.version import APP_BUILD, APP_VERSION
 from ui_web.workflow_sessions import WorkflowSessionStore
+
+
+def _store_update_state() -> dict:
+    return {
+        "ok": True,
+        "supported": False,
+        "distribution": "store",
+        "auto_check": False,
+        "install_on_exit": False,
+        "install_supported": False,
+        "status": "disabled",
+        "installed_version": APP_VERSION,
+        "installed_build": APP_BUILD,
+        "available_version": "",
+        "available_build": "",
+        "release_notes": [],
+        "message": "Updates werden über den Microsoft Store bereitgestellt.",
+    }
 
 
 def _open_target(target: str | Path) -> bool:
@@ -233,8 +252,9 @@ class WebBridge(QObject):
         self._mass_message_preview = self._empty_mass_message_preview()
         self._mass_message_attachments: list[Path] = []
         self._license_manager = LicenseManager(load_settings())
-        self._update_service = UpdateService()
-        self._update_service.recover_interrupted_state()
+        self._update_service = None if is_store_build() else UpdateService()
+        if self._update_service is not None:
+            self._update_service.recover_interrupted_state()
         self._update_thread: threading.Thread | None = None
         self._update_worker: UpdateWorker | None = None
         legacy_history = LEGACY_SETTINGS_DIR / "lohnmail_history.sqlite3"
@@ -256,6 +276,7 @@ class WebBridge(QObject):
     def openProductContact(self, action: str) -> str:
         contacts = {
             "website": ("https://lohn-mail.de", "Website wurde geöffnet."),
+            "privacy": ("https://lohn-mail.de/datenschutz", "Datenschutzerklärung wurde geöffnet."),
             "email": ("mailto:support@lohn-mail.de", "E-Mail-Programm wurde geöffnet."),
         }
         contact = contacts.get(str(action or "").strip().lower())
@@ -280,11 +301,19 @@ class WebBridge(QObject):
         return APP_BUILD
 
     @Slot(result=str)
+    def appDistribution(self) -> str:
+        return distribution_label()
+
+    @Slot(result=str)
     def getUpdateState(self) -> str:
+        if self._update_service is None:
+            return json.dumps(_store_update_state(), ensure_ascii=False)
         return json.dumps(self._update_service.current_state(), ensure_ascii=False)
 
     @Slot(str, result=str)
     def setUpdatePreferences(self, payload: str) -> str:
+        if self._update_service is None:
+            return json.dumps(_store_update_state(), ensure_ascii=False)
         try:
             data = json.loads(payload or "{}")
             if not isinstance(data, dict):
@@ -302,18 +331,26 @@ class WebBridge(QObject):
 
     @Slot(result=str)
     def checkForUpdates(self) -> str:
+        if self._update_service is None:
+            return json.dumps(_store_update_state(), ensure_ascii=False)
         return json.dumps(self._start_update_action("check"), ensure_ascii=False)
 
     @Slot(result=str)
     def downloadUpdate(self) -> str:
+        if self._update_service is None:
+            return json.dumps(_store_update_state(), ensure_ascii=False)
         return json.dumps(self._start_update_action("download"), ensure_ascii=False)
 
     @Slot(result=str)
     def installUpdateOnExit(self) -> str:
+        if self._update_service is None:
+            return json.dumps(_store_update_state(), ensure_ascii=False)
         state = self._update_service.install_on_exit()
         return json.dumps(state, ensure_ascii=False)
 
     def _start_update_action(self, action: str) -> dict:
+        if self._update_service is None:
+            return _store_update_state()
         self._update_service.begin(action)
         state = self._update_service.check() if action == "check" else self._update_service.download(
             progress=self._on_update_progress
@@ -368,6 +405,9 @@ class WebBridge(QObject):
         system_ready = bool(has_company and pdf_ready and excel_ready and output_ready and mail_configured and license_active)
         payload = {
             "version": self.appVersion(),
+            "build": APP_BUILD,
+            "distribution": get_distribution_channel(),
+            "distribution_label": distribution_label(),
             "company": get_company_name(settings),
             "license": license_payload,
             "mail": {

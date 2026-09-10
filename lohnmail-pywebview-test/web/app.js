@@ -50,8 +50,10 @@
   var latestSettingsState = null;
   var UPDATE_STORAGE_KEY = 'lohnmail.update-ui.v1';
   var latestUpdateState = {
-    installed_version: '2.0.3',
-    installed_build: '2026.09.01.3',
+    supported: true,
+    distribution: 'direct',
+    installed_version: '2.1.0',
+    installed_build: '2026.09.10.1',
     last_checked_at: '',
     auto_check: true,
     status: 'idle',
@@ -95,7 +97,7 @@
     }
   }
   function normalizeUpdateStatus(value){
-    var allowed = ['idle', 'checking', 'current', 'available', 'downloading', 'ready', 'installing', 'required', 'error'];
+    var allowed = ['idle', 'checking', 'current', 'available', 'downloading', 'ready', 'installing', 'required', 'error', 'disabled'];
     var normalized = String(value || 'idle').toLowerCase();
     return allowed.indexOf(normalized) === -1 ? 'idle' : normalized;
   }
@@ -184,6 +186,7 @@
       errorTitle = 'Zugriff auf den Update-Server nicht möglich';
     }
     var copies = {
+      disabled: ['Microsoft Store', message || 'Updates werden über den Microsoft Store bereitgestellt.'],
       idle: ['Noch nicht geprüft', 'Starten Sie die manuelle Update-Prüfung.'],
       checking: ['Suche läuft...', 'Der Update-Dienst wird nach einer neueren Version gefragt.'],
       current: ['LohnMail ist aktuell', 'Für diese Installation ist kein neueres Update verfügbar.'],
@@ -257,10 +260,12 @@
   function renderUpdateSettings(){
     var state = latestUpdateState;
     var status = normalizeUpdateStatus(state.status);
+    var storeMode = state.distribution === 'store' || state.supported === false;
     var copy = updateStatusCopy(state);
-    setText('[data-update="installed-version"]', 'v' + String(state.installed_version || '2.0.3').replace(/^v/i, ''));
+    setText('[data-update="installed-version"]', 'v' + String(state.installed_version || '2.1.0').replace(/^v/i, ''));
     setText('[data-update="installed-build"]', 'Build ' + (state.installed_build || '-'));
     setText('[data-update="last-checked"]', state.last_checked_at ? formatDateTime(state.last_checked_at) : 'Noch nicht geprüft');
+    setText('[data-update="channel"]', storeMode ? 'Kanal: Microsoft Store' : 'Kanal: Direct');
     setText('[data-update="status-title"]', copy[0]);
     setText('[data-update="status-detail"]', copy[1]);
 
@@ -271,8 +276,11 @@
     }
     var autoCheck = document.querySelector('[data-update-pref="auto-check"]');
     if (autoCheck) autoCheck.checked = state.auto_check !== false;
+    document.querySelectorAll('[data-update-direct-only]').forEach(function(node){ node.hidden = storeMode; });
+    document.querySelectorAll('[data-update-store-only]').forEach(function(node){ node.hidden = !storeMode; });
     var primaryButton = document.querySelector('[data-update-action="primary"], [data-update-primary-action]');
     if (primaryButton) {
+      primaryButton.hidden = storeMode;
       var primaryAction = 'check';
       var primaryLabel = 'Nach Updates suchen';
       if (status === 'available' || status === 'required') {
@@ -324,7 +332,7 @@
       });
       notes.appendChild(list);
     }
-    renderUpdateFlow(state);
+    if (!storeMode) renderUpdateFlow(state);
   }
   function applyUpdateState(payload){
     var next = parseUpdatePayload(payload);
@@ -346,6 +354,7 @@
   }
   function dispatchUpdateAction(action){
     var bridge = window.lohnmailBridge;
+    if (latestUpdateState.supported === false || latestUpdateState.distribution === 'store') return;
     if (action === 'check') {
       latestUpdateState.status = 'checking';
       latestUpdateState.message = '';
@@ -428,6 +437,7 @@
     }
   }
   function persistUpdatePreferences(){
+    if (latestUpdateState.supported === false || latestUpdateState.distribution === 'store') return;
     var payload = {
       auto_check: latestUpdateState.auto_check !== false,
       install_on_exit: latestUpdateState.install_on_exit === true
@@ -443,6 +453,7 @@
   }
   function maybeCheckForUpdates(){
     var bridge = window.lohnmailBridge;
+    if (latestUpdateState.supported === false || latestUpdateState.distribution === 'store') return;
     if (latestUpdateState.auto_check === false || !bridge || typeof bridge.checkForUpdates !== 'function') return;
     var status = String(latestUpdateState.status || 'idle');
     if (['checking', 'downloading', 'available', 'required', 'ready'].indexOf(status) !== -1) return;
@@ -2994,7 +3005,7 @@
         ['Welche Daten verarbeitet werden', 'Verarbeitet werden nur die vom Benutzer ausgewählten PDF-Dateien, Excel-Listen, Ausgabepfade, E-Mail-Adressen und Versandinformationen, die für Prüfung, Berichtserstellung und Versand benötigt werden.'],
         ['Keine automatische Übertragung', 'LohnMail lädt keine Lohnunterlagen, Mitarbeiterdaten oder Prüfberichte automatisch ins Internet hoch. Eine Übertragung erfolgt nur, wenn der Benutzer aktiv einen Versand über SMTP oder Outlook Classic auslöst.'],
         ['Lokale Speicherung', 'Temporäre Dateien, Berichte, Pfade und Anwendungseinstellungen werden lokal gespeichert. Der Benutzer bestimmt den Ausgabeordner und kann erzeugte Dateien außerhalb der Anwendung verwalten oder löschen.'],
-        ['Keine Analyse und kein Tracking', 'Die Anwendung enthält kein Werbe-Tracking, keine Telemetrie und keine automatische Nutzungsstatistik. Es werden keine Gerätekennungen oder Verhaltensdaten an externe Dienste gesendet.'],
+        ['Keine Analyse und kein Tracking', 'Die Anwendung enthält kein Werbe-Tracking, keine Telemetrie und keine automatische Nutzungsstatistik. Zur Lizenzprüfung werden Lizenzschlüssel, Computer-ID, App-Version und technische Verbindungsdaten an den LohnMail-Lizenzserver übertragen. Lohnunterlagen werden dabei nicht übertragen.'],
         ['Verantwortlichkeit', 'Der Betreiber der Installation bleibt für die Auswahl, Pflege und rechtmäßige Nutzung der Lohn- und Mitarbeiterdaten verantwortlich.']
       ]
     },
@@ -3061,6 +3072,10 @@
     }
     if (action === 'website') {
       openProductContact('website');
+      return;
+    }
+    if (action === 'privacy-website') {
+      openProductContact('privacy');
       return;
     }
     if (action === 'support') {
@@ -3257,6 +3272,10 @@
   function applyDashboardState(state){
     if (!state) return;
     latestDashboardState = state;
+    setText('[data-app-version]', 'v' + String(state.version || '2.1.0') + ' Enterprise Edition');
+    setText('[data-about="version"]', 'v' + String(state.version || '2.1.0') + ' (Build ' + String(state.build || '-') + ')');
+    setText('[data-about="build-date"]', String(state.build || '-').replace(/^(\d{4})\.(\d{2})\.(\d{2}).*$/, '$3.$2.$1'));
+    setText('[data-about="distribution"]', state.distribution_label || (state.distribution === 'store' ? 'Microsoft Store' : 'Direct'));
     var metrics = state.metrics || {};
     setText('[data-dashboard="employees"]', metrics.employees || 0);
     setText('[data-dashboard="sent"]', metrics.sent || 0);

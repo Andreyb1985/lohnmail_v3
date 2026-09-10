@@ -419,24 +419,28 @@ class UpdateServiceTests(unittest.TestCase):
         self.assertNotIn('cd /d "%~dp0"', text)
 
     def test_windows_build_creates_exe_only_update_package(self) -> None:
-        build_script = Path(__file__).resolve().parent.parent / "BUILD-WINDOWS.ps1"
+        root = Path(__file__).resolve().parent.parent
+        build_script = root / "BUILD-WINDOWS.ps1"
+        standalone_script = root / "variants" / "windows" / "build-standalone.ps1"
         text = build_script.read_text(encoding="utf-8")
+        standalone = standalone_script.read_text(encoding="utf-8")
 
-        self.assertIn('--onedir', text)
-        self.assertIn('--contents-directory .', text)
+        self.assertIn('build-standalone.ps1" -Distribution direct', text)
+        self.assertIn('"--onedir"', standalone)
+        self.assertIn('"--contents-directory", "."', standalone)
         self.assertIn('-m pytest -q', text)
         self.assertIn('Es wird keine Windows-Version erstellt', text)
-        self.assertIn('dist\\LohnMail\\*', text)
+        self.assertIn('dist\\direct\\LohnMail', text)
         self.assertIn('LohnMail.exe', text)
         self.assertIn('LohnMail/App/LohnMail.exe', text)
         self.assertIn('package_kind = "windows-pyinstaller-onedir"', text)
         self.assertIn('(Settings|Companies)', text)
         self.assertIn('Get-FileHash $UpdateZip -Algorithm SHA256', text)
         self.assertNotIn('Copy-Item -Recurse -Force ".\\*" $UpdatePackageApp', text)
-        self.assertIn('windows_root_launcher.cs', text)
-        self.assertIn('LohnMail.RootLauncher.exe', text)
-        self.assertIn('Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe', text)
-        self.assertNotIn('-CompilerOptions', text)
+        self.assertIn('windows_root_launcher.cs', standalone)
+        self.assertIn('LohnMail.RootLauncher.exe', standalone)
+        self.assertIn('Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe', standalone)
+        self.assertNotIn('-CompilerOptions', standalone)
         self.assertIn('[System.IO.File]::WriteAllText(', text)
         self.assertIn('System.Text.UTF8Encoding($false)', text)
         self.assertIn('(Join-Path $ReleaseRoot "LohnMail.exe")', text)
