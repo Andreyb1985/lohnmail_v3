@@ -112,4 +112,4 @@ if (-not (Test-Path $Executable)) { throw "LohnMail.exe fehlt nach der Standalon
 & $Executable --lohnmail-update-selftest $AppVersion $AppBuild
 if ($LASTEXITCODE -ne 0) { throw "Der Standalone-Selbsttest ist fehlgeschlagen." }
 
-Write-Host "Standalone $Distribution: $Executable" -ForegroundColor Green
+Write-Host "Standalone ${Distribution}: $Executable" -ForegroundColor Green
