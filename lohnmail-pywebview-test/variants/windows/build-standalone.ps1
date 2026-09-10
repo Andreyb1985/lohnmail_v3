@@ -32,6 +32,10 @@ $DistRoot = Join-Path $ProjectRoot "dist\$Distribution"
 $GeneratedRoot = Join-Path $BuildRoot "generated"
 $VersionInfoPath = Join-Path $GeneratedRoot "windows_version_info.txt"
 $DistributionMarker = Join-Path $GeneratedRoot "lohnmail_distribution.json"
+$IconPath = Join-Path $ProjectRoot "web\assets\brand\LohnMail.ico"
+$WebRoot = Join-Path $ProjectRoot "web"
+$SettingsTemplate = Join-Path $ProjectRoot "settings_template.json"
+$MainScript = Join-Path $ProjectRoot "main.py"
 if (Test-Path $BuildRoot) { Remove-Item -Recurse -Force $BuildRoot }
 if (Test-Path $DistRoot) { Remove-Item -Recurse -Force $DistRoot }
 New-Item -ItemType Directory -Force $GeneratedRoot, $DistRoot, (Join-Path $BuildRoot "pyinstaller"), (Join-Path $BuildRoot "spec") | Out-Null
@@ -69,15 +73,15 @@ $PyInstallerArguments = @(
     "--onedir",
     "--contents-directory", ".",
     "--name", "LohnMail",
-    "--icon", "web\assets\brand\LohnMail.ico",
+    "--icon", $IconPath,
     "--version-file", $VersionInfoPath,
     "--collect-all", "webview",
     "--hidden-import", "win32crypt",
     "--hidden-import", "pythoncom",
     "--hidden-import", "pywintypes",
     "--hidden-import", "win32com.client",
-    "--add-data", "web;web",
-    "--add-data", "settings_template.json;.",
+    "--add-data", "$WebRoot;web",
+    "--add-data", "$SettingsTemplate;.",
     "--add-data", "$DistributionMarker;.",
     "--distpath", $DistRoot,
     "--workpath", (Join-Path $BuildRoot "pyinstaller"),
@@ -88,7 +92,8 @@ if ($Distribution -eq "direct") {
     $RootLauncherBuildDir = Join-Path $BuildRoot "launcher"
     $RootLauncher = Join-Path $RootLauncherBuildDir "LohnMail.RootLauncher.exe"
     New-Item -ItemType Directory -Force $RootLauncherBuildDir | Out-Null
-    $LauncherIcon = (Resolve-Path "web\assets\brand\LohnMail.ico").Path
+    $LauncherIcon = $IconPath
+    $LauncherSource = Join-Path $ProjectRoot "windows_root_launcher.cs"
     $CSharpCompiler = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
     if (-not (Test-Path $CSharpCompiler)) {
         $CSharpCompiler = Join-Path $env:WINDIR "Microsoft.NET\Framework\v4.0.30319\csc.exe"
@@ -96,14 +101,14 @@ if ($Distribution -eq "direct") {
     if (-not (Test-Path $CSharpCompiler)) {
         throw "Der Windows-C#-Compiler für den Root-Launcher wurde nicht gefunden."
     }
-    & $CSharpCompiler /nologo /target:winexe /optimize+ "/win32icon:$LauncherIcon" /reference:System.dll /reference:System.Windows.Forms.dll "/out:$RootLauncher" "windows_root_launcher.cs"
+    & $CSharpCompiler /nologo /target:winexe /optimize+ "/win32icon:$LauncherIcon" /reference:System.dll /reference:System.Windows.Forms.dll "/out:$RootLauncher" $LauncherSource
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $RootLauncher)) {
         throw "Der Windows-Root-Launcher konnte nicht erstellt werden."
     }
     $PyInstallerArguments += @("--add-binary", "$RootLauncher;.")
 }
 
-$PyInstallerArguments += "main.py"
+$PyInstallerArguments += $MainScript
 & $Python -m PyInstaller @PyInstallerArguments
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller konnte LohnMail.exe nicht erstellen." }
 
