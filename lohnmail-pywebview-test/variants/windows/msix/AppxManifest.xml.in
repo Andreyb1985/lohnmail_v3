@@ -10,7 +10,7 @@
     Version="@@MSIX_VERSION@@"
     ProcessorArchitecture="x64" />
   <Properties>
-    <DisplayName>LohnMail</DisplayName>
+    <DisplayName>Lohn-mail</DisplayName>
     <PublisherDisplayName>@@PUBLISHER_DISPLAY_NAME@@</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
@@ -30,7 +30,7 @@
       Executable="LohnMail.exe"
       EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
-        DisplayName="LohnMail"
+        DisplayName="Lohn-mail"
         Description="Lohnabrechnungen prüfen, schützen und sicher versenden"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
