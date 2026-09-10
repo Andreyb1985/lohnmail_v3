@@ -125,8 +125,9 @@ $ValidatedManifestText = [System.IO.File]::ReadAllText($ValidatedManifestPath, $
 [xml]$ValidatedManifest = $ValidatedManifestText
 if ($ValidatedManifest.Package.Identity.Version -ne $MsixVersion) { throw "Die MSIX-Version stimmt nicht." }
 if ($ValidatedManifest.Package.Identity.ProcessorArchitecture -ne "x64") { throw "Die MSIX-Architektur ist nicht x64." }
-if ($ValidatedManifestText -notlike '*Lohnabrechnungen prüfen, schützen und sicher versenden*') {
-    throw "Die UTF-8-Zeichen im MSIX-Manifest wurden beschädigt."
+$ExpectedDescription = "Lohnabrechnungen pr{0}fen, sch{0}tzen und sicher versenden" -f [char]0x00FC
+if (-not $ValidatedManifestText.Contains($ExpectedDescription)) {
+    throw "Die UTF-8-Zeichen im MSIX-Manifest sind ungueltig."
 }
 
 $Hash = (Get-FileHash $OutputMsix -Algorithm SHA256).Hash.ToLowerInvariant()
