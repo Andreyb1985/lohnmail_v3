@@ -61,7 +61,7 @@ def main():
     display_result = win32api.ChangeDisplaySettings(mode, 0)
     print("Display mode result:", display_result, flush=True)
     screen = (win32api.GetSystemMetrics(0), win32api.GetSystemMetrics(1))
-    if screen[0] < 1600 or screen[1] < 1000:
+    if screen[0] < 1800 or screen[1] < 1000:
         raise RuntimeError(f"Interactive Windows desktop too small: {screen}")
 
     pdf_dir = root / "Beispieldaten" / "September-2026"
@@ -120,7 +120,7 @@ def main():
     captured = {}
 
     def create(*args, **kwargs):
-        kwargs.update(width=1600, height=1000, x=20, y=20)
+        kwargs.update(width=1800, height=1000, x=20, y=20)
         window = original_create(*args, **kwargs)
         captured["window"] = window
         captured["bridge"] = kwargs["js_api"]._bridge
@@ -136,19 +136,33 @@ def main():
             wait_for(lambda: not bridge._workflow_running())
             evidence["processing"] = json.loads(bridge.getProcessingState())
             hwnd = int(window.native.Handle.ToInt64())
-            win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 20, 20, 1600, 1000, 0)
+            win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 20, 20, 1800, 1000, 0)
             pages = [("Dashboard", "01-dashboard"), ("Verarbeitung", "02-verarbeitung"),
                      ("Prüfung", "03-pruefung"), ("Versand", "04-versand"),
                      ("Berichte", "05-berichte"), ("Nachricht", "06-nachricht"),
                      ("Unternehmen", "07-unternehmen"), ("Lizenzen", "08-lizenzen"),
-                     ("Einstellungen", "09-einstellungen"), ("Hilfe", "10-hilfe"),
+                     ("Einstellungen", "09a-general"), ("Einstellungen", "09b-email"),
+                     ("Einstellungen", "09c-templates"), ("Einstellungen", "09d-notifications"),
+                     ("Einstellungen", "09e-updates"), ("Einstellungen", "09f-security"),
+                     ("Einstellungen", "09g-advanced"), ("Hilfe", "10-hilfe"),
                      ("Über LohnMail", "11-ueber-lohnmail")]
             for page, filename in pages:
                 window.evaluate_js("[...document.querySelectorAll('.nav-item')].find(b => b.textContent.trim() === "
                                    + json.dumps(page) + ").click()")
                 wait_for(lambda: window.evaluate_js("document.querySelector('.page.active')?.dataset.page") == page)
+                if page == "Einstellungen":
+                    tab = filename.split("-", 1)[1]
+                    window.evaluate_js("document.querySelector('[data-settings-tab=\"" + tab + "\"]').click()")
                 time.sleep(2)
-                bounds = win32gui.GetWindowRect(hwnd)
+                # GetWindowRect includes invisible resize margins (desktop pixels).
+                # Ask DWM for the actual visible native frame; no image edits.
+                from ctypes.wintypes import HWND, RECT
+                rect = RECT()
+                result = ctypes.windll.dwmapi.DwmGetWindowAttribute(
+                    HWND(hwnd), 9, ctypes.byref(rect), ctypes.sizeof(rect))
+                if result != 0:
+                    raise RuntimeError(f"Cannot determine visible Windows frame: {result}")
+                bounds = (rect.left, rect.top, rect.right, rect.bottom)
                 if bounds[0] < 0 or bounds[1] < 0 or bounds[2] > screen[0] or bounds[3] > screen[1]:
                     raise RuntimeError(f"Window outside screen: {bounds}")
                 img = ImageGrab.grab(bbox=bounds, all_screens=True)
