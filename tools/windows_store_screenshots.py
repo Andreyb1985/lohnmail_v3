@@ -39,6 +39,8 @@ def main():
     os.environ["LOHNMAIL_DATA_DIR"] = str(root)
     os.environ["LOHNMAIL_DISTRIBUTION"] = "store"
     sys.path.insert(0, str(SOURCE))
+    # pywebview resolves its initial base URI from argv[0] during import.
+    sys.argv[0] = str(Path(__file__).resolve())
     os.chdir(SOURCE)
 
     import ctypes
