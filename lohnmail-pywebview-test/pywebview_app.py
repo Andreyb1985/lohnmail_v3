@@ -288,25 +288,55 @@ def _configure_windows_window(window: webview.Window) -> None:
             return
 
         user32 = ctypes.windll.user32
+        from ctypes import wintypes
+
+        # Explicit pointer-sized signatures are essential on Windows x64.
+        user32.LoadImageW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT, ctypes.c_int, ctypes.c_int, wintypes.UINT]
+        user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, ctypes.c_size_t, ctypes.c_ssize_t]
+        user32.GetSystemMetrics.argtypes = [ctypes.c_int]
+        user32.GetSystemMetrics.restype = ctypes.c_int
+        dpi = 96
+        if hasattr(user32, "GetDpiForWindow"):
+            user32.GetDpiForWindow.argtypes = [wintypes.HWND]
+            user32.GetDpiForWindow.restype = wintypes.UINT
+            dpi = user32.GetDpiForWindow(hwnd) or 96
+
+        def metric(index):
+            if hasattr(user32, "GetSystemMetricsForDpi"):
+                user32.GetSystemMetricsForDpi.argtypes = [ctypes.c_int, wintypes.UINT]
+                user32.GetSystemMetricsForDpi.restype = ctypes.c_int
+                return user32.GetSystemMetricsForDpi(index, dpi)
+            return user32.GetSystemMetrics(index)
+
         if WINDOWS_ICON_PATH.exists():
             user32.LoadImageW.restype = ctypes.c_void_p
             user32.SendMessageW.restype = ctypes.c_ssize_t
             image_icon = 1
             load_from_file = 0x0010
             wm_seticon = 0x0080
-            for icon_type, size in ((0, 20), (1, 48)):
+            old_handles = getattr(window, "_lohnmail_icon_handles", [])
+            new_handles = []
+            for icon_type, width, height in ((0, metric(49), metric(50)), (1, metric(11), metric(12))):
                 icon = user32.LoadImageW(
                     None,
                     str(WINDOWS_ICON_PATH),
                     image_icon,
-                    size,
-                    size,
+                    width,
+                    height,
                     load_from_file,
                 )
                 if icon:
                     user32.SendMessageW(hwnd, wm_seticon, icon_type, icon)
+                    new_handles.append(icon)
+            if len(new_handles) == 2:
+                user32.DestroyIcon.argtypes = [wintypes.HICON]
+                for old_handle in old_handles:
+                    user32.DestroyIcon(old_handle)
+                window._lohnmail_icon_handles = new_handles
 
         dwmapi = ctypes.windll.dwmapi
+        dwmapi.DwmSetWindowAttribute.argtypes = [wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
+        dwmapi.DwmSetWindowAttribute.restype = ctypes.c_long
 
         def set_dwm_attribute(attribute: int, value: int) -> None:
             data = ctypes.c_int(value)
@@ -317,6 +347,11 @@ def _configure_windows_window(window: webview.Window) -> None:
         set_dwm_attribute(35, _windows_colorref("#f5f8fb"))  # caption
         set_dwm_attribute(36, _windows_colorref("#0f172a"))  # caption text
         set_dwm_attribute(34, _windows_colorref("#d7e0ea"))  # border
+        # Changing DWM attributes alone can leave the old caption until a click.
+        user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT]
+        user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0037)
+        user32.RedrawWindow.argtypes = [wintypes.HWND, ctypes.c_void_p, wintypes.HANDLE, wintypes.UINT]
+        user32.RedrawWindow(hwnd, None, None, 0x0501)
     except Exception:
         pass
 
@@ -348,6 +383,8 @@ def run() -> None:
             pass
 
     window.events.closing += on_closing
+    window.events.before_show += lambda: _configure_windows_window(window)
+    window.events.shown += lambda: _configure_windows_window(window)
     window.events.loaded += lambda: _configure_windows_window(window)
     webview.start(debug=False)
 
