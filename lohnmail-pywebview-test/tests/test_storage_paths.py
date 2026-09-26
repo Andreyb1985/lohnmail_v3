@@ -20,6 +20,20 @@ def put(root, name, text='synthetic'):
     return path
 
 
+def test_packaged_probe_reports_original_failure(tmp_path, monkeypatch):
+    output = tmp_path / 'probe.json'
+    monkeypatch.setattr(sys, 'argv', ['LohnMail.exe', '--lohnmail-storage-probe',
+                                     str(output), str(tmp_path / 'workspace')])
+    monkeypatch.delenv('LOHNMAIL_DATA_DIR', raising=False)
+    monkeypatch.setattr(storage, 'package_identity', lambda: ('test.family', tmp_path))
+    monkeypatch.setattr(storage, 'packaged_data_root', Mock(side_effect=RuntimeError('probe failure')))
+    with pytest.raises(SystemExit, match='probe failure'):
+        storage.prepare_storage_or_exit()
+    report = json.loads(output.read_text())
+    assert report['error'] == 'probe failure'
+    assert 'RuntimeError: probe failure' in report['traceback']
+
+
 @pytest.mark.parametrize('case', ['empty','ordinary','virtual','both'])
 def test_migrate_cases(tmp_path,case):
     normal,virtual=tmp_path/'LohnMail',tmp_path/'Packages/p/LocalCache/Local/LohnMail'

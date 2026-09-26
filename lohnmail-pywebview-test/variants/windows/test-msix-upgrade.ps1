@@ -36,6 +36,7 @@ function Invoke-StorageProbe($Installed, [string]$Result, [string]$Workspace) {
     if ($Process -and -not $Process.WaitForExit(60000)) { throw 'Packaged storage probe timed out.' }
     if (-not (Test-Path -LiteralPath $Result)) { throw 'Package activation/storage API failed; no probe report.' }
     $Report = Get-Content -LiteralPath $Result -Raw | ConvertFrom-Json
+    if ($Report.error) { throw ("Packaged storage probe failed: " + $Report.error + "`n" + $Report.traceback) }
     if ($Report.family -ne $Installed.PackageFamilyName) { throw 'Probe did not run with the installed package identity.' }
     if ($Report.workspace -ne $Workspace) { throw 'Unexpected workspace.' }
     if (-not $Report.state.Contains('\LocalState\')) { throw 'Settings are not in Windows LocalFolder.' }

@@ -421,10 +421,12 @@ _workspace_root = None
 
 def prepare_storage_or_exit():
     """Run before config/logging/licensing imports; never fall back to empty data."""
+    probe_output = None
     try:
         if '--lohnmail-storage-probe' in sys.argv:
             index = sys.argv.index('--lohnmail-storage-probe')
             output, workspace = map(Path, sys.argv[index + 1:index + 3])
+            probe_output = output
             if not package_identity() or os.environ.get('LOHNMAIL_DATA_DIR'):
                 raise StorageError('Speichertest benötigt echte Paketidentität ohne Daten-Override.')
             # CLI is for installed-package CI, never an implicit production override.
@@ -441,6 +443,11 @@ def prepare_storage_or_exit():
         if not os.environ.get('LOHNMAIL_DATA_DIR'):
             packaged_data_root()
     except Exception as exc:
+        if probe_output is not None:
+            # Windowed EXEs have no stderr. Preserve a diagnostic for the
+            # installed-package test rather than hiding the original failure.
+            import traceback
+            atomic_json(probe_output, {'error': str(exc), 'traceback': traceback.format_exc()})
         message = 'LohnMail konnte den Datenbestand nicht sicher öffnen.\n\n' + str(exc)
         if sys.platform == 'win32' and '--lohnmail-storage-probe' not in sys.argv:
             from ctypes import wintypes
