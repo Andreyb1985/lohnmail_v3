@@ -209,6 +209,28 @@ def test_new_migration_resume_between_two_destinations(tmp_path, monkeypatch):
     assert Path(layout['workspace']) == workspace
 
 
+def test_interrupted_unicode_workspace_with_windows_legacy_encoding(tmp_path, monkeypatch):
+    root, local, cache = tmp_path/'state', tmp_path/'AppData/Local', tmp_path/'cache'
+    root.mkdir()
+    workspace = tmp_path/'Büro Андрей'; workspace.mkdir()
+    read_text, rename = Path.read_text, Path.rename
+    def legacy_read(self, encoding=None, errors=None):
+        return read_text(self, encoding=encoding or 'cp1252', errors=errors)
+    def interrupt(self, target):
+        if Path(target) == workspace/'Companies':
+            raise OSError('interrupted')
+        return rename(self, target)
+    monkeypatch.setattr(Path, 'read_text', legacy_read)
+    monkeypatch.setattr(Path, 'rename', interrupt)
+    with pytest.raises(OSError):
+        storage.initialize_package_storage(root, cache, local, 'test', lambda: workspace)
+    monkeypatch.setattr(Path, 'rename', rename)
+    layout = storage.initialize_package_storage(root, cache, local, 'test', Mock())
+    assert Path(layout['workspace']) == workspace
+    assert (workspace/'Companies').is_dir()
+    assert storage.initialize_package_storage(root, cache, local, 'test', Mock()) == layout
+
+
 def test_missing_workspace_never_recreated(tmp_path):
     root, local, cache = tmp_path/'state', tmp_path/'AppData/Local', tmp_path/'cache'
     root.mkdir(); workspace = tmp_path/'workspace'; workspace.mkdir()

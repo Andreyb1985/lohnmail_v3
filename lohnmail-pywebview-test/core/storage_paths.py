@@ -300,7 +300,7 @@ def initialize_package_storage(root, cache, local, family, choose):
             raise StorageError('Ungültiger Einstellungspfad.')
         # Missing workspace must never silently create an empty replacement.
         marker = workspace / '.lohnmail-workspace.json'
-        if (not marker.is_file() or json.loads(marker.read_text()) != {'id': layout['id']}
+        if (not marker.is_file() or json.loads(marker.read_text(encoding='utf-8')) != {'id': layout['id']}
                 or not (workspace / 'Companies').is_dir() or not (workspace / 'History').is_dir()
                 or not (state / 'Settings').is_dir()):
             raise StorageError(f'Arbeitsordner fehlt oder ist nicht erreichbar: {workspace}. '
@@ -308,7 +308,7 @@ def initialize_package_storage(root, cache, local, family, choose):
         return layout
     pending = root / 'storage-pending.json'
     if pending.exists():
-        plan = json.loads(pending.read_text())
+        plan = json.loads(pending.read_text(encoding='utf-8'))
         if plan.get('phase') == 'prepared':
             return _commit_layout(root, plan)
         workspace = validate_workspace(plan['workspace'], local)
@@ -402,7 +402,7 @@ def initialize_package_storage(root, cache, local, family, choose):
     _rewrite_snapshot_paths(history_stage, aliases)
     _rewrite_snapshot_paths(docs_stage, aliases)
     for p in (state_stage / 'Settings' / 'settings.json', state_stage / 'Settings' / 'license.json'):
-        if p.exists() and not isinstance(json.loads(p.read_text()), dict):
+        if p.exists() and not isinstance(json.loads(p.read_text(encoding='utf-8')), dict):
             raise StorageError(f'Ungültige Einstellungen, Originaldaten bleiben erhalten: {p}')
     layout = {'format': 2, 'id': plan['id'], 'family': family,
               'state': str(root / 'Data'), 'workspace': str(workspace)}
