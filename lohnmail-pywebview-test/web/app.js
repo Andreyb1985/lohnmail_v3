@@ -1883,11 +1883,13 @@
     var trialEnd = firstDateValue(state.trial_ends_at, state.related_trial_ends_at);
     var accessEnd = firstDateValue(state.access_ends_at, state.current_period_end, trialEnd);
     var relatedTrialKey = state.related_trial_key_masked || '';
-    setText('[data-license="status"]', state.label || 'Nicht registriert');
+    setText('[data-dashboard="license-pill"]', 'Lizenz: ' + (state.label || 'Unbekannt'));
+    setLabeledIconText('[data-dashboard="footer-license"]', 'Lizenz: ' + (state.label || 'Unbekannt'));
+    setText('[data-license="status"]', state.status_label || state.label || 'Nicht registriert');
     setText('[data-license="mode"]', state.mode || 'Lokal');
     setText('[data-license="type"]', state.type || 'Nicht registriert');
     setText('[data-license="plan"]', state.plan || '-');
-    setText('[data-license="days"]', state.days_remaining !== null && state.days_remaining !== undefined ? state.days_remaining + ' Tage' : '-');
+    setText('[data-license="days"]', state.unlimited ? 'Unbefristet' : (state.days_remaining !== null && state.days_remaining !== undefined ? state.days_remaining + ' Tage' : '-'));
     setText('[data-license="trial-end"]', accessEnd ? 'bis ' + formatDateTime(accessEnd) : '-');
     setText('[data-license="server"]', state.server || 'Nicht verbunden');
     setText('[data-license="server-note"]', state.server_note || (state.server === 'Verbunden' ? 'Online-Prüfung aktiv' : 'Keine Serverlogik aktiv'));
@@ -1896,7 +1898,7 @@
     setText('[data-license="detail-mode"]', state.mode || 'Lokal');
     setText('[data-license="detail-company"]', state.company || '-');
     setText('[data-license="machine-id"]', state.machine_id || '-');
-    setText('[data-license="access-end"]', accessEnd ? formatDateTime(accessEnd) : '-');
+    setText('[data-license="access-end"]', state.unlimited ? 'Unbefristet' : (accessEnd ? formatDateTime(accessEnd) : '-'));
     setText('[data-license="trial-end-detail"]', trialEnd ? formatDateTime(trialEnd) : '-');
     setText('[data-license="period-end"]', state.current_period_end ? formatDateTime(state.current_period_end) : '-');
     setText('[data-license="trial-source"]', relatedTrialKey || (trialEnd && state.type !== 'trial' ? 'Verknüpfter Trial' : '-'));

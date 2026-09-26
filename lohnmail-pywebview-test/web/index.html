@@ -288,43 +288,6 @@
             <button class="primary" data-processing="start-button" data-processing-action="start-check"><span data-icon="play"></span><span data-processing="start-label">Verarbeitung starten</span></button>
           </div>
 
-          <section class="workflow-card">
-            <div class="workflow-step done" data-processing-step="pdf">
-              <div class="step-index">1</div>
-              <div class="step-icon"><span data-icon="doc"></span></div>
-              <div><strong>PDF Import</strong><small data-processing="workflow-pdf">Abgeschlossen</small></div>
-            </div>
-            <i></i>
-            <div class="workflow-step active" data-processing-step="excel">
-              <div class="step-index">2</div>
-              <div class="step-icon"><span data-icon="table"></span></div>
-              <div><strong>Excel Import</strong><small data-processing="workflow-excel">Bereit</small></div>
-            </div>
-            <i></i>
-            <div class="workflow-step muted" data-processing-step="validation">
-              <div class="step-index">3</div>
-              <div class="step-icon"><span data-icon="search"></span></div>
-              <div><strong>Validierung</strong><small>Wartet</small></div>
-            </div>
-            <i></i>
-            <div class="workflow-step muted">
-              <div class="step-index">4</div>
-              <div class="step-icon"><span data-icon="settings"></span></div>
-              <div><strong>Verarbeitung</strong><small>Wartet</small></div>
-            </div>
-            <i></i>
-            <div class="workflow-step muted">
-              <div class="step-index">5</div>
-              <div class="step-icon"><span data-icon="send"></span></div>
-              <div><strong>Versand</strong><small>Wartet</small></div>
-            </div>
-            <i></i>
-            <div class="workflow-step muted">
-              <div class="step-index">6</div>
-              <div class="step-icon"><span data-icon="report"></span></div>
-              <div><strong>Ergebnis</strong><small>Wartet</small></div>
-            </div>
-          </section>
 
           <section class="processing-grid">
             <div class="processing-main">
@@ -413,43 +376,6 @@
             </div>
           </div>
 
-          <section class="workflow-card global-workflow" data-global-workflow>
-            <button class="workflow-step done" data-workflow-step="pdf" data-workflow-target="Verarbeitung">
-              <div class="step-index">1</div>
-              <div class="step-icon"><span data-icon="doc"></span></div>
-              <div><strong>PDF Import</strong><small>Bereit</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step done" data-workflow-step="excel" data-workflow-target="Verarbeitung">
-              <div class="step-index">2</div>
-              <div class="step-icon"><span data-icon="table"></span></div>
-              <div><strong>Excel Import</strong><small>Bereit</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step active" data-workflow-step="validation" data-workflow-target="Prüfung">
-              <div class="step-index">3</div>
-              <div class="step-icon"><span data-icon="search"></span></div>
-              <div><strong>Validierung</strong><small>Aktuell</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step done" data-workflow-step="processing" data-workflow-target="Verarbeitung">
-              <div class="step-index">4</div>
-              <div class="step-icon"><span data-icon="settings"></span></div>
-              <div><strong>Verarbeitung</strong><small>Bereit</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step muted" data-workflow-step="shipping" data-workflow-target="Versand">
-              <div class="step-index">5</div>
-              <div class="step-icon"><span data-icon="send"></span></div>
-              <div><strong>Versand</strong><small>Wartet</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step muted" data-workflow-step="reports" data-workflow-target="Berichte">
-              <div class="step-index">6</div>
-              <div class="step-icon"><span data-icon="report"></span></div>
-              <div><strong>Ergebnis</strong><small>Wartet</small></div>
-            </button>
-          </section>
 
           <section class="validation-metrics">
             <article class="validation-metric critical"><span data-icon="x"></span><div><strong data-validation="critical-count">0</strong><small>Kritische Fehler</small><em>Müssen behoben werden</em></div></article>
@@ -518,43 +444,6 @@
             <button class="primary shipping-primary-cta" data-shipping-primary data-shipping-action="start-dry-run"><span data-icon="send"></span><span data-shipping="primary-label">Versand vorbereiten</span></button>
           </div>
 
-          <section class="workflow-card global-workflow" data-global-workflow>
-            <button class="workflow-step done" data-workflow-step="pdf" data-workflow-target="Verarbeitung">
-              <div class="step-index">1</div>
-              <div class="step-icon"><span data-icon="doc"></span></div>
-              <div><strong>PDF Import</strong><small>Bereit</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step done" data-workflow-step="excel" data-workflow-target="Verarbeitung">
-              <div class="step-index">2</div>
-              <div class="step-icon"><span data-icon="table"></span></div>
-              <div><strong>Excel Import</strong><small>Bereit</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step done" data-workflow-step="validation" data-workflow-target="Prüfung">
-              <div class="step-index">3</div>
-              <div class="step-icon"><span data-icon="search"></span></div>
-              <div><strong>Validierung</strong><small>Bereit</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step done" data-workflow-step="processing" data-workflow-target="Verarbeitung">
-              <div class="step-index">4</div>
-              <div class="step-icon"><span data-icon="settings"></span></div>
-              <div><strong>Verarbeitung</strong><small>Bereit</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step active" data-workflow-step="shipping" data-workflow-target="Versand">
-              <div class="step-index">5</div>
-              <div class="step-icon"><span data-icon="send"></span></div>
-              <div><strong>Versand</strong><small>Aktuell</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step muted" data-workflow-step="reports" data-workflow-target="Berichte">
-              <div class="step-index">6</div>
-              <div class="step-icon"><span data-icon="report"></span></div>
-              <div><strong>Ergebnis</strong><small>Wartet</small></div>
-            </button>
-          </section>
 
           <section class="mailing-metrics">
             <article class="mailing-metric ready">
@@ -1407,11 +1296,11 @@
           <div class="company-modal-body">
             <label>
               <span>Unternehmensname</span>
-              <input type="text" data-company-create="name" placeholder="z. B. VRWK Verwaltung GmbH">
+              <input type="text" data-company-create="name" placeholder="z. B. Musterunternehmen GmbH">
             </label>
             <label>
               <span>Mandanten-ID</span>
-              <input type="text" data-company-create="id" placeholder="z. B. vrwk">
+              <input type="text" data-company-create="id" placeholder="z. B. musterunternehmen">
               <small>Leer lassen, um die ID automatisch aus dem Namen zu erzeugen.</small>
             </label>
             <div class="company-modal-hint">

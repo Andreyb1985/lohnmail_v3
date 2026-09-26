@@ -2049,6 +2049,7 @@ class WebBridge(QObject):
         related_trial_key = str(state.get("related_trial_license_key", "") or "").strip()
         status = str(state.get("status", "") or "unregistered").strip().lower()
         license_type = str(state.get("type", "") or "none").strip().lower()
+        unlimited = license_type == "lifetime" and status == "active"
         active = status in {"trialing", "active", "expiring_soon", "license_problem"}
         status_label = self._license_label(status, license_type, state)
         status_level = self._license_status_level(status, active, manager.server_url)
@@ -2062,18 +2063,23 @@ class WebBridge(QObject):
             or related_trial_ends_at
             or ""
         )
+        if license_type == "lifetime":
+            trial_ends_at = related_trial_ends_at = current_period_end = access_ends_at = ""
+            related_trial_key = ""
         license_problem = status == "license_problem"
         grace_ends_at = str(state.get("license_problem_grace_ends_at", "") or "")
         return {
             "status": status,
             "label": status_label,
+            "status_label": "Aktiv" if unlimited else status_label,
+            "unlimited": unlimited,
             "status_level": status_level,
             "active": active,
             "key_masked": str(state.get("license_key_masked", "") or self._mask_license_key(raw_key)),
             "key_label": "Bisheriger Lizenzschlüssel (nicht gefunden)" if license_problem else "Lizenzschlüssel",
             "key_present": bool(raw_key),
             "type": "Übergangsfrist" if license_problem else self._license_type_label(license_type),
-            "plan": "-" if license_problem else str(state.get("plan", "") or ("Trial" if license_type == "trial" else "Professional")),
+            "plan": "-" if license_problem else ("Lifetime" if unlimited else str(state.get("plan", "") or ("Trial" if license_type == "trial" else "Professional"))),
             "seats": str(state.get("seats", "") or "1"),
             "server": str(state.get("server", "") or ("Verbunden" if manager.server_url else "Nicht konfiguriert")),
             "server_note": "Online-Prüfung aktiv" if manager.server_url else "Keine Serverlogik aktiv",
@@ -2082,7 +2088,7 @@ class WebBridge(QObject):
             "licensee": licensee,
             "machine_id": str(state.get("machine_id", "") or ""),
             "licensed_machine_id": str(state.get("licensed_machine_id", "") or ""),
-            "days_remaining": state.get("days_remaining"),
+            "days_remaining": None if unlimited else state.get("days_remaining"),
             "trial_ends_at": "" if license_problem else trial_ends_at,
             "current_period_end": "" if license_problem else current_period_end,
             "access_ends_at": grace_ends_at if license_problem else access_ends_at,

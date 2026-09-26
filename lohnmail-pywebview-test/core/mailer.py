@@ -9,6 +9,7 @@ from email.message import EmailMessage
 from pathlib import Path
 
 from core.email_validation import _local_validation
+from core.tls import create_ssl_context
 
 
 def user_facing_mail_error(exc: Exception) -> str:
@@ -102,13 +103,13 @@ def test_smtp_connection(smtp_settings: dict) -> None:
 
     try:
         if security == "ssl":
-            with smtplib.SMTP_SSL(host, port, timeout=timeout, context=ssl.create_default_context()) as server:
+            with smtplib.SMTP_SSL(host, port, timeout=timeout, context=create_ssl_context()) as server:
                 if username:
                     server.login(username, password)
         else:
             with smtplib.SMTP(host, port, timeout=timeout) as server:
                 if security == "tls":
-                    server.starttls(context=ssl.create_default_context())
+                    server.starttls(context=create_ssl_context())
                 if username:
                     server.login(username, password)
     except Exception as exc:
@@ -404,14 +405,14 @@ def send_email(
 
     try:
         if security == "ssl":
-            with smtplib.SMTP_SSL(host, port, timeout=timeout, context=ssl.create_default_context()) as server:
+            with smtplib.SMTP_SSL(host, port, timeout=timeout, context=create_ssl_context()) as server:
                 if username:
                     server.login(username, password)
                 server.send_message(msg)
         else:
             with smtplib.SMTP(host, port, timeout=timeout) as server:
                 if security == "tls":
-                    server.starttls(context=ssl.create_default_context())
+                    server.starttls(context=create_ssl_context())
                 if username:
                     server.login(username, password)
                 server.send_message(msg)
@@ -485,14 +486,14 @@ def send_email_with_attachments(
 
     try:
         if security == "ssl":
-            with smtplib.SMTP_SSL(host, port, timeout=timeout, context=ssl.create_default_context()) as server:
+            with smtplib.SMTP_SSL(host, port, timeout=timeout, context=create_ssl_context()) as server:
                 if username:
                     server.login(username, password)
                 server.send_message(msg)
         else:
             with smtplib.SMTP(host, port, timeout=timeout) as server:
                 if security == "tls":
-                    server.starttls(context=ssl.create_default_context())
+                    server.starttls(context=create_ssl_context())
                 if username:
                     server.login(username, password)
                 server.send_message(msg)

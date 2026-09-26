@@ -364,6 +364,28 @@ input, input:focus, input:focus-visible {
   overflow-y: auto;
   padding-right: 4px;
 }
+.operation-log .log-list > div {
+  min-width: 0;
+  min-height: 24px;
+  grid-template-columns: 68px 22px minmax(120px, .8fr) minmax(0, 1.2fr);
+  align-items: start;
+  line-height: 1.35;
+  padding: 2px 0;
+}
+.operation-log .log-list > div > b,
+.operation-log .log-list > div > em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.operation-log .log-list > div > .log-time,
+.operation-log .log-list > div > .log-ok,
+.operation-log .log-list > div > .log-info,
+.operation-log .log-list > div > .log-warn,
+.operation-log .log-list > div > .log-error {
+  align-self: start;
+  margin-top: 1px;
+}
 .side-actions { min-height: 142px; }
 .side-action-grid button { height: 48px; }
 .side-action-grid [data-processing-action="open-output"] {
@@ -5818,5 +5840,7 @@ input, input:focus, input:focus-visible {
   .page-processing .processing-side .side-action-grid{grid-template-columns:1fr 1fr}
   .page-processing .processing-side .side-action-grid [data-processing-action="open-output"]{grid-column:1/-1}
 }
+/* Native HTML hidden must win over component display rules. */
+[hidden]{display:none!important}
 .file-field.output-folder-field{grid-template-columns:minmax(0,1fr) 110px 38px}
 .file-field.output-folder-field button{white-space:nowrap;padding:0 8px}

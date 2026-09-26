@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import SETTINGS_DIR
+from .tls import create_ssl_context
 
 DEFAULT_LICENSE_DIR = SETTINGS_DIR
 LEGACY_LICENSE_DIR = Path.home() / ".lohnmail"
@@ -95,7 +96,7 @@ class LicenseManager:
                     state["status"] = "invalid"
                     state["last_message"] = "Die 14-tägige Übergangsfrist ist abgelaufen. Bitte aktivieren Sie eine neue Lizenz."
                     self._save_state(state)
-                return state
+                return self._normalize_lifetime(state)
         except Exception:
             pass
         return self._empty_state()
@@ -308,6 +309,8 @@ class LicenseManager:
 
     @staticmethod
     def _entitlement_end(state: dict) -> datetime | None:
+        if str(state.get("type", "")).lower() == "lifetime":
+            return None
         dates = [
             _parse_dt(state.get(key))
             for key in (
@@ -332,7 +335,7 @@ class LicenseManager:
         state["server"] = "Nicht erreichbar"
         # Connection state and license state are independent. Keep an active
         # cached license visible and usable while its stored entitlement lasts.
-        if not self._allow_offline(state):
+        if state.get("status") not in BLOCKED_STATUSES and not self._allow_offline(state):
             state["status"] = "no_connection"
         self._save_state(state)
         return state
@@ -413,6 +416,7 @@ class LicenseManager:
         ]:
             if key in response and (response[key] is not None or key in nullable_keys):
                 merged[key] = response[key]
+        merged = self._normalize_lifetime(merged)
         merged["days_remaining"] = self._days_remaining(merged)
         merged["last_successful_check_at"] = _iso(now)
         merged["next_check_at"] = _iso(now + CHECK_INTERVAL)
@@ -424,6 +428,20 @@ class LicenseManager:
         merged.pop("license_problem_grace_ends_at", None)
         return merged
 
+    @staticmethod
+    def _normalize_lifetime(state: dict) -> dict:
+        """Trial dates are history after conversion, never lifetime entitlements.
+
+        Only positive statuses can be normalized; revocation, device binding,
+        missing-license grace and offline checks remain authoritative.
+        """
+        if str(state.get("type", "")).lower() != "lifetime":
+            return state
+        state = {**state, "access_ends_at": None}
+        if state.get("status") in {"trialing", "active", "expiring_soon"}:
+            state.update(status="active", days_remaining=None)
+        return state
+
     def _post(self, path: str, payload: dict) -> dict:
         if not self.server_url:
             raise RuntimeError("LICENSE_SERVER_URL is not configured.")
@@ -434,7 +452,7 @@ class LicenseManager:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=12) as response:
+            with urllib.request.urlopen(request, timeout=12, context=create_ssl_context()) as response:
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="ignore")
@@ -577,6 +595,8 @@ class LicenseManager:
             grace_end = _parse_dt(state.get("license_problem_grace_ends_at"))
             if grace_end:
                 return max(0, (grace_end.date() - _now().date()).days)
+        if str(state.get("type", "")).lower() == "lifetime":
+            return None
         end = _parse_dt(
             state.get("access_ends_at")
             or state.get("trial_ends_at")
