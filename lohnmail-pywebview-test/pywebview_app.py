@@ -119,6 +119,37 @@ class ApiAdapter:
         self.chooseExcelInput()
         return json.dumps(self._bridge._company_payload(load_settings()), ensure_ascii=False)
 
+    def chooseOutputFolder(self) -> str:
+        from core.storage_paths import dialog_directory, writable_directory, validate_output_location
+        settings = load_settings()
+        if self._bridge._workflow_running() or self._window is None:
+            return json.dumps({"ok": False, "message": "Bitte laufende Verarbeitung abwarten."})
+        company_id = str(settings.get("selected_company_id", ""))
+        company = next((c for c in settings.get("companies", []) if c.get("id") == company_id), None)
+        if company is None:
+            return json.dumps({"ok": False, "message": "Bitte zuerst ein Unternehmen auswählen."})
+        path = ""
+        try:
+            selected = self._window.create_file_dialog(webview.FileDialog.FOLDER,
+                directory=dialog_directory(), allow_multiple=False)
+            if not selected:
+                return json.dumps({"ok": False, "cancelled": True})
+            path = str(selected[0])
+            validate_output_location(path)
+            path = str(writable_directory(path))
+            previous = str(company.get("output_dir", "") or "")
+            if previous and previous != path:
+                history = company.setdefault("output_history_dirs", [])
+                if previous not in history:
+                    history.append(previous)
+            company["output_dir"] = path
+            save_settings(settings)
+        except (OSError, RuntimeError) as exc:
+            return json.dumps({"ok": False, "path": path,
+                "message": "Ausgabeordner konnte nicht gespeichert werden. Bitte einen erreichbaren, beschreibbaren Ordner wählen. " + path}, ensure_ascii=False)
+        self._bridge._reset_workflow_state()
+        return json.dumps({"ok": True, "path": path, "message": "Ausgabeordner gespeichert: " + path}, ensure_ascii=False)
+
     def chooseMassMessageAttachments(self) -> str:
         settings = load_settings()
         if self._bridge._workflow_running() or self._window is None:

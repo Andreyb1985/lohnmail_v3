@@ -76,6 +76,7 @@ $PyInstallerArguments = @(
     "--icon", $IconPath,
     "--version-file", $VersionInfoPath,
     "--collect-all", "webview",
+    "--collect-all", "winrt",
     "--hidden-import", "win32crypt",
     "--hidden-import", "pythoncom",
     "--hidden-import", "pywintypes",

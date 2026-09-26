@@ -23,6 +23,7 @@ from core.config import (
     LEGACY_GESOB_DIR,
     LEGACY_SETTINGS_DIR,
     SETTINGS_DIR,
+    HISTORY_DIR,
     company_output_dir,
     delete_company_smtp_secret,
     get_company_email_excel_file,
@@ -59,9 +60,9 @@ def _store_update_state() -> dict:
 def _open_target(target: str | Path) -> bool:
     value = str(target)
     try:
-        if re.match(r"^[a-z][a-z0-9+.-]*:", value, flags=re.IGNORECASE):
+        if re.match(r"^(https?://|mailto:|ms-windows-store:)", value, flags=re.IGNORECASE):
             return bool(webbrowser.open(value))
-        path = str(Path(value).expanduser().resolve())
+        path = str(Path(value).expanduser().resolve(strict=True))
         if sys.platform == "darwin":
             subprocess.Popen(["open", path], close_fds=True)
         elif sys.platform == "win32":
@@ -71,6 +72,18 @@ def _open_target(target: str | Path) -> bool:
         return True
     except Exception:
         return False
+
+
+def _write_export(path: Path, text: str) -> str:
+    try:
+        from core.storage_paths import validate_output_location
+        validate_output_location(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8-sig")
+        return json.dumps({"ok": True, "path": str(path)}, ensure_ascii=False)
+    except (OSError, RuntimeError):
+        return json.dumps({"ok": False, "path": str(path),
+            "message": "Datei konnte nicht gespeichert werden. Ordner und Schreibrechte prüfen: " + str(path)}, ensure_ascii=False)
 
 
 class ProcessingWorker(QObject):
@@ -116,6 +129,9 @@ class ProcessingWorker(QObject):
     @staticmethod
     def _friendly_error(exc: Exception) -> str:
         message = str(exc)
+        if isinstance(exc, OSError):
+            target = str(getattr(exc, "filename", "") or "")
+            return "Dateizugriff fehlgeschlagen. Ordner, Verbindung und Schreibrechte prüfen. " + target + " (" + message + ")"
         if "Directory 'static/' does not exist" in message:
             return (
                 "PDF Engine ist falsch installiert: Python lädt das Paket 'fitz' statt 'PyMuPDF'. "
@@ -225,7 +241,7 @@ class WebBridge(QObject):
         "send": "send_report.xlsx",
     }
     REPORT_INDEX_PATH = GESOB_DIR / "lohnmail_reports_index.json"
-    REPORT_HISTORY_PATH = SETTINGS_DIR / "lohnmail_history.sqlite3"
+    REPORT_HISTORY_PATH = HISTORY_DIR / "lohnmail_history.sqlite3"
     MASS_ATTACHMENT_LIMIT = 10
     MASS_ATTACHMENT_BYTES_LIMIT = 18 * 1024 * 1024
 
@@ -265,7 +281,7 @@ class WebBridge(QObject):
             self._report_history: ReportHistoryStore | None = ReportHistoryStore(self.REPORT_HISTORY_PATH)
         except Exception:
             self._report_history = None
-        self._workflow_sessions = WorkflowSessionStore(SETTINGS_DIR / "workflow_sessions.json")
+        self._workflow_sessions = WorkflowSessionStore(HISTORY_DIR / "workflow_sessions.json")
         self._restore_workflow_session(load_settings())
 
     @Slot(str)
@@ -1186,7 +1202,7 @@ class WebBridge(QObject):
         return json.dumps(
             {
                 "ok": bool(opened),
-                "message": "Excel-Datei geöffnet." if opened else "Excel-Datei konnte nicht geöffnet werden.",
+                "message": "Öffnungsanfrage für Excel an Windows/System übergeben." if opened else "Excel-Datei konnte nicht geöffnet werden.",
                 "path": str(path),
             },
             ensure_ascii=False,
@@ -1196,12 +1212,12 @@ class WebBridge(QObject):
     def openOutputFolder(self) -> str:
         settings = load_settings()
         output_dir = company_output_dir(settings)
-        output_dir.mkdir(parents=True, exist_ok=True)
         opened = _open_target(output_dir)
         return json.dumps(
             {
                 "ok": bool(opened),
-                "message": "Ausgabeordner geöffnet." if opened else "Ausgabeordner konnte nicht geöffnet werden.",
+                "message": "Öffnungsanfrage an das System übergeben: " + str(output_dir) if opened else "Ausgabeordner nicht erreichbar: " + str(output_dir) + ". Bitte 'Anderen Ordner wählen' verwenden.",
+                "action": "choose-output" if not opened else "",
                 "path": str(output_dir),
             },
             ensure_ascii=False,
@@ -1219,10 +1235,8 @@ class WebBridge(QObject):
 
         settings = load_settings()
         export_dir = company_output_dir(settings) / "exports"
-        export_dir.mkdir(parents=True, exist_ok=True)
         export_path = export_dir / safe_name
-        export_path.write_text(csv_text, encoding="utf-8-sig")
-        return json.dumps({"ok": True, "path": str(export_path)}, ensure_ascii=False)
+        return _write_export(export_path, csv_text)
 
     @Slot(str, str, result=str)
     def exportReportsCsv(self, csv_text: str, filename: str) -> str:
@@ -1239,10 +1253,8 @@ class WebBridge(QObject):
         if not safe_name.lower().endswith(".csv"):
             safe_name = f"{safe_name or 'lohnmail_berichte'}.csv"
         export_dir = company_output_dir(settings, company_id) / "exports"
-        export_dir.mkdir(parents=True, exist_ok=True)
         export_path = export_dir / safe_name
-        export_path.write_text(csv_text, encoding="utf-8-sig")
-        return json.dumps({"ok": True, "path": str(export_path)}, ensure_ascii=False)
+        return _write_export(export_path, csv_text)
 
     @Slot(str, result=str)
     def openReport(self, kind: str) -> str:
@@ -1259,7 +1271,7 @@ class WebBridge(QObject):
         return json.dumps(
             {
                 "ok": bool(opened),
-                "message": "Bericht geöffnet." if opened else "Bericht konnte nicht geöffnet werden.",
+                "message": "Öffnungsanfrage an das System übergeben." if opened else "Bericht konnte nicht geöffnet werden: " + str(path),
                 "path": str(path),
             },
             ensure_ascii=False,
@@ -1286,7 +1298,7 @@ class WebBridge(QObject):
         return json.dumps(
             {
                 "ok": bool(opened),
-                "message": "Bericht geöffnet." if opened else "Bericht konnte nicht geöffnet werden.",
+                "message": "Öffnungsanfrage an das System übergeben." if opened else "Bericht konnte nicht geöffnet werden: " + str(path),
                 "path": str(path),
             },
             ensure_ascii=False,
@@ -1638,7 +1650,14 @@ class WebBridge(QObject):
         )
         excel_state = self._path_state(excel_file, expected="excel")
         output_dir = company_output_dir(settings)
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # A missing custom path must not block the UI or be recreated silently.
+        if not any(c.get("id") == company_id and c.get("output_dir") for c in settings.get("companies", [])):
+            try:
+                from core.storage_paths import validate_output_location
+                validate_output_location(output_dir)
+                output_dir.mkdir(parents=True, exist_ok=True)
+            except (OSError, RuntimeError):
+                pass
         output_state = self._path_state(str(output_dir), expected="folder")
         can_check = bool(pdf_state["valid"] and excel_state["valid"] and output_state["valid"])
         status = {**self._processing_status}
@@ -3088,6 +3107,12 @@ class WebBridge(QObject):
         try:
             resolved = path.expanduser().resolve()
             roots = [COMPANIES_DIR.resolve(), LEGACY_GESOB_DIR.resolve()]
+            settings = load_settings()
+            roots.extend(company_output_dir(settings, c.get("id", "")).resolve()
+                         for c in settings.get("companies", []))
+            roots.extend(Path(p).expanduser().resolve()
+                         for c in settings.get("companies", [])
+                         for p in c.get("output_history_dirs", []))
             return any(resolved.is_relative_to(root) for root in roots) and resolved.name in set(self.REPORT_FILES.values())
         except (OSError, RuntimeError, ValueError):
             return False
@@ -3617,7 +3642,10 @@ class WebBridge(QObject):
             }
 
         path = Path(raw_path).expanduser()
-        exists = path.exists()
+        try:
+            exists = path.exists()
+        except OSError:
+            exists = False
         if expected == "folder":
             valid = exists and path.is_dir()
         elif expected == "pdf":

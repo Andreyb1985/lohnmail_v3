@@ -358,7 +358,7 @@
                     <small>Ergebnisse speichern</small>
                     <div class="import-meta"><span>Typ<br><b>Ordner</b></span><span>Status<br><b data-processing="output-label">Bereit</b></span><span>Geändert<br><b data-processing="output-updated">--</b></span></div>
                   </div>
-                  <div class="file-field" data-processing-action="open-output"><span data-processing="output-path">Lohn_Unternehmen</span><button title="Ausgabeordner öffnen" type="button"><span data-icon="report"></span></button></div>
+                  <div class="file-field output-folder-field"><span data-processing="output-path">Lohn_Unternehmen</span><button data-processing-action="choose-output" title="Anderen Ordner wählen" type="button">Ordner wählen</button><button data-processing-action="open-output" title="Ausgabeordner öffnen" type="button"><span data-icon="report"></span></button></div>
                   <div class="row-status success" data-processing="output-status"><span data-icon="checkcircle"></span></div>
                 </div>
                 <div class="info-banner" data-processing="input-message"><span data-icon="info"></span> Eingaben werden geladen.</div>
@@ -872,6 +872,7 @@
                 <button data-company-action="open-excel"><span data-icon="arrow-up-right"></span>Excel öffnen</button>
                 <button data-company-action="edit-company"><span data-icon="settings"></span>Mandant bearbeiten</button>
                 <button data-company-action="open-output"><span data-icon="report"></span>Ausgabeordner öffnen</button>
+                <button data-company-action="choose-output"><span data-icon="folder"></span>Anderen Ordner wählen</button>
               </div>
             </article>
 

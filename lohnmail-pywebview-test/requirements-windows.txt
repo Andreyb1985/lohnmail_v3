@@ -4,3 +4,5 @@ PyMuPDF==1.28.0
 PyPDF2==3.0.1
 dnspython==2.8.0
 pywin32==311
+winrt-Windows.Storage==3.2.1
+winrt-Windows.Management.Core==3.2.1

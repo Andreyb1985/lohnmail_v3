@@ -5818,3 +5818,5 @@ input, input:focus, input:focus-visible {
   .page-processing .processing-side .side-action-grid{grid-template-columns:1fr 1fr}
   .page-processing .processing-side .side-action-grid [data-processing-action="open-output"]{grid-column:1/-1}
 }
+.file-field.output-folder-field{grid-template-columns:minmax(0,1fr) 110px 38px}
+.file-field.output-folder-field button{white-space:nowrap;padding:0 8px}

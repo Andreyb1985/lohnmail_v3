@@ -14,6 +14,8 @@ def test_msix_manifest_is_full_trust_x64_with_minimal_capabilities() -> None:
     assert 'EntryPoint="Windows.FullTrustApplication"' in manifest
     assert 'Name="Windows.Desktop"' in manifest
     assert 'MinVersion="10.0.17763.0"' in manifest
+    assert 'FileSystemWriteVirtualization' not in manifest
+    assert 'unvirtualizedResources' not in manifest
     assert '<Capability Name="internetClient" />' in manifest
     assert '<rescap:Capability Name="runFullTrust" />' in manifest
     assert "@@IDENTITY_NAME@@" in manifest

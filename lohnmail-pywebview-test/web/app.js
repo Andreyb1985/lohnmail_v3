@@ -699,7 +699,7 @@
           setText('[data-validation="table-footer"]', result.message || 'Bericht konnte nicht geöffnet werden.');
           setReportsMessage(result.message || 'Bericht konnte nicht geöffnet werden.');
         } else {
-          setReportsMessage('Bericht geöffnet: ' + (result.path || kind));
+          setReportsMessage('Öffnungsanfrage übergeben: ' + (result.path || kind));
         }
       } catch (error) {
         setText('[data-validation="table-footer"]', 'Bericht konnte nicht geöffnet werden.');
@@ -897,7 +897,7 @@
     bridge.openReportEntry(file.id, function(payload){
       try {
         var result = JSON.parse(payload || '{}');
-        setReportsMessage(result.ok ? 'Bericht geöffnet: ' + result.path : (result.message || 'Bericht konnte nicht geöffnet werden.'));
+        setReportsMessage(result.ok ? 'Öffnungsanfrage übergeben: ' + result.path : (result.message || 'Bericht konnte nicht geöffnet werden.'));
       } catch (error) {
         setReportsMessage('Bericht konnte nicht geöffnet werden.');
       }
@@ -1808,10 +1808,21 @@
       bridge.openCompanyExcel(function(payload){
         try {
           var result = JSON.parse(payload || '{}');
-          setCompanyMessage(result.message || (result.ok ? 'Excel-Datei geöffnet.' : 'Excel-Datei konnte nicht geöffnet werden.'));
+          setCompanyMessage(result.message || (result.ok ? 'Öffnungsanfrage übergeben.' : 'Excel-Datei konnte nicht geöffnet werden.'));
         } catch (error) {
           setCompanyMessage('Excel-Datei konnte nicht geöffnet werden.');
         }
+      });
+      return;
+    }
+    if (action === 'choose-output' && bridge.chooseOutputFolder) {
+      bridge.chooseOutputFolder(function(payload){
+        try {
+          var result = JSON.parse(payload || '{}');
+          if (result.cancelled) return;
+          setCompanyMessage(result.message || 'Ausgabeordner konnte nicht gespeichert werden.');
+          if (result.ok) { loadCompanyState(); loadProcessingState(); loadDashboardState(); }
+        } catch (error) { setCompanyMessage('Ausgabeordner konnte nicht gespeichert werden.'); }
       });
       return;
     }
@@ -1819,7 +1830,7 @@
       bridge.openOutputFolder(function(payload){
         try {
           var result = JSON.parse(payload || '{}');
-          setCompanyMessage(result.message || (result.ok ? 'Ausgabeordner geöffnet.' : 'Ausgabeordner konnte nicht geöffnet werden.'));
+          setCompanyMessage(result.message || (result.ok ? 'Öffnungsanfrage übergeben.' : 'Ausgabeordner konnte nicht geöffnet werden.'));
         } catch (error) {
           setCompanyMessage('Ausgabeordner konnte nicht geöffnet werden.');
         }
@@ -4681,10 +4692,10 @@
       bridge.openOutputFolder(function(payload){
         try {
           var result = JSON.parse(payload || '{}');
-          setInfoBanner(result.message || (result.ok ? 'Ausgabeordner geöffnet.' : 'Ausgabeordner konnte nicht geöffnet werden.'), !!result.ok);
+          setInfoBanner(result.message || (result.ok ? 'Öffnungsanfrage übergeben.' : 'Ausgabeordner konnte nicht geöffnet werden.'), !!result.ok);
           pushProcessingLog(
             result.ok ? 'ok' : 'error',
-            result.ok ? 'Ausgabeordner geöffnet' : 'Ausgabeordner nicht verfügbar',
+            result.ok ? 'Öffnungsanfrage übergeben' : 'Ausgabeordner nicht verfügbar',
             result.path || result.message || '',
             'open-output|' + String(result.ok) + '|' + (result.path || '')
           );
@@ -4692,6 +4703,17 @@
           setInfoBanner('Ausgabeordner konnte nicht geöffnet werden.', false);
           pushProcessingLog('error', 'Ausgabeordner nicht verfügbar', 'Ungültige Antwort vom Bridge.', 'open-output|invalid');
         }
+      });
+      return;
+    }
+    if (action === 'choose-output' && bridge.chooseOutputFolder) {
+      bridge.chooseOutputFolder(function(payload){
+        try {
+          var result = JSON.parse(payload || '{}');
+          if (result.cancelled) return;
+          setInfoBanner(result.message || 'Ausgabeordner konnte nicht gespeichert werden.', !!result.ok);
+          if (result.ok) { loadProcessingState(); loadDashboardState(); }
+        } catch (error) { setInfoBanner('Ausgabeordner konnte nicht gespeichert werden.', false); }
       });
       return;
     }

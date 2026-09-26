@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import sys
 
+from core.storage_paths import prepare_storage_or_exit
+
+if __name__ == "__main__":
+    prepare_storage_or_exit()
+
 from core.distribution import is_store_build
 from core.logging_config import configure_logging, show_fatal_error
 from ui_web.update_runtime import SELF_TEST_FLAG, run_update_command
