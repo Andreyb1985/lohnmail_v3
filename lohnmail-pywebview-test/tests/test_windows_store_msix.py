@@ -66,6 +66,10 @@ def test_store_workflow_builds_validates_and_uploads_msix() -> None:
     assert "LohnMail-Windows-Store-${{ steps.metadata.outputs.version }}" in workflow
     assert "lohnmail-pywebview-test/dist/store/*.msix" in workflow
     assert "MSIX_TEST_CERT" not in workflow
+    build_step = workflow.split('- name: Build Microsoft Store MSIX', 1)[1].split('- name:', 1)[0]
+    install_step = workflow.split('- name: Test MSIX install and upgrade', 1)[1].split('- name:', 1)[0]
+    assert 'LOHNMAIL_DATA_DIR: ${{ runner.temp }}/lohnmail-store-build-tests' in build_step
+    assert 'LOHNMAIL_DATA_DIR' not in install_step
 
 
 def test_direct_build_remains_separate_and_keeps_direct_updater() -> None:

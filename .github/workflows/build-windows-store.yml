@@ -63,6 +63,10 @@ jobs:
           }
 
       - name: Build Microsoft Store MSIX
+        # Source tests and the unpackaged EXE self-test must not seed the real
+        # profile before the clean installed-package storage/upgrade test.
+        env:
+          LOHNMAIL_DATA_DIR: ${{ runner.temp }}/lohnmail-store-build-tests
         shell: powershell
         run: |
           Set-Location lohnmail-pywebview-test
