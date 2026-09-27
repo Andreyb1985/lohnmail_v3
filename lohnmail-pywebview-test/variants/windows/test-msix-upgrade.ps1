@@ -152,6 +152,7 @@ try {
             $FixtureId = [LohnMailPackageProbe]::Launch(($Old.PackageFamilyName + '!' + $OldManifest.Package.Applications.Application.Id), ('"' + $LegacyReport + '" ' + $Case))
             $Fixture = Get-Process -Id $FixtureId -ErrorAction SilentlyContinue
             if ($Fixture -and -not $Fixture.WaitForExit(60000)) { throw 'Legacy fixture timed out.' }
+            if ($Fixture -and $Fixture.ExitCode -ne 0) { throw "Legacy fixture failed with exit code $($Fixture.ExitCode)" }
             if ((Get-Content -LiteralPath $LegacyReport -Raw) -ne $Old.PackageFamilyName) { throw 'Legacy writer had no package identity.' }
             $Virtual = Join-Path $env:LOCALAPPDATA "Packages\$($Old.PackageFamilyName)\LocalCache\Local\LohnMail"
             if ($Case -eq 'redirected' -and -not (Test-Path (Join-Path $Virtual 'Settings\license.json'))) { throw 'Fixture failed to reproduce redirection.' }
@@ -188,6 +189,12 @@ try {
                     if ($License.license_key -ne 'SYNTHETIC-KEEP') { throw 'License reset during migration.' }
                     if ((Get-Content (Join-Path $CaseWorkspace 'Companies\CI-Legacy-Unique\result.pdf') -Raw) -ne 'SYNTHETIC-PDF') { throw 'Legacy document lost.' }
                     if ((Get-Content (Join-Path $NewProbe.state 'Settings\secrets.dat') -Raw) -ne 'SYNTHETIC-ENCRYPTED-NOT-A-PASSWORD') { throw 'Encrypted settings lost.' }
+                }
+                if ($Case -in @('ordinary', 'both')) {
+                    if ((Get-Content (Join-Path $NewProbe.state 'Settings\ordinary-sentinel.txt')) -ne 'ordinary-original') { throw 'Ordinary physical data not imported.' }
+                }
+                if ($Case -eq 'both') {
+                    if ((Get-Content (Join-Path $CaseWorkspace 'Companies\CI-Second\result.pdf')) -ne 'second-physical-store') { throw 'Redirected physical data not imported.' }
                 }
             }
             Write-Host "Installed legacy migration scenario passed: $Case"

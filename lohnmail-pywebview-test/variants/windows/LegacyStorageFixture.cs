@@ -8,7 +8,9 @@ class LegacyStorageFixture {
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode)]
     static extern int GetCurrentPackageFamilyName(ref uint length, StringBuilder name);
     static int Main(string[] args) {
-        if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true" || args.Length != 2) return 2;
+        // Only compiled by the CI-only install script, never shipped. AUMID
+        // activation uses Explorer's environment, NOT the runner's job env.
+        if (args.Length != 2) return 2;
         uint length = 0;
         if (GetCurrentPackageFamilyName(ref length, null) != 122) return 3;
         var family = new StringBuilder((int)length);
