@@ -152,7 +152,9 @@ try {
             $FixtureId = [LohnMailPackageProbe]::Launch(($Old.PackageFamilyName + '!' + $OldManifest.Package.Applications.Application.Id), ('"' + $LegacyReport + '" ' + $Case))
             $Fixture = Get-Process -Id $FixtureId -ErrorAction SilentlyContinue
             if ($Fixture -and -not $Fixture.WaitForExit(60000)) { throw 'Legacy fixture timed out.' }
-            if ($Fixture -and $Fixture.ExitCode -ne 0) { throw "Legacy fixture failed with exit code $($Fixture.ExitCode)" }
+            # Get-Process can lose ExitCode for a short-lived AUMID process.
+            # Its persisted family report below is mandatory regardless.
+            if ($Fixture -and $null -ne $Fixture.ExitCode -and $Fixture.ExitCode -ne 0) { throw "Legacy fixture failed with exit code $($Fixture.ExitCode)" }
             if ((Get-Content -LiteralPath $LegacyReport -Raw) -ne $Old.PackageFamilyName) { throw 'Legacy writer had no package identity.' }
             $Virtual = Join-Path $env:LOCALAPPDATA "Packages\$($Old.PackageFamilyName)\LocalCache\Local\LohnMail"
             if ($Case -eq 'redirected' -and -not (Test-Path (Join-Path $Virtual 'Settings\license.json'))) { throw 'Fixture failed to reproduce redirection.' }
