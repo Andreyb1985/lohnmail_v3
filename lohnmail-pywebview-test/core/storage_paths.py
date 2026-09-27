@@ -1,7 +1,7 @@
 """Explicit package app-data and an external Documents/LohnMail workspace.
 
-Virtualization stays enabled. Legacy AppData must be exported outside the package
-before import: a packaged process cannot reliably inspect both physical stores.
+Virtualization stays enabled. A verified unpackaged helper snapshots legacy
+AppData before import; a packaged process cannot inspect both physical stores.
 """
 from pathlib import Path
 from contextlib import closing
@@ -284,11 +284,12 @@ def _commit_layout(root, plan):
     return plan['layout']
 
 
-def initialize_package_storage(root, cache, local, family, choose):
+def initialize_package_storage(root, cache, local, family, choose, export_legacy=None):
     """Called under package-local process lock before any settings are loaded.
 
     No unvirtualized access is claimed from a packaged process. Legacy imports
-    require a hashed export made by our PowerShell tool outside package identity.
+    require a hashed export made outside package identity. Production supplies
+    the bundled native helper; tests can inject a synthetic exporter.
     """
     layout_file = root / 'storage-layout.json'
     if layout_file.exists():
@@ -324,11 +325,17 @@ def initialize_package_storage(root, cache, local, family, choose):
         atomic_json(pending, plan)
     bundle = workspace / 'LohnMail-Legacy-Export'
     legacy_roots = [local / 'LohnMail', cache / 'Local' / 'LohnMail', local / 'Programs' / 'LohnMail']
-    if not (bundle / 'export.json').exists() and any(p.exists() for p in legacy_roots):
-        raise StorageError('Vorhandene LohnMail-Daten gefunden. Ein automatisches Zusammenführen '
-                           'innerhalb des MSIX-Pakets wäre nicht sicher. Programm schließen und '
-                           'Export-LegacyStorage.ps1 in normaler Windows PowerShell starten. '
-                           f'Arbeitsordner für die Sicherung: {workspace}. Keine Lizenz zurückgesetzt.')
+    if export_legacy is not None:
+        # Always inspect outside virtualization, even when the packaged view
+        # looks empty. On retry the helper verifies an existing backup against
+        # current sources; it must never silently import a stale snapshot.
+        export_legacy(workspace, family, local, cache)
+        if not (bundle / 'export.json').is_file():
+            raise StorageError(f'Datensicherung fehlt: {bundle}. Keine Daten umgeschaltet.')
+    elif not (bundle / 'export.json').exists() and any(p.exists() for p in legacy_roots):
+        raise StorageError('Die automatische Datensicherung ist nicht verfügbar. '
+                           f'Originaldaten bleiben erhalten. Arbeitsordner: {workspace}. '
+                           'Bitte Support kontaktieren; keine Lizenz zurückgesetzt.')
     # A failed copy is retained for diagnosis. Retry in a new staging directory;
     # do not combine SQLite sidecars from a previous interrupted attempt.
     backup = workspace / ('.lohnmail-transfer-' + uuid.uuid4().hex)
@@ -464,7 +471,7 @@ def packaged_data_root():
     identity = package_identity()
     if not identity:
         return None
-    from core.windows_storage import application_folders, default_workspace
+    from core.windows_storage import application_folders, default_workspace, export_legacy_storage
     family, _ = identity
     state_folder, cache_folder = application_folders(family)
     root = state_folder / 'LohnMail'
@@ -480,7 +487,8 @@ def packaged_data_root():
             raise StorageError('Die Datenmigration läuft bereits. Andere LohnMail-Instanzen schließen.') from exc
         try:
             layout = initialize_package_storage(
-                root, cache_folder, real_local_appdata(), family, default_workspace)
+                root, cache_folder, real_local_appdata(), family, default_workspace,
+                export_legacy=export_legacy_storage)
             _package_root = Path(layout['state'])
             _workspace_root = Path(layout['workspace'])
         finally:

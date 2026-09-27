@@ -113,6 +113,13 @@ $PyInstallerArguments += $MainScript
 & $Python -m PyInstaller @PyInstallerArguments
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller konnte LohnMail.exe nicht erstellen." }
 
+if ($Distribution -eq "store") {
+    $Compiler = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+    $StorageHelper = Join-Path $DistRoot "LohnMail\LohnMail.StorageExport.exe"
+    & $Compiler /nologo /target:winexe /platform:x64 /optimize+ /reference:System.Web.Extensions.dll "/out:$StorageHelper" "variants\windows\StorageExport.cs"
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $StorageHelper)) { throw 'Storage export helper compilation failed.' }
+}
+
 $Executable = Join-Path $DistRoot "LohnMail\LohnMail.exe"
 if (-not (Test-Path $Executable)) { throw "LohnMail.exe fehlt nach der Standalone-Sammlung." }
 & $Executable --lohnmail-update-selftest $AppVersion $AppBuild

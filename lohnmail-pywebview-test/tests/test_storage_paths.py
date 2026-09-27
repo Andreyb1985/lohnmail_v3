@@ -140,6 +140,8 @@ def test_package_identity_drives_storage_not_hardcoded_pfn(tmp_path, monkeypatch
     folders = Mock(return_value=(state, cache))
     monkeypatch.setattr(windows_storage, 'application_folders', folders)
     monkeypatch.setattr(windows_storage, 'default_workspace', lambda: workspace)
+    monkeypatch.setattr(windows_storage, 'export_legacy_storage',
+                        lambda w, f, l, c: export_fixture(w, {'ordinary': l/'LohnMail', 'redirected': c/'Local/LohnMail'}, f))
     monkeypatch.setitem(sys.modules, 'msvcrt', SimpleNamespace(locking=Mock(), LK_NBLCK=1, LK_UNLCK=0))
     assert storage.packaged_data_root() == state/'LohnMail/Data'
     assert storage._workspace_root == workspace
@@ -203,9 +205,65 @@ def test_legacy_requires_unvirtualized_export_before_any_new_license(tmp_path):
     root, cache, local = tmp_path/'state', tmp_path/'cache', tmp_path/'AppData/Local'
     root.mkdir(); workspace = tmp_path/'workspace'; workspace.mkdir()
     put(cache/'Local/LohnMail', 'Settings/license.json', '{"license_key":"TEST"}')
-    with pytest.raises(storage.StorageError, match='Export-LegacyStorage'):
+    with pytest.raises(storage.StorageError, match='Datensicherung'):
         storage.initialize_package_storage(root, cache, local, 'test', lambda: workspace)
     assert not (root/'Data').exists() and not (root/'storage-layout.json').exists()
+
+
+@pytest.mark.parametrize('case', ['empty', 'ordinary', 'redirected', 'both', 'conflict'])
+def test_automatic_export_before_first_settings_load(tmp_path, case):
+    root, cache, local = tmp_path/'state', tmp_path/'cache', tmp_path/'AppData/Local'
+    root.mkdir(); workspace = tmp_path/'Documents/LohnMail'; workspace.mkdir(parents=True)
+    a, b = local/'LohnMail', cache/'Local/LohnMail'
+    a.mkdir(parents=True); b.mkdir(parents=True)
+    if case in ('ordinary', 'both', 'conflict'):
+        put(a, 'Settings/license.json', '{"license_key":"SYNTHETIC-A"}')
+        put(a, 'Companies/A/result.pdf', 'synthetic-PDF')
+    if case in ('redirected', 'both', 'conflict'):
+        put(b, 'Settings/secrets.dat', 'DPAPI-synthetic')
+        put(b, 'Companies/B/audit.xlsx', 'synthetic-Excel')
+    if case == 'conflict': put(b, 'Settings/license.json', '{"license_key":"SYNTHETIC-B"}')
+    before = storage.inventory(a), storage.inventory(b)
+    exporter = Mock(side_effect=lambda w, f, l, c: export_fixture(w, {'ordinary': a, 'redirected': b}, f))
+    if case == 'conflict':
+        with pytest.raises(storage.StorageError, match='Unterschiedliche'):
+            storage.initialize_package_storage(root, cache, local, 'test', lambda: workspace, exporter)
+        assert not (root/'Data').exists()
+        assert not (root/'storage-layout.json').exists()
+    else:
+        layout = storage.initialize_package_storage(root, cache, local, 'test', lambda: workspace, exporter)
+        assert storage.initialize_package_storage(root, cache, local, 'test', Mock(), exporter) == layout
+        exporter.assert_called_once()
+        if case in ('ordinary', 'both'):
+            assert (root/'Data/Settings/license.json').read_text() == '{"license_key":"SYNTHETIC-A"}'
+            assert (workspace/'Companies/A/result.pdf').read_text() == 'synthetic-PDF'
+        if case in ('redirected', 'both'):
+            assert (root/'Data/Settings/secrets.dat').read_text() == 'DPAPI-synthetic'
+    assert before == (storage.inventory(a), storage.inventory(b))
+    assert storage.inventory(workspace/'LohnMail-Legacy-Export/ordinary') == before[0]
+    assert storage.inventory(workspace/'LohnMail-Legacy-Export/redirected') == before[1]
+
+
+def test_automatic_export_failure_is_retryable_without_empty_settings(tmp_path):
+    root, cache, local = tmp_path/'state', tmp_path/'cache', tmp_path/'AppData/Local'
+    root.mkdir(); workspace = tmp_path/'workspace'; workspace.mkdir()
+    put(cache/'Local/LohnMail', 'Settings/license.json', '{"license_key":"RETAIN"}')
+    with pytest.raises(OSError, match='disk full'):
+        storage.initialize_package_storage(root, cache, local, 'test', lambda: workspace,
+                                           Mock(side_effect=OSError('disk full')))
+    assert not (root/'Data').exists()
+    assert not (root/'storage-layout.json').exists()
+    exporter = lambda w, f, l, c: export_fixture(w, {'ordinary': l/'LohnMail', 'redirected': c/'Local/LohnMail'}, f)
+    storage.initialize_package_storage(root, cache, local, 'test', Mock(side_effect=AssertionError()), exporter)
+    assert 'RETAIN' in (root/'Data/Settings/license.json').read_text()
+
+
+def test_exporter_success_without_verified_snapshot_cannot_initialize(tmp_path):
+    root, cache, local = tmp_path/'state', tmp_path/'cache', tmp_path/'AppData/Local'
+    root.mkdir(); workspace = tmp_path/'workspace'; workspace.mkdir()
+    with pytest.raises(storage.StorageError, match='Datensicherung fehlt'):
+        storage.initialize_package_storage(root, cache, local, 'test', lambda: workspace, Mock())
+    assert not (root/'Data').exists()
 
 
 def test_new_migration_resume_between_two_destinations(tmp_path, monkeypatch):
