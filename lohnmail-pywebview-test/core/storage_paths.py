@@ -311,6 +311,11 @@ def initialize_package_storage(root, cache, local, family, choose, export_legacy
     if pending.exists():
         plan = json.loads(pending.read_text(encoding='utf-8'))
         if plan.get('phase') == 'prepared':
+            if export_legacy is not None:
+                # A user may have resumed the old version after an interruption.
+                # Never switch to an older prepared snapshot without checking
+                # that the physical originals still match the retained export.
+                export_legacy(Path(plan['workspace']), family, local, cache)
             return _commit_layout(root, plan)
         workspace = validate_workspace(plan['workspace'], local)
     else:

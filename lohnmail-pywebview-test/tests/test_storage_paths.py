@@ -281,6 +281,31 @@ def test_new_migration_resume_between_two_destinations(tmp_path, monkeypatch):
     assert Path(layout['workspace']) == workspace
 
 
+def test_prepared_resume_rechecks_originals_before_switch(tmp_path, monkeypatch):
+    root, cache, local = tmp_path/'state', tmp_path/'cache', tmp_path/'AppData/Local'
+    root.mkdir(); workspace = tmp_path/'workspace'; workspace.mkdir()
+    a, b = local/'LohnMail', cache/'Local/LohnMail'
+    put(a, 'Settings/license.json', '{"license_key":"FIRST"}')
+    export = lambda w, f, l, c: export_fixture(w, {'ordinary': a, 'redirected': b}, f)
+    rename = Path.rename
+    def interrupt(self, target):
+        if Path(target) == workspace/'Companies': raise OSError('interrupted')
+        return rename(self, target)
+    monkeypatch.setattr(Path, 'rename', interrupt)
+    with pytest.raises(OSError, match='interrupted'):
+        storage.initialize_package_storage(root, cache, local, 'test', lambda: workspace, export)
+    monkeypatch.setattr(Path, 'rename', rename)
+    put(a, 'Settings/license.json', '{"license_key":"NEWER"}')
+    # The native helper detects this difference against its manifest on retry.
+    verify = Mock(side_effect=storage.StorageError('original changed'))
+    with pytest.raises(storage.StorageError, match='original changed'):
+        storage.initialize_package_storage(root, cache, local, 'test', Mock(), verify)
+    verify.assert_called_once_with(workspace, 'test', local, cache)
+    assert not (root/'storage-layout.json').exists()
+    assert not (workspace/'Companies').exists()
+    assert 'NEWER' in (a/'Settings/license.json').read_text()
+
+
 def test_interrupted_unicode_workspace_with_windows_legacy_encoding(tmp_path, monkeypatch):
     root, local, cache = tmp_path/'state', tmp_path/'AppData/Local', tmp_path/'cache'
     root.mkdir()

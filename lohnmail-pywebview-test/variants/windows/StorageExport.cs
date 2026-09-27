@@ -166,6 +166,7 @@ class StorageExport {
                     string path = Path.Combine(copy, item.Key.Replace('/', '\\')); Directory.CreateDirectory(Path.GetDirectoryName(path));
                     hashes.Add(item.Key, Hash(item.Value)); item.Value.Position = 0;
                     using (FileStream output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { item.Value.CopyTo(output); output.Flush(true); }
+                    File.SetLastWriteTimeUtc(path, File.GetLastWriteTimeUtc(item.Value.Name));
                 }
                 Same(hashes, Inventory(copy)); Same(hashes, Inventory(root.Value));
                 snapshots.Add(root.Key, new Dictionary<string, object> {{"path", root.Value}, {"files", hashes}});

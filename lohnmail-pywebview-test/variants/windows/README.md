@@ -23,13 +23,20 @@ First launch uses Documents/LohnMail, resolved with Windows Known Folders.
 Companies and History live there, not in the package cache. This path persists
 across updates (including if Documents is subsequently redirected elsewhere).
 Settings in LocalFolder may be removed when the package is uninstalled.
-Existing legacy AppData requires a verified export from ordinary PowerShell
-with the app closed: `Export-LegacyStorage.ps1 -PackageFamilyName <PFN> -Workspace <folder>`.
-The script discovers both physical stores, hashes copies, and leaves originals.
-Use the workspace path shown by LohnMail. Restart to import. Conflicts block
-switching, not reset data.
+Since 2.1.2 legacy AppData is exported automatically by the bundled copy-only
+StorageExport helper before settings/licensing loads. It independently verifies
+native NO_PACKAGE identity before reading both physical stores. No PowerShell
+or elevation is required. SHA-256 verified snapshots/originals remain retained.
+Existing snapshots are rechecked against live sources on retry, including
+prepared-but-interrupted migration. Conflicts block switching, never reset data.
+Export-LegacyStorage.ps1 remains a manual support tool, not a required user step.
 Extra legacy direct-install data requires manual review; it is never merged silently.
 The installed-package CI probe uses activation identity and checks LocalFolder,
-workspace and upgrade preservation. It is not a Windows 10 GUI/manual test.
+workspace and upgrade preservation. It also upgrades an installed synthetic
+legacy-layout writer: empty/ordinary/redirected/both/conflicting stores, retained
+originals, license, encrypted settings, documents and restart. The CI-only writer
+is NOT shipped. This is not the actual previous Store binary or a Windows 10 GUI
+test. AppLocker/WDAC/S-mode and redirected/network Documents require separate
+verification; blocked helper execution fails safely rather than starting empty.
 Do not publish until installed-MSIX storage and legacy migration tests pass.
 The direct build embeds `direct` and keeps the existing update service.
