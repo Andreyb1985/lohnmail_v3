@@ -33,3 +33,11 @@ def test_update_primary_action_stacks_before_laptop_layout_becomes_too_narrow() 
     assert ".settings-update-panel .update-action-row .primary" in css
     assert "grid-template-columns:1fr" in css
     assert "min-width:0" in css
+
+
+def test_update_visibility_comes_from_runtime_capabilities_not_browser_os() -> None:
+    javascript = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    assert "function applyPlatformCapabilities(outlookSupported, updatesSupported)" in javascript
+    assert "prepareMacAppStoreUi" not in javascript
+    assert "navigator.platform" not in javascript

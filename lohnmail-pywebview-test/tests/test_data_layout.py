@@ -67,6 +67,17 @@ class DataLayoutTests(unittest.TestCase):
             with patch.dict("os.environ", {"LOHNMAIL_DATA_DIR": str(requested)}):
                 self.assertEqual(user_data_dir(), requested.resolve())
 
+    def test_macos_preview_data_is_isolated_from_production(self) -> None:
+        with TemporaryDirectory() as temporary_directory, patch.dict(
+            "os.environ", {"LOHNMAIL_DATA_DIR": ""}
+        ), patch("core.config.sys.platform", "darwin"), patch(
+            "core.config.Path.home", return_value=Path(temporary_directory)
+        ):
+            self.assertEqual(
+                user_data_dir(),
+                Path(temporary_directory) / "Library" / "Application Support" / "LohnMail-macOS-Test",
+            )
+
     def test_company_pdf_and_mail_settings_survive_normalization(self) -> None:
         settings = _deep_merge_settings(
             {

@@ -6,6 +6,7 @@ from .email_validation import validate_email_records
 from .excel_io import load_email_records
 from .message_templates import build_mail_context, format_message_template
 from .orchestrator import action_check, action_send
+from .storage_paths import validate_output_location
 
 ProgressCb = Callable[[str], None] | None
 
@@ -68,6 +69,7 @@ def run_main_job(
     progress_cb: ProgressCb = None,
 ) -> dict:
     output_dir = company_output_dir(settings, settings.get("selected_company_id"))
+    validate_output_location(output_dir)
     if mode == "check":
         return action_check(pdf_input, excel_path, progress_cb=progress_cb, output_dir=output_dir)
     if mode == "send_preview":

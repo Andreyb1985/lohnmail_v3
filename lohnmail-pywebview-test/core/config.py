@@ -8,8 +8,10 @@ from datetime import date, datetime
 from pathlib import Path
 
 from core.secret_store import SecretStore, SecretStoreError
+from core.storage_paths import atomic_json, packaged_data_root, packaged_workspace_root
 
 APP_NAME = "LohnMail"
+MACOS_TEST_DATA_DIR_NAME = "LohnMail-macOS-Test"
 APP_TAGLINE = "Versand von Lohnabrechnungen \u2013 kompatibel mit DATEV"
 APP_COPYRIGHT = "\u00a9 2026 Andrii Bakanov"
 DEVELOPER_NAME = "Andrii Bakanov"
@@ -121,6 +123,11 @@ def user_data_dir() -> Path:
     if explicit_data_dir:
         return Path(explicit_data_dir).expanduser().resolve()
 
+    if sys.platform == "win32":
+        packaged_root = packaged_data_root()
+        if packaged_root is not None:
+            return packaged_root
+
     install_dir = app_dir()
     portable_root = install_dir.parent
     if (
@@ -135,7 +142,20 @@ def user_data_dir() -> Path:
         if windows_data:
             return Path(windows_data) / APP_NAME
     if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / APP_NAME
+        # App Store/TestFlight builds may write only inside their sandbox
+        # container. Keep preview builds isolated in the user home instead.
+        if os.environ.get("APP_SANDBOX_CONTAINER_ID"):
+            return (
+                Path.home()
+                / "Library"
+                / "Containers"
+                / "lohnmail"
+                / "Data"
+                / "Library"
+                / "Application Support"
+                / MACOS_TEST_DATA_DIR_NAME
+            )
+        return Path.home() / "Library" / "Application Support" / MACOS_TEST_DATA_DIR_NAME
     return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / APP_NAME
 
 
@@ -157,6 +177,9 @@ def company_output_dir(settings: dict, company_id: str | None = None) -> Path:
         if not isinstance(company, dict):
             continue
         if str(company.get("id", "") or "").strip() == requested_id:
+            custom = str(company.get("output_dir", "") or "").strip()
+            if custom:
+                return Path(custom).expanduser()
             company_name = str(company.get("name", "") or requested_id or "Unternehmen")
             break
     return COMPANIES_DIR / f"Lohn_{_safe_company_folder_name(company_name)}"
@@ -170,7 +193,9 @@ APP_INSTALL_DIR = USER_DATA_DIR / "App"
 SETTINGS_DIR = user_config_dir()
 SETTINGS_PATH = SETTINGS_DIR / "settings.json"
 SECRETS_PATH = SETTINGS_DIR / "secrets.dat"
-COMPANIES_DIR = USER_DATA_DIR / "Companies"
+WORKSPACE_DIR = packaged_workspace_root() or USER_DATA_DIR
+COMPANIES_DIR = WORKSPACE_DIR / "Companies"
+HISTORY_DIR = WORKSPACE_DIR / "History" if WORKSPACE_DIR != USER_DATA_DIR else SETTINGS_DIR
 LEGACY_SETTINGS_DIR = USER_DATA_DIR
 LEGACY_GESOB_DIR = BASE_DIR / "Gesob_Lohn"
 # Backward-compatible alias for code that only needs the common output root.
@@ -275,6 +300,8 @@ def _deep_merge_settings(data: dict) -> dict:
                 "email_excel_file": email_excel_file,
                 "pdf_input": pdf_input,
                 "pdf_input_mode": pdf_input_mode,
+                "output_dir": str(item.get("output_dir", "") or "").strip(),
+                "output_history_dirs": [p for p in (item.get("output_history_dirs") if isinstance(item.get("output_history_dirs"), list) else []) if isinstance(p, str) and p],
             }
             if isinstance(item.get("mail_settings"), dict):
                 normalized_company["mail_settings"] = deepcopy(item["mail_settings"])
@@ -372,8 +399,7 @@ def load_settings() -> dict:
         sanitized = _protect_and_strip_smtp_passwords(merged)
         if sanitized != data:
             SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-            with SETTINGS_PATH.open("w", encoding="utf-8") as f:
-                json.dump(sanitized, f, ensure_ascii=False, indent=2)
+            atomic_json(SETTINGS_PATH, sanitized)
         return _hydrate_smtp_passwords(sanitized)
     except SecretStoreError as exc:
         _LAST_SETTINGS_WARNING = str(exc)
@@ -384,8 +410,7 @@ def save_settings(settings: dict) -> None:
     merged = _deep_merge_settings(settings)
     sanitized = _protect_and_strip_smtp_passwords(merged)
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with SETTINGS_PATH.open("w", encoding="utf-8") as f:
-        json.dump(sanitized, f, ensure_ascii=False, indent=2)
+    atomic_json(SETTINGS_PATH, sanitized)
 
 
 def get_company_name(settings: dict | None = None, company_id: str | None = None) -> str:

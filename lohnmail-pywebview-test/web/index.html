@@ -98,11 +98,6 @@
           <button class="primary" data-dashboard-action="new-run"><span data-icon="play"></span>Neuer Lauf</button>
         </div>
 
-        <div class="info-banner ready dashboard-update-confirmation">
-          <span data-icon="checkcircle"></span>
-          Update-System für EXE vorbereitet · Version 2.0.3 · Build 2026.09.01.3
-        </div>
-
         <section class="metrics-grid">
           <article class="metric metric-blue">
             <div class="metric-icon"><span data-icon="users"></span></div>
@@ -293,43 +288,6 @@
             <button class="primary" data-processing="start-button" data-processing-action="start-check"><span data-icon="play"></span><span data-processing="start-label">Verarbeitung starten</span></button>
           </div>
 
-          <section class="workflow-card">
-            <div class="workflow-step done" data-processing-step="pdf">
-              <div class="step-index">1</div>
-              <div class="step-icon"><span data-icon="doc"></span></div>
-              <div><strong>PDF Import</strong><small data-processing="workflow-pdf">Abgeschlossen</small></div>
-            </div>
-            <i></i>
-            <div class="workflow-step active" data-processing-step="excel">
-              <div class="step-index">2</div>
-              <div class="step-icon"><span data-icon="table"></span></div>
-              <div><strong>Excel Import</strong><small data-processing="workflow-excel">Bereit</small></div>
-            </div>
-            <i></i>
-            <div class="workflow-step muted" data-processing-step="validation">
-              <div class="step-index">3</div>
-              <div class="step-icon"><span data-icon="search"></span></div>
-              <div><strong>Validierung</strong><small>Wartet</small></div>
-            </div>
-            <i></i>
-            <div class="workflow-step muted">
-              <div class="step-index">4</div>
-              <div class="step-icon"><span data-icon="settings"></span></div>
-              <div><strong>Verarbeitung</strong><small>Wartet</small></div>
-            </div>
-            <i></i>
-            <div class="workflow-step muted">
-              <div class="step-index">5</div>
-              <div class="step-icon"><span data-icon="send"></span></div>
-              <div><strong>Versand</strong><small>Wartet</small></div>
-            </div>
-            <i></i>
-            <div class="workflow-step muted">
-              <div class="step-index">6</div>
-              <div class="step-icon"><span data-icon="report"></span></div>
-              <div><strong>Ergebnis</strong><small>Wartet</small></div>
-            </div>
-          </section>
 
           <section class="processing-grid">
             <div class="processing-main">
@@ -363,7 +321,7 @@
                     <small>Ergebnisse speichern</small>
                     <div class="import-meta"><span>Typ<br><b>Ordner</b></span><span>Status<br><b data-processing="output-label">Bereit</b></span><span>Geändert<br><b data-processing="output-updated">--</b></span></div>
                   </div>
-                  <div class="file-field" data-processing-action="open-output"><span data-processing="output-path">Lohn_Unternehmen</span><button title="Ausgabeordner öffnen" type="button"><span data-icon="report"></span></button></div>
+                  <div class="file-field output-folder-field"><span data-processing="output-path">Lohn_Unternehmen</span><button data-processing-action="choose-output" title="Anderen Ordner wählen" type="button">Ordner wählen</button><button data-processing-action="open-output" title="Ausgabeordner öffnen" type="button"><span data-icon="report"></span></button></div>
                   <div class="row-status success" data-processing="output-status"><span data-icon="checkcircle"></span></div>
                 </div>
                 <div class="info-banner" data-processing="input-message"><span data-icon="info"></span> Eingaben werden geladen.</div>
@@ -418,43 +376,6 @@
             </div>
           </div>
 
-          <section class="workflow-card global-workflow" data-global-workflow>
-            <button class="workflow-step done" data-workflow-step="pdf" data-workflow-target="Verarbeitung">
-              <div class="step-index">1</div>
-              <div class="step-icon"><span data-icon="doc"></span></div>
-              <div><strong>PDF Import</strong><small>Bereit</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step done" data-workflow-step="excel" data-workflow-target="Verarbeitung">
-              <div class="step-index">2</div>
-              <div class="step-icon"><span data-icon="table"></span></div>
-              <div><strong>Excel Import</strong><small>Bereit</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step active" data-workflow-step="validation" data-workflow-target="Prüfung">
-              <div class="step-index">3</div>
-              <div class="step-icon"><span data-icon="search"></span></div>
-              <div><strong>Validierung</strong><small>Aktuell</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step done" data-workflow-step="processing" data-workflow-target="Verarbeitung">
-              <div class="step-index">4</div>
-              <div class="step-icon"><span data-icon="settings"></span></div>
-              <div><strong>Verarbeitung</strong><small>Bereit</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step muted" data-workflow-step="shipping" data-workflow-target="Versand">
-              <div class="step-index">5</div>
-              <div class="step-icon"><span data-icon="send"></span></div>
-              <div><strong>Versand</strong><small>Wartet</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step muted" data-workflow-step="reports" data-workflow-target="Berichte">
-              <div class="step-index">6</div>
-              <div class="step-icon"><span data-icon="report"></span></div>
-              <div><strong>Ergebnis</strong><small>Wartet</small></div>
-            </button>
-          </section>
 
           <section class="validation-metrics">
             <article class="validation-metric critical"><span data-icon="x"></span><div><strong data-validation="critical-count">0</strong><small>Kritische Fehler</small><em>Müssen behoben werden</em></div></article>
@@ -523,43 +444,6 @@
             <button class="primary shipping-primary-cta" data-shipping-primary data-shipping-action="start-dry-run"><span data-icon="send"></span><span data-shipping="primary-label">Versand vorbereiten</span></button>
           </div>
 
-          <section class="workflow-card global-workflow" data-global-workflow>
-            <button class="workflow-step done" data-workflow-step="pdf" data-workflow-target="Verarbeitung">
-              <div class="step-index">1</div>
-              <div class="step-icon"><span data-icon="doc"></span></div>
-              <div><strong>PDF Import</strong><small>Bereit</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step done" data-workflow-step="excel" data-workflow-target="Verarbeitung">
-              <div class="step-index">2</div>
-              <div class="step-icon"><span data-icon="table"></span></div>
-              <div><strong>Excel Import</strong><small>Bereit</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step done" data-workflow-step="validation" data-workflow-target="Prüfung">
-              <div class="step-index">3</div>
-              <div class="step-icon"><span data-icon="search"></span></div>
-              <div><strong>Validierung</strong><small>Bereit</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step done" data-workflow-step="processing" data-workflow-target="Verarbeitung">
-              <div class="step-index">4</div>
-              <div class="step-icon"><span data-icon="settings"></span></div>
-              <div><strong>Verarbeitung</strong><small>Bereit</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step active" data-workflow-step="shipping" data-workflow-target="Versand">
-              <div class="step-index">5</div>
-              <div class="step-icon"><span data-icon="send"></span></div>
-              <div><strong>Versand</strong><small>Aktuell</small></div>
-            </button>
-            <i></i>
-            <button class="workflow-step muted" data-workflow-step="reports" data-workflow-target="Berichte">
-              <div class="step-index">6</div>
-              <div class="step-icon"><span data-icon="report"></span></div>
-              <div><strong>Ergebnis</strong><small>Wartet</small></div>
-            </button>
-          </section>
 
           <section class="mailing-metrics">
             <article class="mailing-metric ready">
@@ -877,6 +761,7 @@
                 <button data-company-action="open-excel"><span data-icon="arrow-up-right"></span>Excel öffnen</button>
                 <button data-company-action="edit-company"><span data-icon="settings"></span>Mandant bearbeiten</button>
                 <button data-company-action="open-output"><span data-icon="report"></span>Ausgabeordner öffnen</button>
+                <button data-company-action="choose-output"><span data-icon="folder"></span>Anderen Ordner wählen</button>
               </div>
             </article>
 
@@ -1024,7 +909,7 @@
             <button data-settings-tab="email"><span data-icon="mail"></span>E-Mail</button>
             <button data-settings-tab="templates"><span data-icon="table"></span>Vorlagen</button>
             <button data-settings-tab="notifications"><span data-icon="bell"></span>Benachrichtigungen</button>
-            <button data-settings-tab="updates"><span data-icon="process"></span>Updates</button>
+            <button data-settings-tab="updates" data-self-update-only><span data-icon="process"></span>Updates</button>
             <button data-settings-tab="security"><span data-icon="key"></span>Sicherheit</button>
             <button data-settings-tab="advanced"><span data-icon="process"></span>Erweitert</button>
           </nav>
@@ -1073,8 +958,8 @@
                     <button class="secondary-action" data-settings-action="test-mail"><span data-icon="mail"></span>Verbindung testen</button>
                     <button class="secondary-action" data-settings-action="load-outlook"><span data-icon="process"></span>Outlook-Konten laden</button>
                   </div>
-                  <div class="settings-message compact" data-settings="mail-message">SMTP nutzt die eingetragenen Serverdaten. Outlook Classic wird unter Windows mit Microsoft 365 Desktop sowie Outlook 2016/2019/2021 unterstützt; das neue Outlook für Windows wird nicht unterstützt. Unter macOS ist eine Outlook-Version mit AppleScript-Unterstützung erforderlich.</div>
-                  <div class="settings-outlook-note" role="note">
+                  <div class="settings-message compact" data-settings="mail-message">SMTP nutzt die eingetragenen Serverdaten. Outlook Classic wird unter Windows mit Microsoft 365 Desktop sowie Outlook 2016/2019/2021 unterstützt; das neue Outlook für Windows wird nicht unterstützt.</div>
+                  <div class="settings-outlook-note" data-settings-outlook-note role="note">
                     <strong>Wichtig bei Versand über Outlook Classic:</strong>
                     Outlook Classic muss vor dem Verbindungstest und während des gesamten Versands geöffnet, angemeldet und vollständig verbunden sein.
                     Unter Windows werden Microsoft 365 Desktop (Classic) sowie Outlook 2016, 2019 und 2021 unterstützt.
@@ -1120,7 +1005,7 @@
                 </section>
               </article>
 
-              <article class="settings-panel settings-update-panel" data-settings-panel="updates">
+              <article class="settings-panel settings-update-panel" data-settings-panel="updates" data-self-update-only>
                 <div class="update-page-head">
                   <div><h2>Softwareupdate</h2><p>Sicherheits- und Funktionsupdates kontrolliert installieren.</p></div>
                 </div>
@@ -1321,7 +1206,7 @@
                   <div><span class="tech-icon py">Py</span><strong>Backend</strong><small>Python 3.12</small></div>
                   <div><span class="tech-icon db"><span data-icon="table"></span></span><strong>Datenbank</strong><small>SQLite 3.45.1</small></div>
                   <div><span class="tech-icon pdf"><span data-icon="doc"></span></span><strong>PDF Engine</strong><small>PyPDF2 3.0.1</small></div>
-                  <div><span class="tech-icon mail"><span data-icon="mail"></span></span><strong>E-Mail</strong><small>SMTP / Outlook Classic</small></div>
+                  <div><span class="tech-icon mail"><span data-icon="mail"></span></span><strong>E-Mail</strong><small data-about-mail-engine>SMTP / Outlook Classic</small></div>
                   <div><span class="tech-icon xls">X</span><strong>Excel Engine</strong><small>openpyxl 3.1.5</small></div>
                   <div><span class="tech-icon qt">UI</span><strong>Desktop WebView</strong><small>WebView2 / WKWebView</small></div>
                   <div><span class="tech-icon build"><span data-icon="process"></span></span><strong>Build System</strong><small>PyInstaller 6.16+</small></div>
@@ -1408,11 +1293,11 @@
           <div class="company-modal-body">
             <label>
               <span>Unternehmensname</span>
-              <input type="text" data-company-create="name" placeholder="z. B. VRWK Verwaltung GmbH">
+              <input type="text" data-company-create="name" placeholder="z. B. Musterunternehmen GmbH">
             </label>
             <label>
               <span>Mandanten-ID</span>
-              <input type="text" data-company-create="id" placeholder="z. B. vrwk">
+              <input type="text" data-company-create="id" placeholder="z. B. musterunternehmen">
               <small>Leer lassen, um die ID automatisch aus dem Namen zu erzeugen.</small>
             </label>
             <div class="company-modal-hint">
@@ -1648,7 +1533,7 @@
       <footer class="footer">
         <span data-dashboard="footer-license"><span data-icon="key"></span> Lizenz: Aktiv</span>
         <span data-dashboard="footer-mail"><span data-icon="mail"></span> SMTP: Online</span>
-        <span data-dashboard="footer-outlook"><span data-icon="screen"></span> Outlook Classic: Verbunden</span>
+        <span data-dashboard="footer-outlook" data-outlook-only><span data-icon="screen"></span> Outlook Classic: Verbunden</span>
         <span data-dashboard="footer-mode"><span data-icon="desktop"></span> Modus: Lokal</span>
         <strong data-dashboard="footer-system"><span class="status-dot small"></span>System bereit</strong>
       </footer>

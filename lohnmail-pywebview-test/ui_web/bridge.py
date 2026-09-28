@@ -23,6 +23,7 @@ from core.config import (
     LEGACY_GESOB_DIR,
     LEGACY_SETTINGS_DIR,
     SETTINGS_DIR,
+    HISTORY_DIR,
     company_output_dir,
     delete_company_smtp_secret,
     get_company_email_excel_file,
@@ -37,12 +38,42 @@ from ui_web.version import APP_BUILD, APP_VERSION
 from ui_web.workflow_sessions import WorkflowSessionStore
 
 
+OUTLOOK_SUPPORTED = sys.platform == "win32"
+
+
+def _self_updates_supported(
+    platform: str | None = None,
+    frozen: bool | None = None,
+) -> bool:
+    """Disable the desktop updater only inside a packaged macOS application."""
+    runtime_platform = sys.platform if platform is None else platform
+    runtime_frozen = bool(getattr(sys, "frozen", False)) if frozen is None else bool(frozen)
+    return not (runtime_platform == "darwin" and runtime_frozen)
+
+
+SELF_UPDATES_SUPPORTED = _self_updates_supported()
+
+
+def _app_store_update_state() -> dict:
+    return {
+        "ok": False,
+        "supported": False,
+        "auto_check": False,
+        "install_on_exit": False,
+        "install_supported": False,
+        "status": "disabled",
+        "installed_version": APP_VERSION,
+        "installed_build": APP_BUILD,
+        "message": "Updates werden über den Mac App Store bereitgestellt.",
+    }
+
+
 def _open_target(target: str | Path) -> bool:
     value = str(target)
     try:
-        if re.match(r"^[a-z][a-z0-9+.-]*:", value, flags=re.IGNORECASE):
+        if re.match(r"^(https?://|mailto:|ms-windows-store:)", value, flags=re.IGNORECASE):
             return bool(webbrowser.open(value))
-        path = str(Path(value).expanduser().resolve())
+        path = str(Path(value).expanduser().resolve(strict=True))
         if sys.platform == "darwin":
             subprocess.Popen(["open", path], close_fds=True)
         elif sys.platform == "win32":
@@ -52,6 +83,18 @@ def _open_target(target: str | Path) -> bool:
         return True
     except Exception:
         return False
+
+
+def _write_export(path: Path, text: str) -> str:
+    try:
+        from core.storage_paths import validate_output_location
+        validate_output_location(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8-sig")
+        return json.dumps({"ok": True, "path": str(path)}, ensure_ascii=False)
+    except (OSError, RuntimeError):
+        return json.dumps({"ok": False, "path": str(path),
+            "message": "Datei konnte nicht gespeichert werden. Ordner und Schreibrechte prüfen: " + str(path)}, ensure_ascii=False)
 
 
 class ProcessingWorker(QObject):
@@ -97,6 +140,9 @@ class ProcessingWorker(QObject):
     @staticmethod
     def _friendly_error(exc: Exception) -> str:
         message = str(exc)
+        if isinstance(exc, OSError):
+            target = str(getattr(exc, "filename", "") or "")
+            return "Dateizugriff fehlgeschlagen. Ordner, Verbindung und Schreibrechte prüfen. " + target + " (" + message + ")"
         if "Directory 'static/' does not exist" in message:
             return (
                 "PDF Engine ist falsch installiert: Python lädt das Paket 'fitz' statt 'PyMuPDF'. "
@@ -206,7 +252,7 @@ class WebBridge(QObject):
         "send": "send_report.xlsx",
     }
     REPORT_INDEX_PATH = GESOB_DIR / "lohnmail_reports_index.json"
-    REPORT_HISTORY_PATH = SETTINGS_DIR / "lohnmail_history.sqlite3"
+    REPORT_HISTORY_PATH = HISTORY_DIR / "lohnmail_history.sqlite3"
     MASS_ATTACHMENT_LIMIT = 10
     MASS_ATTACHMENT_BYTES_LIMIT = 18 * 1024 * 1024
 
@@ -233,8 +279,9 @@ class WebBridge(QObject):
         self._mass_message_preview = self._empty_mass_message_preview()
         self._mass_message_attachments: list[Path] = []
         self._license_manager = LicenseManager(load_settings())
-        self._update_service = UpdateService()
-        self._update_service.recover_interrupted_state()
+        self._update_service = UpdateService() if SELF_UPDATES_SUPPORTED else None
+        if self._update_service is not None:
+            self._update_service.recover_interrupted_state()
         self._update_thread: threading.Thread | None = None
         self._update_worker: UpdateWorker | None = None
         legacy_history = LEGACY_SETTINGS_DIR / "lohnmail_history.sqlite3"
@@ -245,7 +292,7 @@ class WebBridge(QObject):
             self._report_history: ReportHistoryStore | None = ReportHistoryStore(self.REPORT_HISTORY_PATH)
         except Exception:
             self._report_history = None
-        self._workflow_sessions = WorkflowSessionStore(SETTINGS_DIR / "workflow_sessions.json")
+        self._workflow_sessions = WorkflowSessionStore(HISTORY_DIR / "workflow_sessions.json")
         self._restore_workflow_session(load_settings())
 
     @Slot(str)
@@ -281,10 +328,14 @@ class WebBridge(QObject):
 
     @Slot(result=str)
     def getUpdateState(self) -> str:
+        if self._update_service is None:
+            return json.dumps(_app_store_update_state(), ensure_ascii=False)
         return json.dumps(self._update_service.current_state(), ensure_ascii=False)
 
     @Slot(str, result=str)
     def setUpdatePreferences(self, payload: str) -> str:
+        if self._update_service is None:
+            return json.dumps(_app_store_update_state(), ensure_ascii=False)
         try:
             data = json.loads(payload or "{}")
             if not isinstance(data, dict):
@@ -302,14 +353,20 @@ class WebBridge(QObject):
 
     @Slot(result=str)
     def checkForUpdates(self) -> str:
+        if self._update_service is None:
+            return json.dumps(_app_store_update_state(), ensure_ascii=False)
         return json.dumps(self._start_update_action("check"), ensure_ascii=False)
 
     @Slot(result=str)
     def downloadUpdate(self) -> str:
+        if self._update_service is None:
+            return json.dumps(_app_store_update_state(), ensure_ascii=False)
         return json.dumps(self._start_update_action("download"), ensure_ascii=False)
 
     @Slot(result=str)
     def installUpdateOnExit(self) -> str:
+        if self._update_service is None:
+            return json.dumps(_app_store_update_state(), ensure_ascii=False)
         state = self._update_service.install_on_exit()
         return json.dumps(state, ensure_ascii=False)
 
@@ -339,6 +396,8 @@ class WebBridge(QObject):
         license_active = bool(license_payload.get("active"))
 
         mail_mode = str(effective_settings.get("mail_mode", "smtp") or "smtp").strip().lower()
+        if not OUTLOOK_SUPPORTED:
+            mail_mode = "smtp"
         smtp_server = str(smtp_settings.get("server", "") or "").strip()
         smtp_from = str(smtp_settings.get("from_email", "") or smtp_settings.get("username", "") or "").strip()
         mail_configured = bool(smtp_from and (mail_mode == "outlook" or smtp_server))
@@ -740,6 +799,15 @@ class WebBridge(QObject):
 
     @Slot(result=str)
     def getOutlookAccounts(self) -> str:
+        if not OUTLOOK_SUPPORTED:
+            return json.dumps(
+                {
+                    "ok": False,
+                    "message": "Outlook Classic ist in dieser macOS-Testversion deaktiviert. Bitte verwenden Sie SMTP.",
+                    "accounts": [],
+                },
+                ensure_ascii=False,
+            )
         try:
             from core.mailer import list_outlook_accounts
 
@@ -752,6 +820,8 @@ class WebBridge(QObject):
         try:
             settings = load_settings()
             mail_mode = str(settings.get("mail_mode", "smtp") or "smtp").strip().lower()
+            if not OUTLOOK_SUPPORTED:
+                mail_mode = "smtp"
             smtp_settings = settings.get("smtp", {})
             if mail_mode == "outlook":
                 from core.mailer import test_outlook_connection
@@ -890,7 +960,8 @@ class WebBridge(QObject):
             licensee = settings.setdefault("licensee", {})
 
             if "mail_mode" in data:
-                settings["mail_mode"] = str(data.get("mail_mode") or "smtp").strip() or "smtp"
+                requested_mail_mode = str(data.get("mail_mode") or "smtp").strip() or "smtp"
+                settings["mail_mode"] = requested_mail_mode if OUTLOOK_SUPPORTED else "smtp"
 
             smtp_data = data.get("smtp") if isinstance(data.get("smtp"), dict) else {}
             for key in ["server", "security", "username", "from_email", "from_name"]:
@@ -1146,7 +1217,7 @@ class WebBridge(QObject):
         return json.dumps(
             {
                 "ok": bool(opened),
-                "message": "Excel-Datei geöffnet." if opened else "Excel-Datei konnte nicht geöffnet werden.",
+                "message": "Öffnungsanfrage für Excel an Windows/System übergeben." if opened else "Excel-Datei konnte nicht geöffnet werden.",
                 "path": str(path),
             },
             ensure_ascii=False,
@@ -1156,12 +1227,12 @@ class WebBridge(QObject):
     def openOutputFolder(self) -> str:
         settings = load_settings()
         output_dir = company_output_dir(settings)
-        output_dir.mkdir(parents=True, exist_ok=True)
         opened = _open_target(output_dir)
         return json.dumps(
             {
                 "ok": bool(opened),
-                "message": "Ausgabeordner geöffnet." if opened else "Ausgabeordner konnte nicht geöffnet werden.",
+                "message": "Öffnungsanfrage an das System übergeben: " + str(output_dir) if opened else "Ausgabeordner nicht erreichbar: " + str(output_dir) + ". Bitte 'Anderen Ordner wählen' verwenden.",
+                "action": "choose-output" if not opened else "",
                 "path": str(output_dir),
             },
             ensure_ascii=False,
@@ -1179,10 +1250,8 @@ class WebBridge(QObject):
 
         settings = load_settings()
         export_dir = company_output_dir(settings) / "exports"
-        export_dir.mkdir(parents=True, exist_ok=True)
         export_path = export_dir / safe_name
-        export_path.write_text(csv_text, encoding="utf-8-sig")
-        return json.dumps({"ok": True, "path": str(export_path)}, ensure_ascii=False)
+        return _write_export(export_path, csv_text)
 
     @Slot(str, str, result=str)
     def exportReportsCsv(self, csv_text: str, filename: str) -> str:
@@ -1199,10 +1268,8 @@ class WebBridge(QObject):
         if not safe_name.lower().endswith(".csv"):
             safe_name = f"{safe_name or 'lohnmail_berichte'}.csv"
         export_dir = company_output_dir(settings, company_id) / "exports"
-        export_dir.mkdir(parents=True, exist_ok=True)
         export_path = export_dir / safe_name
-        export_path.write_text(csv_text, encoding="utf-8-sig")
-        return json.dumps({"ok": True, "path": str(export_path)}, ensure_ascii=False)
+        return _write_export(export_path, csv_text)
 
     @Slot(str, result=str)
     def openReport(self, kind: str) -> str:
@@ -1219,7 +1286,7 @@ class WebBridge(QObject):
         return json.dumps(
             {
                 "ok": bool(opened),
-                "message": "Bericht geöffnet." if opened else "Bericht konnte nicht geöffnet werden.",
+                "message": "Öffnungsanfrage an das System übergeben." if opened else "Bericht konnte nicht geöffnet werden: " + str(path),
                 "path": str(path),
             },
             ensure_ascii=False,
@@ -1246,7 +1313,7 @@ class WebBridge(QObject):
         return json.dumps(
             {
                 "ok": bool(opened),
-                "message": "Bericht geöffnet." if opened else "Bericht konnte nicht geöffnet werden.",
+                "message": "Öffnungsanfrage an das System übergeben." if opened else "Bericht konnte nicht geöffnet werden: " + str(path),
                 "path": str(path),
             },
             ensure_ascii=False,
@@ -1598,7 +1665,14 @@ class WebBridge(QObject):
         )
         excel_state = self._path_state(excel_file, expected="excel")
         output_dir = company_output_dir(settings)
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # A missing custom path must not block the UI or be recreated silently.
+        if not any(c.get("id") == company_id and c.get("output_dir") for c in settings.get("companies", [])):
+            try:
+                from core.storage_paths import validate_output_location
+                validate_output_location(output_dir)
+                output_dir.mkdir(parents=True, exist_ok=True)
+            except (OSError, RuntimeError):
+                pass
         output_state = self._path_state(str(output_dir), expected="folder")
         can_check = bool(pdf_state["valid"] and excel_state["valid"] and output_state["valid"])
         status = {**self._processing_status}
@@ -1902,6 +1976,8 @@ class WebBridge(QObject):
 
     def _settings_with_company_mail(self, settings: dict) -> dict:
         effective = deepcopy(settings)
+        if not OUTLOOK_SUPPORTED:
+            effective["mail_mode"] = "smtp"
         company = self._selected_company(effective)
         mail_settings = self._company_mail_settings(company)
         if mail_settings.get("scope") != "custom":
@@ -1990,6 +2066,7 @@ class WebBridge(QObject):
         related_trial_key = str(state.get("related_trial_license_key", "") or "").strip()
         status = str(state.get("status", "") or "unregistered").strip().lower()
         license_type = str(state.get("type", "") or "none").strip().lower()
+        unlimited = license_type == "lifetime" and status == "active"
         active = status in {"trialing", "active", "expiring_soon", "license_problem"}
         status_label = self._license_label(status, license_type, state)
         status_level = self._license_status_level(status, active, manager.server_url)
@@ -2003,18 +2080,23 @@ class WebBridge(QObject):
             or related_trial_ends_at
             or ""
         )
+        if license_type == "lifetime":
+            trial_ends_at = related_trial_ends_at = current_period_end = access_ends_at = ""
+            related_trial_key = ""
         license_problem = status == "license_problem"
         grace_ends_at = str(state.get("license_problem_grace_ends_at", "") or "")
         return {
             "status": status,
             "label": status_label,
+            "status_label": "Aktiv" if unlimited else status_label,
+            "unlimited": unlimited,
             "status_level": status_level,
             "active": active,
             "key_masked": str(state.get("license_key_masked", "") or self._mask_license_key(raw_key)),
             "key_label": "Bisheriger Lizenzschlüssel (nicht gefunden)" if license_problem else "Lizenzschlüssel",
             "key_present": bool(raw_key),
             "type": "Übergangsfrist" if license_problem else self._license_type_label(license_type),
-            "plan": "-" if license_problem else str(state.get("plan", "") or ("Trial" if license_type == "trial" else "Professional")),
+            "plan": "-" if license_problem else ("Lifetime" if unlimited else str(state.get("plan", "") or ("Trial" if license_type == "trial" else "Professional"))),
             "seats": str(state.get("seats", "") or "1"),
             "server": str(state.get("server", "") or ("Verbunden" if manager.server_url else "Nicht konfiguriert")),
             "server_note": "Online-Prüfung aktiv" if manager.server_url else "Keine Serverlogik aktiv",
@@ -2023,7 +2105,7 @@ class WebBridge(QObject):
             "licensee": licensee,
             "machine_id": str(state.get("machine_id", "") or ""),
             "licensed_machine_id": str(state.get("licensed_machine_id", "") or ""),
-            "days_remaining": state.get("days_remaining"),
+            "days_remaining": None if unlimited else state.get("days_remaining"),
             "trial_ends_at": "" if license_problem else trial_ends_at,
             "current_period_end": "" if license_problem else current_period_end,
             "access_ends_at": grace_ends_at if license_problem else access_ends_at,
@@ -2204,7 +2286,11 @@ class WebBridge(QObject):
         ui_settings = settings.get("ui", {})
         notification_settings = settings.get("notifications", {})
         return {
-            "mail_mode": str(settings.get("mail_mode", "smtp") or "smtp"),
+            "mail_mode": (
+                str(settings.get("mail_mode", "smtp") or "smtp")
+                if OUTLOOK_SUPPORTED
+                else "smtp"
+            ),
             "smtp": {
                 "server": str(smtp.get("server", "") or ""),
                 "port": int(smtp.get("port", 587) or 587),
@@ -2250,7 +2336,8 @@ class WebBridge(QObject):
             "company": self._company_payload(settings),
             "licensee": self._licensee_settings(settings),
             "license": self._license_payload(settings),
-            "outlook_supported": True,
+            "outlook_supported": OUTLOOK_SUPPORTED,
+            "updates_supported": SELF_UPDATES_SUPPORTED,
         }
 
     def _mass_message_payload(self, settings: dict) -> dict:
@@ -3048,6 +3135,12 @@ class WebBridge(QObject):
         try:
             resolved = path.expanduser().resolve()
             roots = [COMPANIES_DIR.resolve(), LEGACY_GESOB_DIR.resolve()]
+            settings = load_settings()
+            roots.extend(company_output_dir(settings, c.get("id", "")).resolve()
+                         for c in settings.get("companies", []))
+            roots.extend(Path(p).expanduser().resolve()
+                         for c in settings.get("companies", [])
+                         for p in c.get("output_history_dirs", []))
             return any(resolved.is_relative_to(root) for root in roots) and resolved.name in set(self.REPORT_FILES.values())
         except (OSError, RuntimeError, ValueError):
             return False
@@ -3577,7 +3670,10 @@ class WebBridge(QObject):
             }
 
         path = Path(raw_path).expanduser()
-        exists = path.exists()
+        try:
+            exists = path.exists()
+        except OSError:
+            exists = False
         if expected == "folder":
             valid = exists and path.is_dir()
         elif expected == "pdf":

@@ -78,6 +78,29 @@
   var helpShowAll = false;
   var appDialogConfirm = null;
   var appDialogCancel = null;
+  var smtpOnlyHelpPrepared = false;
+  function applyPlatformCapabilities(outlookSupported, updatesSupported){
+    document.querySelectorAll('[data-self-update-only]').forEach(function(node){
+      node.hidden = !updatesSupported;
+    });
+    document.querySelectorAll('[data-outlook-only], [data-settings-action="load-outlook"], [data-settings-outlook-from], [data-settings-outlook-note]').forEach(function(node){
+      node.hidden = !outlookSupported;
+    });
+    var modeField = document.querySelector('[data-settings-field="mail_mode"]');
+    if (modeField) {
+      var outlookOption = modeField.querySelector('option[value="outlook"]');
+      if (outlookOption) outlookOption.hidden = !outlookSupported;
+      if (!outlookSupported) modeField.value = 'smtp';
+      modeField.disabled = !outlookSupported;
+    }
+    if (!outlookSupported) {
+      var message = 'Der Versand erfolgt in dieser macOS-Version ausschließlich über SMTP.';
+      if (!updatesSupported) message += ' Updates werden automatisch über den Mac App Store bereitgestellt.';
+      setSettingsMailMessage(message);
+      prepareSmtpOnlyHelpContent();
+    }
+    setText('[data-about-mail-engine]', outlookSupported ? 'SMTP / Outlook Classic' : 'SMTP');
+  }
   function applyBrandLogoVariant(){
     var source = 'assets/brand/lohnmail-app-icon-previous.png';
     document.documentElement.setAttribute('data-logo-variant', 'production');
@@ -328,6 +351,11 @@
   }
   function applyUpdateState(payload){
     var next = parseUpdatePayload(payload);
+    if (next.supported === false) {
+      latestUpdateState = Object.assign({}, latestUpdateState, next, {auto_check: false});
+      document.querySelectorAll('[data-self-update-only]').forEach(function(node){ node.hidden = true; });
+      return latestUpdateState;
+    }
     latestUpdateState = Object.assign({}, latestUpdateState, next);
     latestUpdateState.status = normalizeUpdateStatus(latestUpdateState.status);
     if (latestUpdateState.status === 'required' && !updateIsMandatory(latestUpdateState)) {
@@ -688,7 +716,7 @@
           setText('[data-validation="table-footer"]', result.message || 'Bericht konnte nicht geöffnet werden.');
           setReportsMessage(result.message || 'Bericht konnte nicht geöffnet werden.');
         } else {
-          setReportsMessage('Bericht geöffnet: ' + (result.path || kind));
+          setReportsMessage('Öffnungsanfrage übergeben: ' + (result.path || kind));
         }
       } catch (error) {
         setText('[data-validation="table-footer"]', 'Bericht konnte nicht geöffnet werden.');
@@ -886,7 +914,7 @@
     bridge.openReportEntry(file.id, function(payload){
       try {
         var result = JSON.parse(payload || '{}');
-        setReportsMessage(result.ok ? 'Bericht geöffnet: ' + result.path : (result.message || 'Bericht konnte nicht geöffnet werden.'));
+        setReportsMessage(result.ok ? 'Öffnungsanfrage übergeben: ' + result.path : (result.message || 'Bericht konnte nicht geöffnet werden.'));
       } catch (error) {
         setReportsMessage('Bericht konnte nicht geöffnet werden.');
       }
@@ -1797,10 +1825,21 @@
       bridge.openCompanyExcel(function(payload){
         try {
           var result = JSON.parse(payload || '{}');
-          setCompanyMessage(result.message || (result.ok ? 'Excel-Datei geöffnet.' : 'Excel-Datei konnte nicht geöffnet werden.'));
+          setCompanyMessage(result.message || (result.ok ? 'Öffnungsanfrage übergeben.' : 'Excel-Datei konnte nicht geöffnet werden.'));
         } catch (error) {
           setCompanyMessage('Excel-Datei konnte nicht geöffnet werden.');
         }
+      });
+      return;
+    }
+    if (action === 'choose-output' && bridge.chooseOutputFolder) {
+      bridge.chooseOutputFolder(function(payload){
+        try {
+          var result = JSON.parse(payload || '{}');
+          if (result.cancelled) return;
+          setCompanyMessage(result.message || 'Ausgabeordner konnte nicht gespeichert werden.');
+          if (result.ok) { loadCompanyState(); loadProcessingState(); loadDashboardState(); }
+        } catch (error) { setCompanyMessage('Ausgabeordner konnte nicht gespeichert werden.'); }
       });
       return;
     }
@@ -1808,7 +1847,7 @@
       bridge.openOutputFolder(function(payload){
         try {
           var result = JSON.parse(payload || '{}');
-          setCompanyMessage(result.message || (result.ok ? 'Ausgabeordner geöffnet.' : 'Ausgabeordner konnte nicht geöffnet werden.'));
+          setCompanyMessage(result.message || (result.ok ? 'Öffnungsanfrage übergeben.' : 'Ausgabeordner konnte nicht geöffnet werden.'));
         } catch (error) {
           setCompanyMessage('Ausgabeordner konnte nicht geöffnet werden.');
         }
@@ -1861,11 +1900,13 @@
     var trialEnd = firstDateValue(state.trial_ends_at, state.related_trial_ends_at);
     var accessEnd = firstDateValue(state.access_ends_at, state.current_period_end, trialEnd);
     var relatedTrialKey = state.related_trial_key_masked || '';
-    setText('[data-license="status"]', state.label || 'Nicht registriert');
+    setText('[data-dashboard="license-pill"]', 'Lizenz: ' + (state.label || 'Unbekannt'));
+    setLabeledIconText('[data-dashboard="footer-license"]', 'Lizenz: ' + (state.label || 'Unbekannt'));
+    setText('[data-license="status"]', state.status_label || state.label || 'Nicht registriert');
     setText('[data-license="mode"]', state.mode || 'Lokal');
     setText('[data-license="type"]', state.type || 'Nicht registriert');
     setText('[data-license="plan"]', state.plan || '-');
-    setText('[data-license="days"]', state.days_remaining !== null && state.days_remaining !== undefined ? state.days_remaining + ' Tage' : '-');
+    setText('[data-license="days"]', state.unlimited ? 'Unbefristet' : (state.days_remaining !== null && state.days_remaining !== undefined ? state.days_remaining + ' Tage' : '-'));
     setText('[data-license="trial-end"]', accessEnd ? 'bis ' + formatDateTime(accessEnd) : '-');
     setText('[data-license="server"]', state.server || 'Nicht verbunden');
     setText('[data-license="server-note"]', state.server_note || (state.server === 'Verbunden' ? 'Online-Prüfung aktiv' : 'Keine Serverlogik aktiv'));
@@ -1874,7 +1915,7 @@
     setText('[data-license="detail-mode"]', state.mode || 'Lokal');
     setText('[data-license="detail-company"]', state.company || '-');
     setText('[data-license="machine-id"]', state.machine_id || '-');
-    setText('[data-license="access-end"]', accessEnd ? formatDateTime(accessEnd) : '-');
+    setText('[data-license="access-end"]', state.unlimited ? 'Unbefristet' : (accessEnd ? formatDateTime(accessEnd) : '-'));
     setText('[data-license="trial-end-detail"]', trialEnd ? formatDateTime(trialEnd) : '-');
     setText('[data-license="period-end"]', state.current_period_end ? formatDateTime(state.current_period_end) : '-');
     setText('[data-license="trial-source"]', relatedTrialKey || (trialEnd && state.type !== 'trial' ? 'Verknüpfter Trial' : '-'));
@@ -2196,6 +2237,10 @@
     });
 
     var smtp = state.smtp || {};
+    var outlookSupported = state.outlook_supported !== false;
+    var updatesSupported = state.updates_supported !== false;
+    applyPlatformCapabilities(outlookSupported, updatesSupported);
+    if (!updatesSupported) latestUpdateState.auto_check = false;
     var company = state.company || {};
     var period = state.period || {};
     var ui = state.ui || {};
@@ -2349,6 +2394,10 @@
       return;
     }
     if (action === 'load-outlook') {
+      if (latestSettingsState && latestSettingsState.outlook_supported === false) {
+        setSettingsMailMessage('Outlook Classic ist in dieser macOS-Testversion deaktiviert. Bitte verwenden Sie SMTP.');
+        return;
+      }
       if (!bridge || !bridge.getOutlookAccounts) {
         setSettingsMailMessage('Outlook-Classic-Konten sind im Bridge nicht verfügbar.');
         return;
@@ -2821,6 +2870,30 @@
       ]
     }
   ];
+  function prepareSmtpOnlyHelpContent(){
+    if (smtpOnlyHelpPrepared) return;
+    smtpOnlyHelpPrepared = true;
+    function smtpOnlyText(value){
+      return String(value)
+        .replace(/SMTP oder Outlook Classic/g, 'SMTP')
+        .replace(/SMTP \/ Outlook Classic/g, 'SMTP')
+        .replace(/über SMTP oder Outlook Classic/g, 'über SMTP')
+        .replace(/Ob SMTP oder Outlook Classic verwendet wird/g, 'Verwendete SMTP-Konfiguration');
+    }
+    helpArticles.forEach(function(article){
+      ['title', 'summary', 'keywords'].forEach(function(key){ article[key] = smtpOnlyText(article[key] || ''); });
+      article.sections = (article.sections || []).filter(function(section){
+        return !/Outlook/i.test(String(section.title || ''));
+      }).map(function(section){
+        Object.keys(section).forEach(function(key){
+          if (Array.isArray(section[key])) section[key] = section[key].map(smtpOnlyText);
+          else if (typeof section[key] === 'string') section[key] = smtpOnlyText(section[key]);
+        });
+        return section;
+      });
+    });
+    renderHelpKnowledge();
+  }
   var helpTopicNames = {
     all: 'Alle Themen', start: 'Erste Schritte', processing: 'Verarbeitung', validation: 'Prüfung',
     shipping: 'Versand', reports: 'Berichte', settings: 'Einstellungen', support: 'Support'
@@ -4662,10 +4735,10 @@
       bridge.openOutputFolder(function(payload){
         try {
           var result = JSON.parse(payload || '{}');
-          setInfoBanner(result.message || (result.ok ? 'Ausgabeordner geöffnet.' : 'Ausgabeordner konnte nicht geöffnet werden.'), !!result.ok);
+          setInfoBanner(result.message || (result.ok ? 'Öffnungsanfrage übergeben.' : 'Ausgabeordner konnte nicht geöffnet werden.'), !!result.ok);
           pushProcessingLog(
             result.ok ? 'ok' : 'error',
-            result.ok ? 'Ausgabeordner geöffnet' : 'Ausgabeordner nicht verfügbar',
+            result.ok ? 'Öffnungsanfrage übergeben' : 'Ausgabeordner nicht verfügbar',
             result.path || result.message || '',
             'open-output|' + String(result.ok) + '|' + (result.path || '')
           );
@@ -4673,6 +4746,17 @@
           setInfoBanner('Ausgabeordner konnte nicht geöffnet werden.', false);
           pushProcessingLog('error', 'Ausgabeordner nicht verfügbar', 'Ungültige Antwort vom Bridge.', 'open-output|invalid');
         }
+      });
+      return;
+    }
+    if (action === 'choose-output' && bridge.chooseOutputFolder) {
+      bridge.chooseOutputFolder(function(payload){
+        try {
+          var result = JSON.parse(payload || '{}');
+          if (result.cancelled) return;
+          setInfoBanner(result.message || 'Ausgabeordner konnte nicht gespeichert werden.', !!result.ok);
+          if (result.ok) { loadProcessingState(); loadDashboardState(); }
+        } catch (error) { setInfoBanner('Ausgabeordner konnte nicht gespeichert werden.', false); }
       });
       return;
     }
