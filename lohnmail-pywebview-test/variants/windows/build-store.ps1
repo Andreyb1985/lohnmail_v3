@@ -54,17 +54,18 @@ $ValidationRoot = Join-Path $BuildRoot "validation"
 $OutputRoot = Join-Path $ProjectRoot "dist\store"
 $StandaloneRoot = Join-Path $OutputRoot "LohnMail"
 $TemplatePath = Join-Path $PSScriptRoot "msix\AppxManifest.xml.in"
-$AssetsSource = Join-Path $PSScriptRoot "msix\assets"
+$AssetsGenerator = Join-Path $PSScriptRoot "build-msix-assets.py"
 $ManifestPath = Join-Path $StageRoot "AppxManifest.xml"
 $OutputMsix = Join-Path $OutputRoot "LohnMail_${MsixVersion}_x64.msix"
 
-foreach ($RequiredPath in @($StandaloneRoot, $TemplatePath, $AssetsSource)) {
+foreach ($RequiredPath in @($StandaloneRoot, $TemplatePath, $AssetsGenerator)) {
     if (-not (Test-Path $RequiredPath)) { throw "Erforderlicher Store-Build-Pfad fehlt: $RequiredPath" }
 }
 if (Test-Path $BuildRoot) { Remove-Item -Recurse -Force $BuildRoot }
 New-Item -ItemType Directory -Force $StageRoot, $ValidationRoot, $OutputRoot | Out-Null
 Copy-Item -Recurse -Force "$StandaloneRoot\*" $StageRoot
-Copy-Item -Recurse -Force $AssetsSource (Join-Path $StageRoot "Assets")
+& ".venv\Scripts\python.exe" $AssetsGenerator --output (Join-Path $StageRoot "Assets")
+if ($LASTEXITCODE -ne 0) { throw "MSIX icon generation failed." }
 
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $Manifest = [System.IO.File]::ReadAllText($TemplatePath, $Utf8NoBom)
@@ -109,12 +110,41 @@ if (-not $MakeAppx -and (Test-Path $WindowsKitsBin)) {
 if (-not $MakeAppx) { throw "MakeAppx.exe aus dem Windows SDK wurde nicht gefunden." }
 $MakeAppxPath = if ($MakeAppx.Source) { $MakeAppx.Source } else { $MakeAppx.FullName }
 
+# MakeAppx alone does not index targetsize/altform choices for Windows Shell.
+# Index only manifest + generated assets, not runtime DLLs or customer files.
+$MakePriPath = Join-Path (Split-Path $MakeAppxPath) 'MakePri.exe'
+if (-not (Test-Path $MakePriPath)) { throw 'MakePri.exe from the Windows SDK is required.' }
+$PriRoot = Join-Path $BuildRoot 'pri-input'
+$PriConfig = Join-Path $BuildRoot 'priconfig.xml'
+$PriFile = Join-Path $StageRoot 'resources.pri'
+$PriDump = Join-Path $OutputRoot 'resources.pri.xml'
+New-Item -ItemType Directory -Force $PriRoot | Out-Null
+Copy-Item $ManifestPath (Join-Path $PriRoot 'AppxManifest.xml')
+Copy-Item -Recurse (Join-Path $StageRoot 'Assets') $PriRoot
+& $MakePriPath createconfig /cf $PriConfig /dq de-DE /o
+if ($LASTEXITCODE -ne 0) { throw 'MakePRI configuration failed.' }
+# Keep all sizes/languages in this standalone MSIX, no external resource packs.
+[xml]$ConfigXml = Get-Content $PriConfig -Raw
+foreach ($Node in @($ConfigXml.SelectNodes('//packaging'))) { [void]$Node.ParentNode.RemoveChild($Node) }
+$ConfigXml.Save($PriConfig)
+& $MakePriPath new /pr $PriRoot /cf $PriConfig /mn (Join-Path $PriRoot 'AppxManifest.xml') /of $PriFile /o
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $PriFile)) { throw 'MakePRI indexing failed.' }
+& $MakePriPath dump /if $PriFile /of $PriDump /dt detailed /o
+if ($LASTEXITCODE -ne 0) { throw 'MakePRI verification dump failed.' }
+$PriText = Get-Content $PriDump -Raw
+foreach ($Size in @(16,20,24,30,32,36,40,48,60,64,72,80,96,256)) {
+    foreach ($Form in @('', '_altform-unplated', '_altform-lightunplated')) {
+        $Name = "Square44x44Logo.targetsize-$Size$Form.png"
+        if (-not $PriText.Contains($Name)) { throw "MSIX shell icon missing from PRI: $Name" }
+    }
+}
+
 if (Test-Path $OutputMsix) { Remove-Item -Force $OutputMsix }
 & $MakeAppxPath pack /d $StageRoot /p $OutputMsix /o
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $OutputMsix)) { throw "MakeAppx konnte das MSIX nicht erstellen." }
 & $MakeAppxPath unpack /p $OutputMsix /d $ValidationRoot /o
 if ($LASTEXITCODE -ne 0) { throw "Das erzeugte MSIX konnte nicht validiert entpackt werden." }
-foreach ($RelativePath in @("LohnMail.exe", "AppxManifest.xml", "lohnmail_distribution.json")) {
+foreach ($RelativePath in @("LohnMail.exe", "AppxManifest.xml", "lohnmail_distribution.json", "resources.pri")) {
     if (-not (Test-Path (Join-Path $ValidationRoot $RelativePath))) {
         throw "MSIX-Validierung fehlgeschlagen, Datei fehlt: $RelativePath"
     }

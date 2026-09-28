@@ -40,3 +40,13 @@ test. AppLocker/WDAC/S-mode and redirected/network Documents require separate
 verification; blocked helper execution fails safely rather than starting empty.
 Do not publish until installed-MSIX storage and legacy migration tests pass.
 The direct build embeds `direct` and keeps the existing update service.
+# MSIX visual assets (2.1.3)
+
+Store staging generates shell images from the approved transparent artwork via
+`build-msix-assets.py`. The old base PNGs in `msix/assets` are not copied.
+Target sizes 16–256 include default, unplated and lightunplated variants;
+scale variants and all candidates are indexed by MakePRI. The build fails if
+any target/theme candidate is missing in its detailed PRI dump.
+The EXE ICO and macOS artwork are unchanged. CI checks the actual unpacked
+MSIX web layout in Edge, plus the installed storage/upgrade matrix. This is
+not a claim of Windows 10 taskbar GUI verification after Store delivery.

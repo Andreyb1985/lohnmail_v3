@@ -1,6 +1,16 @@
 from pathlib import Path
 
 
+def test_empty_processing_log_does_not_use_timestamp_columns():
+    css = (Path(__file__).resolve().parents[1] / "web/styles.css").read_text()
+    assert ".operation-log .log-list > div:not(.log-empty) {" in css
+    assert ".operation-log .log-list > div {" not in css
+    assert ".operation-log .log-list > .log-empty {" in css
+    empty = css.split(".operation-log .log-list > .log-empty {", 1)[1].split("}", 1)[0]
+    assert "grid-template-columns: 22px minmax(0, 1fr)" in empty
+    assert ".operation-log .log-list > .log-empty > em {\n  grid-column: 2;" in css
+
+
 def test_minimum_width_uses_compact_sidebar_and_keeps_update_flow_beside_content():
     root = Path(__file__).resolve().parents[1]
     css = (root / "web" / "styles.css").read_text(encoding="utf-8")
