@@ -73,6 +73,7 @@ jobs:
           .\variants\windows\build-store.ps1
 
       - name: Check packaged activity-log browser layout
+        timeout-minutes: 5
         shell: powershell
         run: |
           $BrowserRoot = Join-Path $env:RUNNER_TEMP 'lohnmail-browser-check'

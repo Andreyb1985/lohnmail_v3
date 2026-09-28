@@ -25,10 +25,10 @@ def main():
     commands = [args.browser, '--session', 'lohnmail-log-regression']
 
     def run(*items):
-        result = subprocess.run(commands+list(items), text=True, encoding='utf-8', capture_output=True)
-        if result.returncode:
-            raise RuntimeError(result.stdout + result.stderr)
-        return result.stdout
+        # A browser daemon can inherit stdout handles on Windows. Do not wait
+        # for pipe EOF from its descendants; wait for the CLI itself, bounded.
+        subprocess.run(commands+list(items), check=True, timeout=90)
+        return ''
 
     launch = ['--allow-file-access']
     if args.executable:
