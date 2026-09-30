@@ -264,6 +264,13 @@ def _set_runtime_app_identity() -> None:
     if sys.platform == "win32":
         try:
             import ctypes
+            from core.storage_paths import package_identity
+
+            # MSIX activation supplies the package AUMID. Replacing it with the
+            # portable EXE identity breaks Shell grouping/pinning/icon matching.
+            # On a failed identity query, leave Windows' identity untouched.
+            if package_identity() is not None:
+                return
 
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("LohnMail.Desktop.2")
         except Exception:

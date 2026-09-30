@@ -17,6 +17,7 @@
   var selectedShippingPersnr = {};
   var shippingSelectionDirty = false;
   var shippingTerminalState = null;
+  var shippingRevision = -1;
   var shippingLiveProgress = {
     companyId: '',
     phase: 'idle',
@@ -3823,9 +3824,11 @@
 
     if (anyRunning) {
       var phase = String(live.phase || (realSendRunning ? 'sending' : 'preparing'));
-      if (shippingLiveProgress.phase === 'idle' || shippingLiveProgress.companyId !== companyId) {
+      if (shippingLiveProgress.phase === 'idle' || shippingLiveProgress.companyId !== companyId ||
+          shippingLiveProgress.operationId !== String(status.operation_id || '')) {
         resetShippingLiveProgress(companyId, realSendRunning ? selectedShippingRows() : shippingRows(), phase);
       }
+      shippingLiveProgress.operationId = String(status.operation_id || '');
       shippingLiveProgress.phase = phase;
       shippingLiveProgress.dryRun = status.dry_run !== false;
       shippingLiveProgress.total = Math.max(0, Number(live.total !== undefined ? live.total : shippingLiveProgress.total) || 0);
@@ -3845,16 +3848,18 @@
         };
       }
     } else if (anyTerminal) {
-      if (shippingLiveProgress.phase === 'idle' || shippingLiveProgress.companyId !== companyId) {
+      if (shippingLiveProgress.phase === 'idle' || shippingLiveProgress.companyId !== companyId ||
+          shippingLiveProgress.operationId !== String(status.operation_id || '')) {
         var terminalTotal = Number(status.dry_run !== false ? metrics.exported : metrics.sent) + Number(metrics.errors || 0);
         resetShippingLiveProgress(companyId, [], status.dry_run !== false ? 'preparing' : 'sending');
         shippingLiveProgress.total = terminalTotal;
       }
+      shippingLiveProgress.operationId = String(status.operation_id || '');
       shippingLiveProgress.dryRun = status.dry_run !== false;
       shippingLiveProgress.prepared = Math.max(shippingLiveProgress.prepared, Number(metrics.exported || 0));
       shippingLiveProgress.sent = Math.max(shippingLiveProgress.sent, Number(metrics.sent || 0));
       shippingLiveProgress.errors = Math.max(shippingLiveProgress.errors, Number(metrics.errors || 0));
-      shippingLiveProgress.completed = shippingLiveProgress.total || ((shippingLiveProgress.dryRun ? shippingLiveProgress.prepared : shippingLiveProgress.sent) + shippingLiveProgress.errors);
+      if (!status.failed) shippingLiveProgress.completed = shippingLiveProgress.total || ((shippingLiveProgress.dryRun ? shippingLiveProgress.prepared : shippingLiveProgress.sent) + shippingLiveProgress.errors);
       shippingLiveProgress.total = Math.max(shippingLiveProgress.total, shippingLiveProgress.completed);
       shippingLiveProgress.phase = status.failed ? 'failed' : 'complete';
       shippingLiveProgress.currentPersnr = '';
@@ -4169,6 +4174,13 @@
   }
   function applyShippingState(state){
     if (!workflowStateMatchesActiveCompany(state)) return;
+    // Signals and Promise responses can arrive out of order. Keep one ordered
+    // snapshot stream, including preparation, sending and terminal events.
+    var revision = Number(state && state.revision);
+    if (state && state.revision !== undefined && Number.isFinite(revision)) {
+      if (revision <= shippingRevision) return;
+      shippingRevision = revision;
+    }
     var metrics = (state && state.metrics) || {};
     var status = (state && state.status) || {};
     var companyId = String(state && state.company && state.company.id || '');
@@ -4182,14 +4194,17 @@
     if (
       status.running &&
       shippingTerminalState &&
-      shippingTerminalState.companyId === companyId
+      shippingTerminalState.companyId === companyId &&
+      (status.operation_id
+        ? shippingTerminalState.operationId === status.operation_id
+        : shippingTerminalState.dryRun === (status.dry_run !== false))
     ) {
       return;
     }
 
     // Sent/error rows only arrive after the worker has completed. Normalize a
     // stale running payload in case its terminal signal reached WebChannel first.
-    if (status.running && total > 0 && queued === 0 && exported === 0 && (sent > 0 || errors > 0)) {
+    if (!status.operation_id && status.running && total > 0 && queued === 0 && exported === 0 && (sent > 0 || errors > 0)) {
       status = Object.assign({}, status, {
         running: false,
         finished: true,
@@ -4204,6 +4219,7 @@
     if (!status.running && (status.finished || status.failed)) {
       shippingTerminalState = {
         companyId: companyId,
+        operationId: status.operation_id || '',
         failed: !!status.failed,
         dryRun: status.dry_run !== false
       };
@@ -4212,6 +4228,13 @@
     latestShippingState = state || null;
     syncShippingSelectionDefaults();
     syncShippingLiveProgress(state, status, metrics);
+    if (status.running && status.dry_run === false && status.live_progress) {
+      total = shippingLiveProgress.total;
+      sent = shippingLiveProgress.sent;
+      errors = shippingLiveProgress.errors;
+      queued = Math.max(0, total - shippingLiveProgress.completed);
+      exported = 0;
+    }
     var readyPercent = total ? Math.round((ready / total) * 100) : 0;
     var sentPercent = total ? Math.round((sent / total) * 100) : 0;
     var queuedPercent = total ? Math.round((queued / total) * 100) : 0;
@@ -4311,9 +4334,7 @@
     shippingTerminalState = null;
     resetShippingLiveProgress(activeCompanyId(), selectedShippingRows());
     bridge.startSelectedShippingDryRun(JSON.stringify(selected), function(payload){
-      // State updates arrive through shippingStateChanged/shippingFinished.
-      // Applying this start response can overwrite a fast finished signal.
-      void payload;
+      consumeShippingPayload(payload);
     });
   }
   function setShippingPreviewText(key, value){
@@ -4413,10 +4434,8 @@
     bridge.startSelectedShippingSend(JSON.stringify(selected), function(payload){
       if (confirmButton) confirmButton.disabled = false;
       closeShippingSendModal();
-      // The bridge already emitted this state. A short send can finish before
-      // this callback runs, so reapplying the start payload would restore
-      // running=true after shippingFinished.
-      void payload;
+      // Revision ordering makes this safe even if the worker already finished.
+      consumeShippingPayload(payload);
       loadDashboardState();
       loadReportsState();
     });

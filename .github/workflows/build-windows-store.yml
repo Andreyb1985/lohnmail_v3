@@ -140,4 +140,5 @@ jobs:
             lohnmail-pywebview-test/dist/store/AppxManifest.xml
             lohnmail-pywebview-test/dist/store/build_info.json
             lohnmail-pywebview-test/dist/store/resources.pri.xml
+            lohnmail-pywebview-test/dist/store/icon-verification.json
             lohnmail-pywebview-test/dist/store/activity-log-check.png

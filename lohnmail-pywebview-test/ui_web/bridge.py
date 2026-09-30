@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import uuid
 import webbrowser
 from copy import deepcopy
 from datetime import datetime
@@ -258,6 +259,7 @@ class WebBridge(QObject):
         self._validation_company_id = ""
         self._validation_input_signature: tuple[str, str, str, str] | None = None
         self._shipping_running = False
+        self._shipping_revision = 0
         self._shipping_status = self._idle_shipping_status()
         self._shipping_company_id = ""
         self._shipping_input_signature: tuple[str, ...] | None = None
@@ -1601,6 +1603,7 @@ class WebBridge(QObject):
         self._shipping_running = True
         self._shipping_status = {
             **self._idle_shipping_status(),
+            "operation_id": uuid.uuid4().hex,
             "running": True,
             "can_send": False,
             "current_step": "Versand wird vorbereitet" if dry_run else "E-Mails werden gesendet",
@@ -1694,6 +1697,10 @@ class WebBridge(QObject):
         return serialized
 
     def _shipping_payload(self, settings: dict) -> dict:
+        # Allocate before reading state so a delayed snapshot cannot overwrite
+        # a newer progress/terminal event in the browser.
+        self._shipping_revision += 1
+        revision = self._shipping_revision
         company_id = self._active_company_id(settings)
         current_input_signature = self._input_signature(settings)
         current_shipping_signature = self._shipping_signature(settings)
@@ -1752,6 +1759,7 @@ class WebBridge(QObject):
                 "name": get_company_name(settings, company_id),
             },
             "status": status,
+            "revision": revision,
             "metrics": {
                 "ready": ready_count,
                 "sent": sent_count,
@@ -2590,6 +2598,7 @@ class WebBridge(QObject):
         self._shipping_status = {
             **self._idle_shipping_status(),
             "finished": finished,
+            "operation_id": self._shipping_status.get("operation_id", ""),
             "failed": failed,
             "can_send": True,
             "current_step": current_step,
@@ -2669,6 +2678,9 @@ class WebBridge(QObject):
         self._shipping_status = {
             **self._idle_shipping_status(),
             "failed": True,
+            "operation_id": self._shipping_status.get("operation_id", ""),
+            "dry_run": self._shipping_status.get("dry_run", True),
+            "live_progress": self._shipping_status.get("live_progress", {}),
             "can_send": True,
             "current_step": "Fehler",
             "progress": 0,

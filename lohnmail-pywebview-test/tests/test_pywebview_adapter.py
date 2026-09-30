@@ -307,6 +307,61 @@ class PywebviewAdapterTests(unittest.TestCase):
             self.assertEqual(settings["ui"]["last_mass_attachment_dir"], str(Path(temp_dir).resolve()))
             self.assertFalse(payload["status"]["preview_ready"])
 
+    def test_shipping_operations_keep_identity_and_order_through_worker_events(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pdf, excel = root / "journal.pdf", root / "employees.xlsx"
+            pdf.write_bytes(b"synthetic")
+            excel.write_bytes(b"synthetic")
+            settings = build_default_settings()
+            settings["companies"] = [{"id": "test", "name": "Test", "email_excel_file": str(excel)}]
+            settings["selected_company_id"] = "test"
+            settings["ui"].update(last_pdf_input_mode="single_pdf", last_pdf_dir=str(pdf))
+            events = []
+
+            def job(**kwargs):
+                dry = kwargs["dry_run"]
+                for current in (0, 1):
+                    kwargs["progress_cb"]({"kind": "shipping_progress", "current": current,
+                        "total": 2, "phase": "preparing" if dry else "sending",
+                        "prepared": current, "sent": 0 if dry else current,
+                        "operation": "Synthetic progress"})
+                return {"summary": {"dry_run": dry, "prepared_or_sent_count": 2},
+                    "table_rows": [{"PersNr": str(i), "Email": f"person{i}@example.invalid",
+                        "Status": "Dry-Run" if dry else "Gesendet"} for i in (1, 2)]}
+
+            with patch("ui_web.bridge.load_settings", return_value=settings), patch(
+                "ui_web.bridge.LicenseManager.require_action", return_value=(True, {})
+            ), patch("ui_web.bridge.company_output_dir", return_value=root / "output"), patch(
+                "core.jobs.run_main_job", side_effect=job
+            ):
+                bridge = WebBridge()
+                bridge._register_result_reports = lambda *_args, **_kwargs: None
+                bridge._validation_company_id = "test"
+                bridge._validation_input_signature = bridge._input_signature(settings)
+                bridge._validation_state = {"ready": True}
+                bridge.shippingStateChanged.connect(lambda payload: events.append(json.loads(payload)))
+                ids = []
+                for dry in (True, False, True):
+                    events.clear()
+                    bridge._start_shipping(dry_run=dry)
+                    bridge.worker_thread.join(3)
+                    self.assertFalse(bridge.worker_thread.is_alive())
+                    operation_id = events[0]["status"]["operation_id"]
+                    self.assertTrue(operation_id)
+                    ids.append(operation_id)
+                    self.assertTrue(all(e["status"]["operation_id"] == operation_id for e in events))
+                    revisions = [e["revision"] for e in events]
+                    self.assertEqual(revisions, sorted(set(revisions)))
+                    self.assertTrue(events[-1]["status"]["finished"])
+                    self.assertTrue(any(e["status"].get("live_progress", {}).get("current") == 1
+                                        and e["status"]["running"] for e in events))
+                self.assertEqual(len(set(ids)), 3)
+                bridge._shipping_status["dry_run"] = False
+                bridge._on_shipping_error("synthetic error")
+                self.assertEqual(events[-1]["status"]["operation_id"], ids[-1])
+                self.assertFalse(events[-1]["status"]["dry_run"])
+
     def test_structured_shipping_progress_uses_exact_recipient_count(self) -> None:
         settings = build_default_settings()
         settings["companies"] = [{"id": "test", "name": "Test"}]

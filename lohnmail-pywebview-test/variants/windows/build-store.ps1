@@ -160,6 +160,9 @@ if (-not $ValidatedManifestText.Contains($ExpectedDescription)) {
     throw "Die UTF-8-Zeichen im MSIX-Manifest sind ungueltig."
 }
 
+& ".venv\Scripts\python.exe" (Join-Path $PSScriptRoot 'verify-icons.py') --root $ValidationRoot --pri-dump $PriDump --report (Join-Path $OutputRoot 'icon-verification.json')
+if ($LASTEXITCODE -ne 0) { throw 'Packaged icon contract failed.' }
+
 $Hash = (Get-FileHash $OutputMsix -Algorithm SHA256).Hash.ToLowerInvariant()
 $HashPath = "$OutputMsix.sha256"
 [System.IO.File]::WriteAllText($HashPath, "$Hash  $(Split-Path $OutputMsix -Leaf)`n", $Utf8NoBom)
