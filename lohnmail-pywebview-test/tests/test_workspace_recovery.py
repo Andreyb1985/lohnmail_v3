@@ -73,7 +73,7 @@ def test_cancel_or_choose_new_leaves_old_workspace_unchanged(tmp_path, choice):
     assert not list(workspace.parent.glob('LohnMail-Recovery-*'))
 
 
-@pytest.mark.parametrize('failure', ['json', 'database', 'conflict', 'directory', 'marker'])
+@pytest.mark.parametrize('failure', ['json', 'database', 'conflict', 'directory', 'marker', 'marker-format'])
 def test_invalid_data_offers_another_folder_without_overwriting(tmp_path, failure):
     root, workspace, local = setup(tmp_path)
     if failure == 'json': (workspace / 'settings.json').write_text('invalid')
@@ -84,6 +84,7 @@ def test_invalid_data_offers_another_folder_without_overwriting(tmp_path, failur
         storage.atomic_json(workspace / 'license.json', {'key': 'B'})
     if failure == 'directory': (workspace / 'Settings').write_text('not-a-directory')
     if failure == 'marker': storage.atomic_json(workspace / '.lohnmail-workspace.json', {'id': ''})
+    if failure == 'marker-format': storage.atomic_json(workspace / '.lohnmail-workspace.json', {'id': 'old', 'format': 999})
     before = storage.inventory(workspace)
     fresh = tmp_path / 'Other'; fresh.mkdir()
     decisions = Mock(side_effect=[('reuse', workspace), ('new', fresh)])

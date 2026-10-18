@@ -125,9 +125,12 @@ def reconnect_workspace(root, workspace, local, family):
             if (snapshot / name).exists() and not (snapshot / name).is_dir():
                 raise StorageError(f'Kein Ordner: {workspace / name}. Sicherung: {backup}')
         marker = snapshot / '.lohnmail-workspace.json'
-        identity = _object(marker).get('id') if marker.exists() else uuid.uuid4().hex
+        marker_data = _object(marker) if marker.exists() else {'id': uuid.uuid4().hex}
+        identity = marker_data.get('id')
         if not isinstance(identity, str) or not identity:
             raise StorageError(f'Ungültige Arbeitsordner-Kennung. Sicherung: {backup}')
+        if marker_data != {'id': identity}:
+            raise StorageError(f'Unbekanntes Arbeitsordner-Format. Sicherung: {backup}')
         stage = root / ('reconnect-stage-' + uuid.uuid4().hex)
         (stage / 'Settings').mkdir(parents=True)
         if (snapshot / 'Settings').exists():

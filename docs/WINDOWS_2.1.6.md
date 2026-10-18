@@ -34,8 +34,8 @@ remain. If only workflow IDs survive, their IDs are used as provisional names.
 
 ## Verification
 
-Canonical macOS suite: 284 passed, 3 skipped, 6 warnings. Import and JS syntax pass.
-Windows checkout macOS suite: 282 passed, 5 skipped, 6 warnings.
+Canonical macOS suite: 285 passed, 3 skipped, 6 warnings. Import and JS syntax pass.
+Windows checkout macOS suite: 283 passed, 5 skipped, 6 warnings.
 Windows CI/artifact audit: pending.
 No actual mail, production license calls or Store/server publication.
 
