@@ -36,7 +36,29 @@ remain. If only workflow IDs survive, their IDs are used as provisional names.
 
 Canonical macOS suite: 285 passed, 3 skipped, 6 warnings. Import and JS syntax pass.
 Windows checkout macOS suite: 283 passed, 5 skipped, 6 warnings.
-Windows CI/artifact audit: pending.
+Windows CI [39169889588](https://github.com/Andreyb1985/lohnmail_v3/actions/runs/39169889588)
+succeeded for source commit `69ee072424961cd46dafe3cef727112769ecc8ff`:
+286 passed, 2 skipped, 1 dependency warning on Windows x64. Native STA dialog
+reuse/cancel tests, frozen EXE build/self-test, packaged browser layout passed.
+Installed MSIX activation/storage probes verified uninstall/reinstall with a
+retained external workspace, full verified backup, company reconstruction and
+restart; prior ordinary/redirected/both/conflicting legacy scenarios also passed.
+The intermediate run 39169676399 was cancelled because the final commit added
+the unknown-marker guard, not due to a failed test.
+
+Downloaded artifact: `LohnMail_2.1.6.0_x64.msix`, SHA-256:
+`4cc23a3370c71ed1ba440e6b8bd2ef24414a778d01e9d1bbb1a5a48154f0e8cc`.
+Checked identity/version/Store marker, CRC, 315 entries and 1709 block hashes,
+web-source equality, absence of runtime/customer data. Icon audit: 62 transparent
+PNGs, 42 PRI mappings, nine embedded ICO sizes and transparent listing PNG pass.
+Approved icon files are byte-identical to 2.1.5.
+
+MSIX is unsigned for Partner Center upload. CI installed separate ephemeral
+test-signed copies, not the distributed unsigned file. Actual Windows 10 Store
+installation, native folder-picker interaction, full app processing after
+reconnection and Windows Shell presentation still require manual acceptance.
+Use a Store test flight or an explicitly test-signed package for that check;
+the unsigned upload artifact is not directly installable on a normal PC.
 No actual mail, production license calls or Store/server publication.
 
 ## Manual acceptance before Store submission
