@@ -26,11 +26,12 @@ public static class LohnMailPackageProbe {
     }
 }
 '@
-function Invoke-StorageProbe($Installed, [string]$Result, [string]$Workspace, [switch]$ExpectConflict) {
+function Invoke-StorageProbe($Installed, [string]$Result, [string]$Workspace, [switch]$ExpectConflict, [switch]$ReuseExisting) {
     [xml]$Manifest = Get-Content (Join-Path $Installed.InstallLocation 'AppxManifest.xml') -Raw
     $AppId = [string]$Manifest.Package.Applications.Application.Id
     $Aumid = $Installed.PackageFamilyName + '!' + $AppId
     $Arguments = '--lohnmail-storage-probe "' + $Result + '" "' + $Workspace + '"'
+    if ($ReuseExisting) { $Arguments += ' --lohnmail-probe-reuse' }
     $ProcessId = [LohnMailPackageProbe]::Launch($Aumid, $Arguments)
     $Process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
     if ($Process -and -not $Process.WaitForExit(180000)) { throw 'Packaged storage probe timed out.' }
@@ -130,6 +131,36 @@ try {
     if ((Get-Content $SettingsSentinel) -ne 'settings-must-survive') { throw 'Settings changed.' }
     if ((Get-Content $CompaniesSentinel) -ne 'companies-must-survive') { throw 'Documents changed.' }
     if ((Get-Content $HistorySentinel) -ne 'history-must-survive') { throw 'History changed.' }
+
+    # Uninstall removes LocalState; Documents-style external workspace remains.
+    # Reinstall must reconnect explicitly, not block or silently reset it.
+    $CompanyFolder = Join-Path $Workspace 'Companies\Lohn_CI-Reinstall-Unique'
+    New-Item -ItemType Directory -Force $CompanyFolder | Out-Null
+    Set-Content (Join-Path $CompanyFolder 'result.pdf') 'SYNTHETIC-REINSTALL-PDF'
+    $WorkspaceBefore = @{}
+    Get-ChildItem $Workspace -Recurse -File -Force | ForEach-Object { $WorkspaceBefore[$_.FullName] = (Get-FileHash $_.FullName).Hash }
+    Get-AppxPackage -Name $IdentityName | Remove-AppxPackage
+    if (Test-Path -LiteralPath $DataRoot) { throw 'Reinstall fixture must start without package-local state.' }
+    Add-AppxPackage -Path $SecondPackage
+    $Reinstalled = Get-AppxPackage -Name $IdentityName
+    $Reconnect = Invoke-StorageProbe $Reinstalled (Join-Path $TestRoot 'reinstall.json') $Workspace -ReuseExisting
+    foreach ($Path in $WorkspaceBefore.Keys) {
+        if ((Get-FileHash -LiteralPath $Path).Hash -ne $WorkspaceBefore[$Path]) { throw "Reinstall modified original workspace file: $Path" }
+    }
+    $RecoveryRoot = Split-Path $Reconnect.state
+    $Plan = Get-Content (Join-Path $RecoveryRoot 'workspace-reconnect.json') -Raw | ConvertFrom-Json
+    foreach ($Path in $WorkspaceBefore.Keys) {
+        $Relative = $Path.Substring($Workspace.Length + 1)
+        $BackupFile = Join-Path (Join-Path $Plan.backup 'Workspace') $Relative
+        if ((Get-FileHash -LiteralPath $BackupFile).Hash -ne $WorkspaceBefore[$Path]) { throw "Reinstall backup mismatch: $Relative" }
+    }
+    $RecoveredSettings = Get-Content (Join-Path $Reconnect.state 'Settings\settings.json') -Raw | ConvertFrom-Json
+    $RecoveredCompany = @($RecoveredSettings.companies | Where-Object { $_.name -eq 'CI-Reinstall-Unique' })
+    if ($RecoveredCompany.Count -ne 1 -or $RecoveredCompany[0].output_dir -ne $CompanyFolder) { throw 'Reinstalled company not connected to retained results.' }
+    if (Test-Path (Join-Path $Reconnect.state 'Settings\license.json')) { throw 'Reinstall invented a missing license.' }
+    $RestartReconnect = Invoke-StorageProbe $Reinstalled (Join-Path $TestRoot 'reinstall-restart.json') $Workspace
+    if ($RestartReconnect.state -ne $Reconnect.state) { throw 'Reconnected state changed on restart.' }
+    Write-Host 'Installed MSIX uninstall/reinstall with retained workspace and verified backup passed.'
 
     # Different OLD layout, not merely two versions of the current code.
     # Every source is synthetic; abort rather than touch pre-existing data.

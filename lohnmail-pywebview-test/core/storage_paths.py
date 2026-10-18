@@ -284,7 +284,8 @@ def _commit_layout(root, plan):
     return plan['layout']
 
 
-def initialize_package_storage(root, cache, local, family, choose, export_legacy=None):
+def initialize_package_storage(root, cache, local, family, choose, export_legacy=None,
+                               resolve_existing=None):
     """Called under package-local process lock before any settings are loaded.
 
     No unvirtualized access is claimed from a packaged process. Legacy imports
@@ -307,6 +308,11 @@ def initialize_package_storage(root, cache, local, family, choose, export_legacy
             raise StorageError(f'Arbeitsordner fehlt oder ist nicht erreichbar: {workspace}. '
                                'Bitte Laufwerk verbinden oder den vollständigen Arbeitsordner wiederherstellen.')
         return layout
+    reconnect = root / 'workspace-reconnect.json'
+    if reconnect.exists():
+        from core.workspace_recovery import reconnect_workspace
+        plan = json.loads(reconnect.read_text(encoding='utf-8'))
+        return reconnect_workspace(root, Path(plan['workspace']), local, family)
     pending = root / 'storage-pending.json'
     if pending.exists():
         plan = json.loads(pending.read_text(encoding='utf-8'))
@@ -323,9 +329,33 @@ def initialize_package_storage(root, cache, local, family, choose, export_legacy
         if selected is None:
             raise StorageError('Einrichtung abgebrochen. Vorhandene Daten wurden nicht verändert.')
         workspace = validate_workspace(selected, local)
-        if any((workspace / name).exists() for name in ('Companies', 'History', '.lohnmail-workspace.json')):
-            raise StorageError(f'Der Arbeitsordner enthält bereits LohnMail-Daten: {workspace}. '
-                               'Bitte Support zur Übernahme kontaktieren; nichts wird überschrieben.')
+        error = ''
+        while any((workspace / name).exists() for name in (
+                'Companies', 'History', 'Settings', '.lohnmail-workspace.json', 'settings.json', 'license.json')):
+            if resolve_existing is None:
+                raise StorageError(f'Der Arbeitsordner enthält bereits LohnMail-Daten: {workspace}. '
+                                   'Bitte die Wiederherstellung bestätigen; nichts wird überschrieben.')
+            decision = resolve_existing(workspace, error)
+            if decision is None:
+                raise StorageError('Einrichtung abgebrochen. Vorhandene Daten wurden nicht verändert.')
+            action, selected = decision
+            try:
+                workspace = validate_workspace(selected, local)
+            except (OSError, StorageError) as exc:
+                error = str(exc)
+                continue  # Keep the original selection and allow another choice.
+            if action == 'reuse':
+                from core.workspace_recovery import reconnect_workspace
+                try:
+                    return reconnect_workspace(root, workspace, local, family)
+                except (OSError, ValueError, sqlite3.Error, StorageError) as exc:
+                    if reconnect.exists():
+                        raise  # A prepared transaction must resume, never be bypassed.
+                    error = str(exc)
+            elif action == 'new':
+                error = ''
+            else:
+                raise StorageError('Ungültige Ordnerauswahl; nichts verändert.')
         plan = {'phase': 'copy', 'id': uuid.uuid4().hex, 'workspace': str(workspace)}
         atomic_json(pending, plan)
     bundle = workspace / 'LohnMail-Legacy-Export'
@@ -444,13 +474,19 @@ def prepare_storage_or_exit():
             # CLI is for installed-package CI, never an implicit production override.
             from core import windows_storage
             original_picker = windows_storage.default_workspace
+            original_resolver = windows_storage.resolve_existing_workspace
             windows_storage.default_workspace = lambda: workspace
+            # Test-only probe activates with package identity; production never
+            # auto-accepts reconnection. The fixture explicitly opts into reuse.
+            if '--lohnmail-probe-reuse' in sys.argv:
+                windows_storage.resolve_existing_workspace = lambda path, error: ('reuse', path) if not error else None
             try:
                 root = packaged_data_root()
                 atomic_json(output, {'family': package_identity()[0], 'state': str(root),
                                      'workspace': str(_workspace_root)})
             finally:
                 windows_storage.default_workspace = original_picker
+                windows_storage.resolve_existing_workspace = original_resolver
             raise SystemExit(0)
         if not os.environ.get('LOHNMAIL_DATA_DIR'):
             packaged_data_root()
@@ -476,7 +512,8 @@ def packaged_data_root():
     identity = package_identity()
     if not identity:
         return None
-    from core.windows_storage import application_folders, default_workspace, export_legacy_storage
+    from core.windows_storage import (application_folders, default_workspace, export_legacy_storage,
+                                     resolve_existing_workspace, show_recovery_notice)
     family, _ = identity
     state_folder, cache_folder = application_folders(family)
     root = state_folder / 'LohnMail'
@@ -493,9 +530,13 @@ def packaged_data_root():
         try:
             layout = initialize_package_storage(
                 root, cache_folder, real_local_appdata(), family, default_workspace,
-                export_legacy=export_legacy_storage)
+                export_legacy=export_legacy_storage, resolve_existing=resolve_existing_workspace)
             _package_root = Path(layout['state'])
             _workspace_root = Path(layout['workspace'])
+            notice = root / 'workspace-recovery-notice.json'
+            if notice.exists() and '--lohnmail-storage-probe' not in sys.argv:
+                show_recovery_notice(json.loads(notice.read_text(encoding='utf-8')))
+                notice.unlink()  # Acknowledgement only; never user data or backup.
         finally:
             lock.seek(0)
             msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)

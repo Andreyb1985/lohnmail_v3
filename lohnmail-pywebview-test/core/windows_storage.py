@@ -52,6 +52,91 @@ def default_workspace():
     return path
 
 
+def _sta_dialog(callback):
+    """WinForms folder dialogs require STA; do not change the caller's apartment."""
+    import clr
+    clr.AddReference('System.Windows.Forms')
+    clr.AddReference('System.Drawing')
+    from System.Threading import Thread, ThreadStart, ApartmentState
+    result, errors = [], []
+    def run():
+        try:
+            result.append(callback())
+        except Exception as exc:
+            errors.append(exc)
+    thread = Thread(ThreadStart(run))
+    thread.SetApartmentState(ApartmentState.STA)
+    thread.Start()
+    thread.Join()
+    if errors:
+        raise errors[0]
+    return result[0]
+
+
+def resolve_existing_workspace(workspace, error=''):
+    def dialog():
+        from System.Drawing import Size, Point
+        from System.Windows.Forms import (Form, TextBox, Button, DialogResult, FolderBrowserDialog,
+                                         FormStartPosition, FormBorderStyle, ScrollBars)
+        form = Form()
+        form.Text = 'LohnMail – Vorhandene Daten'
+        form.ClientSize = Size(640, 320)
+        form.StartPosition = FormStartPosition.CenterScreen
+        form.FormBorderStyle = FormBorderStyle.FixedDialog
+        form.MaximizeBox = False
+        form.MinimizeBox = False
+        text = TextBox()
+        text.Location, text.Size = Point(20, 20), Size(600, 220)
+        text.Multiline, text.ReadOnly, text.ScrollBars = True, True, ScrollBars.Vertical
+        text.Text = ('Vorhandene LohnMail-Daten gefunden:\r\n' + str(workspace) +
+            '\r\n\r\nDiese Daten verwenden oder einen anderen Arbeitsordner wählen? '
+            'Vor dem Verbinden wird eine geprüfte Sicherung angelegt. Originaldateien bleiben erhalten. '
+            'Andere LohnMail-Instanzen bitte schließen.\r\n\r\n'
+            'Gelöschte Programmeinstellungen und Lizenzen können nur aus vorhandenen Kopien '
+            'wiederhergestellt werden. Sonst bitte E-Mail und Lizenz erneut einrichten.' +
+            ('\r\n\r\nVerbindung nicht möglich: ' + error if error else ''))
+        form.Controls.Add(text)
+        for label, code, x, width in [('Daten verwenden', DialogResult.Yes, 20, 180),
+                                      ('Anderen Ordner wählen', DialogResult.No, 210, 220),
+                                      ('Abbrechen', DialogResult.Cancel, 440, 180)]:
+            button = Button()
+            button.Text, button.DialogResult = label, code
+            button.Location, button.Size = Point(x, 265), Size(width, 35)
+            form.Controls.Add(button)
+            if code == DialogResult.Cancel:
+                form.CancelButton = button
+                form.AcceptButton = button  # Never accept data recovery accidentally.
+        try:
+            answer = form.ShowDialog()
+        finally:
+            form.Dispose()
+        if answer == DialogResult.Yes:
+            return 'reuse', Path(workspace)
+        if answer != DialogResult.No:
+            return None
+        picker = FolderBrowserDialog()
+        picker.Description = 'LohnMail-Arbeitsordner wählen (vorhandene Daten werden nicht überschrieben)'
+        picker.SelectedPath = str(known_folder('FDD39AD0-238F-46AF-ADB4-6C85480369C7'))
+        picker.ShowNewFolderButton = True
+        try:
+            return ('new', Path(str(picker.SelectedPath))) if picker.ShowDialog() == DialogResult.OK else None
+        finally:
+            picker.Dispose()
+    return _sta_dialog(dialog)
+
+
+def show_recovery_notice(notice):
+    def dialog():
+        from System.Windows.Forms import MessageBox
+        message = 'Arbeitsordner verbunden. Sicherung: ' + notice['backup']
+        if not notice['settings_restored']:
+            message += '\r\nProgrammeinstellungen fehlen. Bitte E-Mail und Eingabedateien erneut einrichten.'
+        if not notice['license_restored']:
+            message += '\r\nKeine gespeicherte Lizenz gefunden. Bitte Lizenz erneut aktivieren.'
+        MessageBox.Show(message, 'LohnMail – Wiederherstellung')
+    _sta_dialog(dialog)
+
+
 def export_legacy_storage(workspace, family, local, cache):
     """Snapshot physical stores with a helper which verifies NO_PACKAGE itself.
 
