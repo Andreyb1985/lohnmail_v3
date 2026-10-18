@@ -141,9 +141,10 @@ def _run_osascript(script: str, args: list[str]) -> None:
 
 
 def _ensure_outlook_supported() -> None:
-    if sys.platform not in {"darwin", "win32"}:
+    if sys.platform != "win32":
         raise RuntimeError(
-            "Outlook-Classic-Versand wird derzeit nur unter macOS oder Windows unterstützt."
+            "Der Outlook-Classic-Versand ist in dieser macOS-Testversion deaktiviert. "
+            "Bitte verwenden Sie SMTP."
         )
 
 

@@ -8,15 +8,16 @@ from datetime import date, datetime
 from pathlib import Path
 
 from core.secret_store import SecretStore, SecretStoreError
-from core.storage_paths import atomic_json, packaged_data_root, packaged_workspace_root
 from core.distribution import is_store_build
+from core.storage_paths import atomic_json, packaged_data_root, packaged_workspace_root
 
 APP_NAME = "LohnMail"
+MACOS_TEST_DATA_DIR_NAME = "LohnMail-macOS-Test"
 APP_TAGLINE = "Versand von Lohnabrechnungen \u2013 kompatibel mit DATEV"
 APP_COPYRIGHT = "\u00a9 2026 Andrii Bakanov"
 DEVELOPER_NAME = "Andrii Bakanov"
 SUPPORT_EMAIL = "andriibakanov@gmail.com"
-DSGVO_CLAIM = "DSGVO-konforme Verarbeitung. Alle Daten bleiben lokal auf Ihrem Rechner."
+DSGVO_CLAIM = "Lohnunterlagen werden lokal verarbeitet. Die Übertragung technischer Diagnoseberichte ist freiwillig."
 
 def build_default_settings(today: date | None = None) -> dict:
     resolved_today = today or date.today()
@@ -142,7 +143,20 @@ def user_data_dir() -> Path:
         if windows_data:
             return Path(windows_data) / APP_NAME
     if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / APP_NAME
+        # App Store/TestFlight builds may write only inside their sandbox
+        # container. Keep preview builds isolated in the user home instead.
+        if os.environ.get("APP_SANDBOX_CONTAINER_ID"):
+            return (
+                Path.home()
+                / "Library"
+                / "Containers"
+                / "lohnmail"
+                / "Data"
+                / "Library"
+                / "Application Support"
+                / MACOS_TEST_DATA_DIR_NAME
+            )
+        return Path.home() / "Library" / "Application Support" / MACOS_TEST_DATA_DIR_NAME
     return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / APP_NAME
 
 

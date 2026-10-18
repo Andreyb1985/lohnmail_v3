@@ -178,6 +178,9 @@ def run_mass_message_job(
             _emit_progress(progress_cb, f"Nachricht gesendet ({index}/{total_count}): {persnr} -> {email}")
         except Exception as exc:
             from .mailer import user_facing_mail_error
+            from .diagnostics import record_handled_error
+
+            record_handled_error(exc)
 
             message = user_facing_mail_error(exc)
             errors.append({"PersNr": persnr, "Email": email, "Error": message})

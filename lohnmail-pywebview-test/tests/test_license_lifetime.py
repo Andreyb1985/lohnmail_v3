@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from core import license_manager as lm
+from core.diagnostics import Diagnostics
 from ui_web.bridge import WebBridge
 
 
@@ -49,6 +50,8 @@ def test_same_trial_key_converts_and_survives_restart_and_old_expiry(client, aut
     # the old cached deadline. Exercise actual manual/automatic bridge methods.
     response = {'type': 'lifetime', 'status': server_status}
     bridge = object.__new__(WebBridge)
+    bridge._diagnostics = Diagnostics(lm.LICENSE_DIR / 'diagnostics', version='2.0.3',
+        build='2026.09.03.1', platform='win32', credentials=lambda: {})
     with patch.object(lm, '_now', return_value=now + timedelta(days=7)), patch.object(
         lm.LicenseManager, '_post', return_value=response
     ) as post, patch('ui_web.bridge.load_settings', return_value={}):

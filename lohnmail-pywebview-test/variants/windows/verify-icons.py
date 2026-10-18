@@ -3,6 +3,7 @@
 This is an artifact contract, NOT an interactive Windows Shell visual test.
 """
 import argparse
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -18,7 +19,7 @@ def check(condition, message):
         raise ValueError(message)
 
 
-def verify(root, pri_dump):
+def verify(root, pri_dump, listing_icon=None):
     spec = importlib.util.spec_from_file_location("msix_assets", Path(__file__).with_name("build-msix-assets.py"))
     generator = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(generator)
@@ -31,15 +32,28 @@ def verify(root, pri_dump):
             with Image.open(reference) as wanted, Image.open(root / "Assets" / reference.name) as actual:
                 check(actual.size == wanted.size and actual.convert("RGBA").tobytes() == wanted.tobytes(),
                       "Packaged icon differs: " + reference.name)
+                check(actual.convert("RGBA").getchannel("A").getextrema() == (0, 255),
+                      "Packaged PNG is not transparent: " + reference.name)
+        if listing_icon is not None:
+            expected_listing = generator.generate_listing(expected / "listing")
+            with Image.open(listing_icon) as actual, Image.open(expected_listing) as wanted:
+                check(actual.size == (300, 300) and actual.convert("RGBA").tobytes() == wanted.tobytes(),
+                      "Store listing icon differs from approved transparent artwork")
 
     manifest = ET.parse(root / "AppxManifest.xml")
     visual = manifest.find(".//{http://schemas.microsoft.com/appx/manifest/uap/windows10}VisualElements")
-    check(visual is not None and visual.get("BackgroundColor") == "#F5F8FB", "Wrong Shell fallback color")
+    check(visual is not None and visual.get("BackgroundColor") == "transparent", "Wrong Shell background color")
+    splash = visual.find("{http://schemas.microsoft.com/appx/manifest/uap/windows10}SplashScreen")
+    check(splash is not None and splash.get("BackgroundColor") == "transparent", "Wrong splash background color")
     pri = ET.parse(pri_dump)
     candidates = {}
     for candidate in pri.findall(".//NamedResource[@name='Square44x44Logo.png']/Candidate"):
         qualifiers = {q.get("name"): q.get("value") for q in candidate.findall("./QualifierSet/Qualifier")}
-        candidates[(qualifiers.get("TargetSize"), qualifiers.get("AlternateForm", ""))] = candidate.findtext("Value", "").replace("\\", "/")
+        if not qualifiers.get("TargetSize"):
+            continue
+        key = (qualifiers["TargetSize"], qualifiers.get("AlternateForm", ""))
+        check(key not in candidates, "Duplicate PRI target qualifier: " + str(key))
+        candidates[key] = candidate.findtext("Value", "").replace("\\", "/")
     for size in generator.TARGET_SIZES:
         for form in generator.FORMS:
             alternate = form.removeprefix("_altform-").upper()
@@ -48,6 +62,8 @@ def verify(root, pri_dump):
 
     icon = root / "web/assets/brand/LohnMail.ico"
     data = icon.read_bytes()
+    check(hashlib.sha256(data).hexdigest() == generator.APPROVED_ICO_SHA256,
+          "EXE icon differs from approved TEST v2 ICO")
     exe = (root / "LohnMail.exe").read_bytes()
     with Image.open(icon) as ico:
         check(ico.ico.sizes() == {(s,s) for s in (16,20,24,32,40,48,64,128,256)}, "Wrong ICO sizes")
@@ -61,8 +77,9 @@ def verify(root, pri_dump):
         length, offset = struct.unpack_from("<II", data, 6 + index*16 + 8)
         payload = data[offset:offset+length]
         check(len(payload) == length and payload in exe, "EXE is missing an ICO representation")
-    return {"pngs": 62, "transparent_unplated": 28, "light_plated": 34,
+    return {"pngs": 62, "transparent_pngs": 62, "transparent_unplated": 28, "light_plated": 0,
             "pri_target_mappings": 42, "embedded_ico_sizes": 9,
+            "store_listing_verified": listing_icon is not None,
             "shell_visual_verified": False}
 
 
@@ -71,7 +88,8 @@ if __name__ == "__main__":
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--pri-dump", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--listing-icon", type=Path)
     args = parser.parse_args()
-    result = verify(args.root, args.pri_dump)
+    result = verify(args.root, args.pri_dump, args.listing_icon)
     args.report.write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(json.dumps(result))

@@ -33,6 +33,10 @@ $GeneratedRoot = Join-Path $BuildRoot "generated"
 $VersionInfoPath = Join-Path $GeneratedRoot "windows_version_info.txt"
 $DistributionMarker = Join-Path $GeneratedRoot "lohnmail_distribution.json"
 $IconPath = Join-Path $ProjectRoot "web\assets\brand\LohnMail.ico"
+$ApprovedIconHash = '59e6e29deb593e68c54349e3dccbdb20934ec5b3953c09fe5cd7ae86adf4a640'
+if ((Get-FileHash -LiteralPath $IconPath -Algorithm SHA256).Hash -ne $ApprovedIconHash) {
+    throw 'Windows icon differs from approved transparent TEST v2. Build stopped.'
+}
 $WebRoot = Join-Path $ProjectRoot "web"
 $SettingsTemplate = Join-Path $ProjectRoot "settings_template.json"
 $MainScript = Join-Path $ProjectRoot "main.py"

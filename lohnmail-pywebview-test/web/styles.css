@@ -644,6 +644,8 @@ input, input:focus, input:focus-visible {
 .mailing-heading {
   margin-bottom: 14px;
 }
+.shipping-heading-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:12px; min-width:0; max-width:100%; }
+.shipping-heading-actions button { max-width:100%; white-space:normal; }
 .mailing-heading .shipping-primary-cta {
   width: 286px;
   min-width: 286px;

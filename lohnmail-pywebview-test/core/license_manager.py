@@ -138,6 +138,8 @@ class LicenseManager:
         except LicenseNotFoundError:
             return self._missing_license_state(state)
         except Exception as exc:
+            from .diagnostics import record_handled_error
+            record_handled_error(exc)
             return self._offline_state(state, str(exc))
 
     def activate(self, license_key: str) -> dict:

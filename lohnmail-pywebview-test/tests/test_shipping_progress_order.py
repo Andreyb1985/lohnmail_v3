@@ -88,6 +88,18 @@ const fast=event(13,'fast-run',false,70,{running:false,finished:true});
 fast.metrics=finished.metrics; apply(fast); apply(event(12,'fast-run',false,0));
 assert.equal(text('[data-shipping-live="count"]'),'70/70');
 assert.equal(text('[data-shipping-live="current"]'),'70 E-Mails gesendet');
+// Retrying one recipient must not count the earlier 70 deliveries again.
+const retry={revision:14,company:{id:'test'},rows:[],metrics:{sent:71,errors:0},
+  status:{operation_id:'retry-one',running:false,finished:true,dry_run:false,sent:1,prepared:0,errors:0}};
+apply(retry);
+assert.equal(text('[data-shipping-live="count"]'),'1/1');
+assert.equal(text('[data-shipping-live="current"]'),'1 E-Mails gesendet');
+// On reopen, an interrupted attempt restores its own count, not aggregate totals.
+apply({revision:15,company:{id:'test'},rows:[],metrics:{sent:72,errors:0},
+  status:{operation_id:'interrupted-retry',running:false,failed:true,dry_run:false,sent:0,errors:1,
+    live_progress:{total:3,current:1,sent:1,errors:0}}});
+assert.equal(text('[data-shipping-live="count"]'),'1/3');
+assert.equal(text('[data-shipping-live="sent"]'),'1');
 console.log('Shipping event order and visible counters passed');
 '''
     result = subprocess.run([node, "-e", script, str(source)], capture_output=True, text=True, timeout=20)

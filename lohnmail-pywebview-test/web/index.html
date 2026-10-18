@@ -4,7 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LohnMail v2 — Enterprise Edition</title>
-  <link rel="stylesheet" href="styles.css?v=release-ui-20260903-001" />
+  <link rel="stylesheet" href="styles.css?v=shipping-preflight-20261018-001" />
+  <link rel="stylesheet" href="diagnostics.css?v=compact-errors-20261018-002" />
 </head>
 <body>
   <div class="app-shell">
@@ -42,7 +43,7 @@
           <div class="side-status-subtitle">Alle Dienste aktiv</div>
         </div>
       </div>
-      <div class="side-version" data-app-version>v2.1.0 Enterprise Edition</div>
+      <div class="side-version" data-app-version>Enterprise Edition</div>
     </aside>
 
     <section class="main">
@@ -441,7 +442,10 @@
               <h1>Versand</h1>
               <p>Lohnabrechnungen per E-Mail senden oder exportieren.</p>
             </div>
-            <button class="primary shipping-primary-cta" data-shipping-primary data-shipping-action="start-dry-run"><span data-icon="send"></span><span data-shipping="primary-label">Versand vorbereiten</span></button>
+            <div class="shipping-heading-actions">
+              <button class="secondary-action" data-shipping-offline data-shipping-action="prepare-offline" title="PDF-Dateien ohne Mail-Verbindung vorbereiten; es werden keine E-Mails gesendet">Nur PDFs vorbereiten</button>
+              <button class="primary shipping-primary-cta" data-shipping-primary data-shipping-action="start-dry-run"><span data-icon="send"></span><span data-shipping="primary-label">Versand vorbereiten</span></button>
+            </div>
           </div>
 
 
@@ -909,7 +913,7 @@
             <button data-settings-tab="email"><span data-icon="mail"></span>E-Mail</button>
             <button data-settings-tab="templates"><span data-icon="table"></span>Vorlagen</button>
             <button data-settings-tab="notifications"><span data-icon="bell"></span>Benachrichtigungen</button>
-            <button data-settings-tab="updates"><span data-icon="process"></span>Updates</button>
+            <button data-settings-tab="updates" data-self-update-only><span data-icon="process"></span>Updates</button>
             <button data-settings-tab="security"><span data-icon="key"></span>Sicherheit</button>
             <button data-settings-tab="advanced"><span data-icon="process"></span>Erweitert</button>
           </nav>
@@ -958,8 +962,8 @@
                     <button class="secondary-action" data-settings-action="test-mail"><span data-icon="mail"></span>Verbindung testen</button>
                     <button class="secondary-action" data-settings-action="load-outlook"><span data-icon="process"></span>Outlook-Konten laden</button>
                   </div>
-                  <div class="settings-message compact" data-settings="mail-message">SMTP nutzt die eingetragenen Serverdaten. Outlook Classic wird unter Windows mit Microsoft 365 Desktop sowie Outlook 2016/2019/2021 unterstützt; das neue Outlook für Windows wird nicht unterstützt. Unter macOS ist eine Outlook-Version mit AppleScript-Unterstützung erforderlich.</div>
-                  <div class="settings-outlook-note" role="note">
+                  <div class="settings-message compact" data-settings="mail-message">SMTP nutzt die eingetragenen Serverdaten. Outlook Classic wird unter Windows mit Microsoft 365 Desktop sowie Outlook 2016/2019/2021 unterstützt; das neue Outlook für Windows wird nicht unterstützt.</div>
+                  <div class="settings-outlook-note" data-settings-outlook-note role="note">
                     <strong>Wichtig bei Versand über Outlook Classic:</strong>
                     Outlook Classic muss vor dem Verbindungstest und während des gesamten Versands geöffnet, angemeldet und vollständig verbunden sein.
                     Unter Windows werden Microsoft 365 Desktop (Classic) sowie Outlook 2016, 2019 und 2021 unterstützt.
@@ -1005,7 +1009,7 @@
                 </section>
               </article>
 
-              <article class="settings-panel settings-update-panel" data-settings-panel="updates">
+              <article class="settings-panel settings-update-panel" data-settings-panel="updates" data-self-update-only>
                 <div class="update-page-head">
                   <div><h2>Softwareupdate</h2><p>Sicherheits- und Funktionsupdates kontrolliert installieren.</p></div>
                 </div>
@@ -1015,14 +1019,14 @@
                       <div class="update-version-grid">
                         <div class="update-version-item">
                           <span data-icon="info"></span>
-                          <span><small>Installierte Version</small><strong data-update="installed-version">v2.1.0</strong><em data-update="installed-build">Build 2026.09.10.1</em></span>
+                          <span><small>Installierte Version</small><strong data-update="installed-version">—</strong><em data-update="installed-build">Build —</em></span>
                         </div>
                         <div class="update-version-item">
                           <span data-icon="clock"></span>
-                          <span><small>Letzte Prüfung</small><strong data-update="last-checked">Noch nicht geprüft</strong><em data-update="channel">Kanal: Direct</em></span>
+                          <span><small>Letzte Prüfung</small><strong data-update="last-checked">Noch nicht geprüft</strong><em>Kanal: Stabil</em></span>
                         </div>
                       </div>
-                      <div class="settings-toggle-list compact update-auto-check" data-update-direct-only>
+                      <div class="settings-toggle-list compact update-auto-check">
                         <label><span data-icon="process"></span><strong>Automatisch nach Updates suchen<small>Prüft beim Start und danach regelmäßig im Hintergrund.</small></strong><input data-update-pref="auto-check" type="checkbox" checked></label>
                       </div>
                       <div class="update-status-box">
@@ -1035,20 +1039,19 @@
                           <div class="update-progress-track"><i data-update="progress-bar"></i></div>
                         </div>
                       </div>
-                      <div class="update-policy-note" data-update-store-only hidden><span data-icon="checkcircle"></span><p><strong>Updates über Microsoft Store</strong><small>Updates werden über den Microsoft Store bereitgestellt. LohnMail lädt in dieser Version keine eigenen Update-Pakete herunter.</small></p></div>
                     </section>
 
                     <section class="card settings-reference-card">
-                      <div class="update-card-head compact"><div><h2>Release Notes</h2><p data-update="release-version">Installierte Version 2.1.0</p></div></div>
+                      <div class="update-card-head compact"><div><h2>Release Notes</h2><p data-update="release-version">Installierte Version</p></div></div>
                       <div class="update-release-notes" data-update="release-notes"><p>Release Notes werden hier angezeigt, sobald ein Update verfügbar ist.</p></div>
                     </section>
 
-                    <section class="card settings-reference-card update-protection-card" data-update-direct-only>
+                    <section class="card settings-reference-card update-protection-card">
                       <div class="update-policy-note"><span data-icon="key"></span><p><strong>Benutzerdaten bleiben geschützt</strong><small>Nur der Ordner App wird ersetzt. Settings, Unternehmen, Berichte und Lizenzdaten werden nicht durch das Update-Paket überschrieben. Bei einem Fehler wird die vorherige App-Version wiederhergestellt.</small></p></div>
                     </section>
                   </div>
 
-                  <aside class="card settings-reference-card update-flow-card" data-update-direct-only>
+                  <aside class="card settings-reference-card update-flow-card">
                     <div class="update-flow-head"><h2>Ablauf</h2><p>Jeder Schritt wird vor dem Neustart kontrolliert.</p></div>
                     <div class="update-flow-list">
                       <div class="update-flow-step active" data-update-step="check"><span>1</span><p><strong>Update prüfen</strong><small>Manifest, Version und Kanal</small></p></div>
@@ -1081,6 +1084,25 @@
               </article>
 
               <article class="settings-panel" data-settings-panel="advanced">
+                <section class="card diagnostics-card" aria-labelledby="diagnostics-title">
+                  <h2 id="diagnostics-title">Fehlerdiagnose</h2>
+                  <p>Technische Berichte helfen dem Support bei der Fehlersuche. Sie werden Ihrer Lizenz und dem bei der Operation aktiven Unternehmen (ID und Name) zugeordnet.</p>
+                  <label class="diagnostics-consent"><input id="diagnostics-auto" type="checkbox"> Fehlerberichte automatisch senden</label>
+                  <p>Ausgeschaltet: keine automatische Übertragung. Eingeschaltet: neue Fehlerberichte werden im Hintergrund an den LohnMail-Lizenzserver gesendet, bei fehlender Verbindung später erneut. Ausschalten entfernt wartende automatische Übertragungen; bereits gesendete Berichte bleiben beim Support.</p>
+                  <details><summary>Welche Daten werden übertragen?</summary>
+                    <p>Programmversion und Build, Betriebssystem, Zeitpunkt, technischer Fehlercode, Programmmodul und Zeile, Vorgangs-ID und bereinigte Ablaufereignisse sowie Unternehmens-ID und -Name. Lizenzschlüssel und Computer-ID werden zur Zuordnung und Authentifizierung mitübertragen, aber nicht im Diagnosebericht gespeichert.</p>
+                    <p>Keine PDF-/Excel-Dateien, Gehalts- oder Mitarbeiterdaten, Empfängeradressen, E-Mail-Texte, Passwörter, vollständigen Dateipfade oder Datenbankinhalte. Lokale Aufbewahrung: 14 Tage, höchstens 20 MB; Server: 30 Tage. Infrastruktur-Zugriffsprotokolle sind davon getrennt.</p>
+                  </details>
+                  <div class="diagnostics-actions">
+                    <button id="diagnostics-send" type="button">Diagnosebericht jetzt senden…</button>
+                    <button id="diagnostics-export" type="button">Diagnosebericht erstellen (ZIP)…</button>
+                  </div>
+                  <p>Der ZIP-Export enthält die lokal gespeicherten bereinigten Berichte aller Unternehmen (maximal 14 Tage). Beim Erstellen wird nichts übertragen.</p>
+                  <p id="diagnostics-status" role="status" aria-live="polite">Diagnose wird geladen.</p>
+                  <label for="diagnostics-report">Letzte Berichte</label>
+                  <select id="diagnostics-report"><option value="">Noch keine Berichte</option></select>
+                  <button id="diagnostics-details" type="button">Details anzeigen / kopieren</button>
+                </section>
                 <section class="card settings-reference-card">
                   <h2>Erweitert</h2>
                   <div class="settings-shortcut-grid">
@@ -1189,10 +1211,10 @@
                   </div>
                 </div>
                 <div class="product-meta-list">
-                  <div><span data-icon="info"></span><span>Version</span><b data-about="version">v2.1.0 (Build 2026.09.10.1)</b></div>
-                  <div><span data-icon="screen"></span><span>Distribution</span><b data-about="distribution">Direct</b></div>
+                  <div><span data-icon="info"></span><span>Version</span><b data-about="version">—</b></div>
+                  <div><span data-icon="screen"></span><span>Distribution</span><b data-about="distribution">—</b></div>
                   <div><span data-icon="key"></span><span>Edition</span><b class="success-text">Enterprise Edition</b></div>
-                  <div><span data-icon="clock"></span><span>Build Datum</span><b data-about="build-date">10.09.2026</b></div>
+                  <div><span data-icon="clock"></span><span>Build Datum</span><b data-about="build-date">—</b></div>
                   <div><span data-icon="checkcircle"></span><span>Lizenz Status</span><b class="state ready">Aktiv</b></div>
                 </div>
                 <div class="about-actions">
@@ -1209,7 +1231,7 @@
                   <div><span class="tech-icon py">Py</span><strong>Backend</strong><small>Python 3.12</small></div>
                   <div><span class="tech-icon db"><span data-icon="table"></span></span><strong>Datenbank</strong><small>SQLite 3.45.1</small></div>
                   <div><span class="tech-icon pdf"><span data-icon="doc"></span></span><strong>PDF Engine</strong><small>PyPDF2 3.0.1</small></div>
-                  <div><span class="tech-icon mail"><span data-icon="mail"></span></span><strong>E-Mail</strong><small>SMTP / Outlook Classic</small></div>
+                  <div><span class="tech-icon mail"><span data-icon="mail"></span></span><strong>E-Mail</strong><small data-about-mail-engine>SMTP / Outlook Classic</small></div>
                   <div><span class="tech-icon xls">X</span><strong>Excel Engine</strong><small>openpyxl 3.1.5</small></div>
                   <div><span class="tech-icon qt">UI</span><strong>Desktop WebView</strong><small>WebView2 / WKWebView</small></div>
                   <div><span class="tech-icon build"><span data-icon="process"></span></span><strong>Build System</strong><small>PyInstaller 6.16+</small></div>
@@ -1536,7 +1558,7 @@
       <footer class="footer">
         <span data-dashboard="footer-license"><span data-icon="key"></span> Lizenz: Aktiv</span>
         <span data-dashboard="footer-mail"><span data-icon="mail"></span> SMTP: Online</span>
-        <span data-dashboard="footer-outlook"><span data-icon="screen"></span> Outlook Classic: Verbunden</span>
+        <span data-dashboard="footer-outlook" data-outlook-only><span data-icon="screen"></span> Outlook Classic: Verbunden</span>
         <span data-dashboard="footer-mode"><span data-icon="desktop"></span> Modus: Lokal</span>
         <strong data-dashboard="footer-system"><span class="status-dot small"></span>System bereit</strong>
       </footer>
@@ -1544,6 +1566,7 @@
   </div>
 
   <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
-  <script src="app.js?v=release-ui-20260902-001"></script>
+  <script src="diagnostics.js?v=preflight-errors-20261018-001"></script>
+  <script src="app.js?v=shipping-preflight-20261018-002"></script>
 </body>
 </html>

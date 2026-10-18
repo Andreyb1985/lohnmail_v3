@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import socket
 import shutil
 import sys
 from pathlib import Path
@@ -23,6 +24,8 @@ from ui_web.version import APP_VERSION
 ROOT = Path(__file__).resolve().parent
 HTML_PATH = ROOT / "web" / "index.html"
 WINDOWS_ICON_PATH = HTML_PATH.parent / "assets" / "brand" / "LohnMail.ico"
+# Runtime Dock artwork is deliberately separate from the white bundle ICNS.
+MACOS_DOCK_ICON_PATH = HTML_PATH.parent / "assets" / "brand" / "lohnmail-app-icon-previous.png"
 WINDOWS_ROOT_LAUNCHER_NAME = "LohnMail.RootLauncher.exe"
 SIGNALS = (
     "pageChanged",
@@ -40,7 +43,15 @@ SIGNALS = (
     "massMessageError",
     "updateStateChanged",
     "updateProgress",
+    "diagnosticsStateChanged",
 )
+
+
+def _get_numeric_loopback_port() -> int:
+    """Choose a local port without resolving ``localhost`` through DNS/mDNS."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
 class ApiAdapter:
@@ -52,6 +63,22 @@ class ApiAdapter:
 
     def attach_window(self, window: webview.Window) -> None:
         self._window = window
+
+    def exportDiagnosticReport(self) -> str:
+        if self._window is None:
+            return json.dumps({"ok": False, "message": "Kein Fenster verfügbar."})
+        selected = self._window.create_file_dialog(webview.FileDialog.SAVE,
+            save_filename="LohnMail-Diagnose.zip", file_types=("ZIP (*.zip)",))
+        if not selected:
+            return json.dumps({"ok": False, "message": "Export abgebrochen."})
+        path = Path(selected[0] if isinstance(selected, (list, tuple)) else selected)
+        if path.suffix.lower() != ".zip":
+            return json.dumps({"ok": False, "message": "Bitte einen Dateinamen mit .zip wählen."})
+        try:
+            self._bridge._diagnostics.export(path)
+            return json.dumps({"ok": True, "message": "Bereinigter Diagnosebericht gespeichert."})
+        except OSError:
+            return json.dumps({"ok": False, "message": "Bericht konnte nicht gespeichert werden. Schreibrechte prüfen."})
 
     def _processing_payload_after_selection(self) -> str:
         settings = load_settings()
@@ -276,15 +303,35 @@ def _set_runtime_app_identity() -> None:
         except Exception:
             pass
     elif sys.platform == "darwin":
-        try:
-            import AppKit
+        # pywebview creates the NSApplication instance during webview.start().
+        # The actual Dock icon is applied in the start callback below, after
+        # that initialization has completed.
+        return
 
-            icon_path = HTML_PATH.parent / "assets" / "brand" / "LohnMail.icns"
-            icon = AppKit.NSImage.alloc().initWithContentsOfFile_(str(icon_path))
-            if icon is not None:
-                AppKit.NSApplication.sharedApplication().setApplicationIconImage_(icon)
-        except Exception:
-            pass
+
+def _set_macos_dock_icon() -> None:
+    """Use transparent artwork in the running app's Dock tile.
+
+    This must run from pywebview's start callback.  Initialising AppKit before
+    pywebview has created its application context can make the Cocoa backend
+    unstable. This runtime-only override does not modify the white bundle ICNS
+    used by Finder and the application launcher. It applies to both source
+    runs and frozen macOS builds.
+    """
+    if sys.platform != "darwin":
+        return
+    try:
+        import AppKit
+
+        icon_path = MACOS_DOCK_ICON_PATH
+        if not icon_path.is_file():
+            return
+        icon = AppKit.NSImage.alloc().initWithContentsOfFile_(str(icon_path))
+        if icon is not None:
+            AppKit.NSApplication.sharedApplication().setApplicationIconImage_(icon)
+    except Exception:
+        # The bundled ICNS remains the fallback if AppKit is unavailable.
+        pass
 
 
 def _install_windows_root_launcher() -> None:
@@ -409,11 +456,14 @@ def run() -> None:
         height=900,
         min_size=(1180, 760),
         background_color="#f5f8fb",
+        http_port=_get_numeric_loopback_port(),
     )
     api.attach_window(window)
     _forward_signals(window, bridge)
+    bridge._diagnostics.start()
 
     def on_closing() -> None:
+        bridge._diagnostics.close()
         try:
             bridge._persist_workflow_session()
             bridge.installUpdateOnExit()
@@ -424,7 +474,7 @@ def run() -> None:
     window.events.before_show += lambda: _configure_windows_window(window)
     window.events.shown += lambda: _configure_windows_window(window)
     window.events.loaded += lambda: _configure_windows_window(window)
-    webview.start(debug=False)
+    webview.start(_set_macos_dock_icon, debug=False)
 
 
 if __name__ == "__main__":

@@ -45,6 +45,12 @@ The direct build embeds `direct` and keeps the existing update service.
 Store staging generates shell images from the approved transparent artwork via
 `build-msix-assets.py`. The old base PNGs in `msix/assets` are not copied.
 Target sizes 16–256 include default, unplated and lightunplated variants;
+all 62 PNG resources and both manifest background declarations are transparent.
+The source artwork and EXE ICO are checksum-pinned to the user-approved TEST v2.
+The separate `dist/store/store-listing/Lohn-mail-Store-300x300.png` must be
+uploaded in Partner Center to replace any older custom listing icon; publishing
+the MSIX alone does not replace that uploaded artwork. The unpacked package,
+PRI mappings, embedded ICO and listing pixels are validated before build success.
 scale variants and all candidates are indexed by MakePRI. The build fails if
 any target/theme candidate is missing in its detailed PRI dump.
 The EXE ICO and macOS artwork are unchanged. CI checks the actual unpacked

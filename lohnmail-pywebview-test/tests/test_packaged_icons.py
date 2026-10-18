@@ -16,9 +16,11 @@ def load(name):
     return module
 
 
-@pytest.mark.parametrize("corruption", [None, "image", "mapping", "manifest", "exe"])
+@pytest.mark.parametrize("corruption", [None, "image", "plate", "mapping", "duplicate", "manifest", "splash", "exe", "ico", "listing"])
 def test_packaged_icon_validator_rejects_corruption(tmp_path, corruption):
-    load("build-msix-assets").generate(tmp_path / "Assets")
+    generator = load("build-msix-assets")
+    generator.generate(tmp_path / "Assets")
+    listing = generator.generate_listing(tmp_path / "listing")
     icon = tmp_path / "web/assets/brand/LohnMail.ico"
     icon.parent.mkdir(parents=True)
     shutil.copy2(ROOT / "web/assets/brand/LohnMail.ico", icon)
@@ -26,7 +28,8 @@ def test_packaged_icon_validator_rejects_corruption(tmp_path, corruption):
     (tmp_path / "LohnMail.exe").write_bytes(b"SYNTHETIC" + icon.read_bytes())
     (tmp_path / "AppxManifest.xml").write_text(
         '<Package xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10">'
-        '<uap:VisualElements BackgroundColor="#F5F8FB"/></Package>', encoding="utf-8")
+        '<uap:VisualElements BackgroundColor="transparent">'
+        '<uap:SplashScreen BackgroundColor="transparent"/></uap:VisualElements></Package>', encoding="utf-8")
     pri = ET.Element("PriInfo")
     resource = ET.SubElement(pri, "NamedResource", name="Square44x44Logo.png")
     for path in (tmp_path / "Assets").glob("*targetsize-*.png"):
@@ -40,6 +43,24 @@ def test_packaged_icon_validator_rejects_corruption(tmp_path, corruption):
         ET.SubElement(candidate, "Value").text = "Assets/" + path.name
     if corruption == "image":
         Image.new("RGBA", (16,16), "blue").save(tmp_path / "Assets/Square44x44Logo.targetsize-16.png")
+    elif corruption == "plate":
+        path = tmp_path / "Assets/Square44x44Logo.targetsize-32_altform-unplated.png"
+        with Image.open(path) as source:
+            plate = Image.new("RGBA", source.size, "white")
+            plate.alpha_composite(source)
+            plate.putpixel((0, 0), (0, 0, 0, 0))
+            plate.save(path)
+    elif corruption == "duplicate":
+        import copy
+        resource.append(copy.deepcopy(resource.find("Candidate")))
+    elif corruption == "splash":
+        manifest = tmp_path / "AppxManifest.xml"
+        manifest.write_text(manifest.read_text().replace('SplashScreen BackgroundColor="transparent"',
+                                                       'SplashScreen BackgroundColor="white"'))
+    elif corruption == "ico":
+        icon.write_bytes(b"UNAPPROVED")
+    elif corruption == "listing":
+        Image.new("RGBA", (300, 300), "white").save(listing)
     elif corruption == "mapping":
         resource.find("./Candidate/Value").text = "Assets/wrong.png"
     elif corruption == "manifest":
@@ -51,9 +72,12 @@ def test_packaged_icon_validator_rejects_corruption(tmp_path, corruption):
     verifier = load("verify-icons")
     if corruption:
         with pytest.raises(ValueError):
-            verifier.verify(tmp_path, dump)
+            verifier.verify(tmp_path, dump, listing)
     else:
-        result = verifier.verify(tmp_path, dump)
+        result = verifier.verify(tmp_path, dump, listing)
         assert result["pri_target_mappings"] == 42
         assert result["embedded_ico_sizes"] == 9
+        assert result["transparent_pngs"] == 62
+        assert result["light_plated"] == 0
+        assert result["store_listing_verified"]
         assert not result["shell_visual_verified"]

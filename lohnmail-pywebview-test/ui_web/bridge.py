@@ -34,6 +34,7 @@ from core.config import (
 )
 from core.distribution import distribution_label, get_distribution_channel, is_store_build
 from core.license_manager import LicenseManager
+from core.diagnostics import Diagnostics, record_progress
 from ui_web.report_history import ReportHistoryStore
 from ui_web.updater import UpdateService
 from ui_web.version import APP_BUILD, APP_VERSION
@@ -55,6 +56,38 @@ def _store_update_state() -> dict:
         "available_build": "",
         "release_notes": [],
         "message": "Updates werden über den Microsoft Store bereitgestellt.",
+    }
+
+
+OUTLOOK_SUPPORTED = sys.platform == "win32"
+
+
+def _self_updates_supported(
+    platform: str | None = None,
+    frozen: bool | None = None,
+) -> bool:
+    """Store packages use their Store; direct builds retain the desktop updater."""
+    runtime_platform = sys.platform if platform is None else platform
+    runtime_frozen = bool(getattr(sys, "frozen", False)) if frozen is None else bool(frozen)
+    return not is_store_build() and not (runtime_platform == "darwin" and runtime_frozen)
+
+
+SELF_UPDATES_SUPPORTED = _self_updates_supported()
+
+
+def _app_store_update_state() -> dict:
+    if is_store_build():
+        return _store_update_state()
+    return {
+        "ok": False,
+        "supported": False,
+        "auto_check": False,
+        "install_on_exit": False,
+        "install_supported": False,
+        "status": "disabled",
+        "installed_version": APP_VERSION,
+        "installed_build": APP_BUILD,
+        "message": "Updates werden über den Mac App Store bereitgestellt.",
     }
 
 
@@ -235,6 +268,7 @@ class WebBridge(QObject):
     massMessageError = Signal(str)
     updateStateChanged = Signal(str)
     updateProgress = Signal(str)
+    diagnosticsStateChanged = Signal(str)
 
     REPORT_FILES = {
         "audit": "audit_check.xlsx",
@@ -270,7 +304,9 @@ class WebBridge(QObject):
         self._mass_message_preview = self._empty_mass_message_preview()
         self._mass_message_attachments: list[Path] = []
         self._license_manager = LicenseManager(load_settings())
-        self._update_service = None if is_store_build() else UpdateService()
+        self._diagnostics = Diagnostics(SETTINGS_DIR / "diagnostics", version=APP_VERSION,
+            build=APP_BUILD, platform=sys.platform, credentials=self._diagnostic_credentials)
+        self._update_service = UpdateService() if SELF_UPDATES_SUPPORTED else None
         if self._update_service is not None:
             self._update_service.recover_interrupted_state()
         self._update_thread: threading.Thread | None = None
@@ -281,10 +317,54 @@ class WebBridge(QObject):
             shutil.copy2(legacy_history, self.REPORT_HISTORY_PATH)
         try:
             self._report_history: ReportHistoryStore | None = ReportHistoryStore(self.REPORT_HISTORY_PATH)
-        except Exception:
+        except Exception as exc:
             self._report_history = None
+            from core.diagnostics import record_handled_error
+            with self._diagnostics.operation("startup"):
+                record_handled_error(exc)
         self._workflow_sessions = WorkflowSessionStore(HISTORY_DIR / "workflow_sessions.json")
         self._restore_workflow_session(load_settings())
+
+    def _diagnostic_credentials(self):
+        state = self._license_manager.load_state()
+        if state.get("status") == "device_mismatch":
+            return {}
+        return {"key": state.get("license_key", ""), "machine_id": state.get("machine_id", ""),
+            "url": self._license_manager.server_url}
+
+    def _diagnosed_job(self, stage, context_settings, job, **kwargs):
+        company_id = str(context_settings.get("selected_company_id", ""))
+        try:
+            with self._diagnostics.operation(stage, company_id,
+                    get_company_name(context_settings, company_id) if company_id else ""):
+                return job(**kwargs)
+        finally:
+            try:
+                self.diagnosticsStateChanged.emit(self.getDiagnosticsState())
+            except Exception:
+                pass  # A closed UI must not change the result of a mail operation.
+
+    @Slot(result=str)
+    def getDiagnosticsState(self) -> str:
+        return json.dumps(self._diagnostics.state(), ensure_ascii=False)
+
+    @Slot(result=str)
+    def createSupportReport(self) -> str:
+        settings = load_settings()
+        company = str(settings.get("selected_company_id", ""))
+        self._diagnostics.snapshot(company, get_company_name(settings, company) if company else "")
+        return self.getDiagnosticsState()
+
+    @Slot(bool, result=str)
+    def setDiagnosticsConsent(self, enabled: bool) -> str:
+        self._diagnostics.consent(enabled is True)
+        return self.getDiagnosticsState()
+
+    @Slot(str, result=str)
+    def sendDiagnosticReport(self, report_id: str) -> str:
+        queued = self._diagnostics.queue_manual(str(report_id))
+        return json.dumps({"ok": queued, "message": "Bericht zur Übermittlung freigegeben." if queued else
+            "Bericht ist nicht mehr verfügbar oder wurde bereits übermittelt."}, ensure_ascii=False)
 
     @Slot(str)
     def navigate(self, page: str) -> None:
@@ -325,13 +405,13 @@ class WebBridge(QObject):
     @Slot(result=str)
     def getUpdateState(self) -> str:
         if self._update_service is None:
-            return json.dumps(_store_update_state(), ensure_ascii=False)
+            return json.dumps(_app_store_update_state(), ensure_ascii=False)
         return json.dumps(self._update_service.current_state(), ensure_ascii=False)
 
     @Slot(str, result=str)
     def setUpdatePreferences(self, payload: str) -> str:
         if self._update_service is None:
-            return json.dumps(_store_update_state(), ensure_ascii=False)
+            return json.dumps(_app_store_update_state(), ensure_ascii=False)
         try:
             data = json.loads(payload or "{}")
             if not isinstance(data, dict):
@@ -350,29 +430,28 @@ class WebBridge(QObject):
     @Slot(result=str)
     def checkForUpdates(self) -> str:
         if self._update_service is None:
-            return json.dumps(_store_update_state(), ensure_ascii=False)
+            return json.dumps(_app_store_update_state(), ensure_ascii=False)
         return json.dumps(self._start_update_action("check"), ensure_ascii=False)
 
     @Slot(result=str)
     def downloadUpdate(self) -> str:
         if self._update_service is None:
-            return json.dumps(_store_update_state(), ensure_ascii=False)
+            return json.dumps(_app_store_update_state(), ensure_ascii=False)
         return json.dumps(self._start_update_action("download"), ensure_ascii=False)
 
     @Slot(result=str)
     def installUpdateOnExit(self) -> str:
         if self._update_service is None:
-            return json.dumps(_store_update_state(), ensure_ascii=False)
+            return json.dumps(_app_store_update_state(), ensure_ascii=False)
         state = self._update_service.install_on_exit()
         return json.dumps(state, ensure_ascii=False)
 
     def _start_update_action(self, action: str) -> dict:
         if self._update_service is None:
-            return _store_update_state()
+            return _app_store_update_state()
         self._update_service.begin(action)
-        state = self._update_service.check() if action == "check" else self._update_service.download(
-            progress=self._on_update_progress
-        )
+        state = self._diagnosed_job("update", {}, self._update_service.check) if action == "check" else self._diagnosed_job(
+            "update", {}, self._update_service.download, progress=self._on_update_progress)
         self._on_update_finished(state)
         return {"ok": True, **state}
 
@@ -394,6 +473,8 @@ class WebBridge(QObject):
         license_active = bool(license_payload.get("active"))
 
         mail_mode = str(effective_settings.get("mail_mode", "smtp") or "smtp").strip().lower()
+        if not OUTLOOK_SUPPORTED:
+            mail_mode = "smtp"
         smtp_server = str(smtp_settings.get("server", "") or "").strip()
         smtp_from = str(smtp_settings.get("from_email", "") or smtp_settings.get("username", "") or "").strip()
         mail_configured = bool(smtp_from and (mail_mode == "outlook" or smtp_server))
@@ -534,7 +615,7 @@ class WebBridge(QObject):
     @Slot(result=str)
     def checkLicense(self) -> str:
         manager = LicenseManager(load_settings())
-        state = manager.refresh(force=True, start_trial=True)
+        state = self._diagnosed_job("license", {}, manager.refresh, force=True, start_trial=True)
         return json.dumps(self._license_payload(load_settings(), state=state), ensure_ascii=False)
 
     @Slot(result=str)
@@ -798,6 +879,15 @@ class WebBridge(QObject):
 
     @Slot(result=str)
     def getOutlookAccounts(self) -> str:
+        if not OUTLOOK_SUPPORTED:
+            return json.dumps(
+                {
+                    "ok": False,
+                    "message": "Outlook Classic ist in dieser macOS-Testversion deaktiviert. Bitte verwenden Sie SMTP.",
+                    "accounts": [],
+                },
+                ensure_ascii=False,
+            )
         try:
             from core.mailer import list_outlook_accounts
 
@@ -810,16 +900,19 @@ class WebBridge(QObject):
         try:
             settings = load_settings()
             mail_mode = str(settings.get("mail_mode", "smtp") or "smtp").strip().lower()
+            if not OUTLOOK_SUPPORTED:
+                mail_mode = "smtp"
             smtp_settings = settings.get("smtp", {})
             if mail_mode == "outlook":
                 from core.mailer import test_outlook_connection
 
-                test_outlook_connection(str(smtp_settings.get("from_email", "") or "").strip())
+                self._diagnosed_job("mail_test", settings, test_outlook_connection,
+                    from_email=str(smtp_settings.get("from_email", "") or "").strip())
                 return json.dumps({"ok": True, "message": "Outlook-Classic-Verbindung ist bereit."}, ensure_ascii=False)
 
             from core.mailer import test_smtp_connection
 
-            test_smtp_connection(smtp_settings)
+            self._diagnosed_job("mail_test", settings, test_smtp_connection, smtp_settings=smtp_settings)
             return json.dumps({"ok": True, "message": "SMTP-Verbindung ist bereit."}, ensure_ascii=False)
         except Exception as exc:
             return json.dumps({"ok": False, "message": str(exc)}, ensure_ascii=False)
@@ -833,12 +926,13 @@ class WebBridge(QObject):
             if mail_mode == "outlook":
                 from core.mailer import test_outlook_connection
 
-                test_outlook_connection(str(smtp_settings.get("from_email", "") or "").strip())
+                self._diagnosed_job("mail_test", settings, test_outlook_connection,
+                    from_email=str(smtp_settings.get("from_email", "") or "").strip())
                 return json.dumps({"ok": True, "message": "Mandant-Outlook-Classic-Verbindung ist bereit."}, ensure_ascii=False)
 
             from core.mailer import test_smtp_connection
 
-            test_smtp_connection(smtp_settings)
+            self._diagnosed_job("mail_test", settings, test_smtp_connection, smtp_settings=smtp_settings)
             return json.dumps({"ok": True, "message": "Mandant-SMTP-Verbindung ist bereit."}, ensure_ascii=False)
         except Exception as exc:
             return json.dumps({"ok": False, "message": str(exc)}, ensure_ascii=False)
@@ -910,7 +1004,7 @@ class WebBridge(QObject):
             try:
                 from core.jobs import run_mass_message_job
 
-                result = run_mass_message_job(
+                result = self._diagnosed_job("mass_message", request_settings, run_mass_message_job,
                     settings=request_settings,
                     company_id=preview["company_id"],
                     subject_template=subject,
@@ -948,7 +1042,8 @@ class WebBridge(QObject):
             licensee = settings.setdefault("licensee", {})
 
             if "mail_mode" in data:
-                settings["mail_mode"] = str(data.get("mail_mode") or "smtp").strip() or "smtp"
+                requested_mail_mode = str(data.get("mail_mode") or "smtp").strip() or "smtp"
+                settings["mail_mode"] = requested_mail_mode if OUTLOOK_SUPPORTED else "smtp"
 
             smtp_data = data.get("smtp") if isinstance(data.get("smtp"), dict) else {}
             for key in ["server", "security", "username", "from_email", "from_name"]:
@@ -1394,7 +1489,7 @@ class WebBridge(QObject):
             try:
                 from core.jobs import run_main_job
 
-                result = run_main_job(
+                result = self._diagnosed_job("check", settings, run_main_job,
                     mode="check",
                     pdf_input=pdf_input,
                     excel_path=excel_path,
@@ -1417,6 +1512,22 @@ class WebBridge(QObject):
     @Slot(str, result=str)
     def startSelectedShippingDryRun(self, selected_json: str) -> str:
         return self._start_shipping(dry_run=True, selected_persnr=self._parse_selected_persnr(selected_json))
+
+    @Slot(str, result=str)
+    def prepareSelectedShippingSend(self, selected_json: str) -> str:
+        """Check transport before preparing mail; the ordinary dry-run stays offline."""
+        return self._start_shipping(dry_run=True,
+            selected_persnr=self._parse_selected_persnr(selected_json), check_connection=True)
+
+    def _check_shipping_connection(self, settings: dict) -> None:
+        from core.mailer import test_outlook_connection, test_smtp_connection
+
+        smtp = settings.get("smtp", {})
+        if str(settings.get("mail_mode", "smtp") or "smtp").strip().lower() == "outlook":
+            self._diagnosed_job("mail_test", settings, test_outlook_connection,
+                from_email=str(smtp.get("from_email", "") or "").strip())
+        else:
+            self._diagnosed_job("mail_test", settings, test_smtp_connection, smtp_settings=smtp)
 
     @Slot(result=str)
     def startShippingSend(self) -> str:
@@ -1448,6 +1559,15 @@ class WebBridge(QObject):
                 raise ValueError("Die Versandvorbereitung gehört nicht zum aktiven Mandanten. Bitte Versand erneut vorbereiten.")
             if not self._shipping_status.get("finished") or self._shipping_status.get("dry_run") is not True or not rows:
                 raise ValueError("Bitte zuerst Versand vorbereiten.")
+            if selected_persnr is not None:
+                prepared_ids = {str(row.get("PersNr", "")) for row in rows if row.get("Status") == "Dry-Run"}
+                sent_ids = {str(row.get("PersNr", "")) for row in rows if row.get("Status") == "Gesendet"}
+                if selected_persnr - sent_ids - prepared_ids:
+                    raise ValueError("Auswahl geändert. Bitte Versand erneut vorbereiten.")
+            # Only the explicitly prepared, not already delivered subset may
+            # appear in confirmation. An empty selection never means "all".
+            rows = [row for row in rows if row.get("Status") == "Dry-Run"
+                    and (selected_persnr is None or str(row.get("PersNr", "")) in selected_persnr)]
 
             from core.message_templates import (
                 append_pdf_password_notice,
@@ -1513,7 +1633,8 @@ class WebBridge(QObject):
         except Exception as exc:
             return json.dumps({"ok": False, "message": str(exc)}, ensure_ascii=False)
 
-    def _start_shipping(self, dry_run: bool, selected_persnr: set[str] | None = None) -> str:
+    def _start_shipping(self, dry_run: bool, selected_persnr: set[str] | None = None,
+                        check_connection: bool = False) -> str:
         if self._shipping_running or self._processing_running or self._mass_message_running:
             return self._emit_shipping_payload(self._settings_with_company_mail(load_settings()))
 
@@ -1595,9 +1716,37 @@ class WebBridge(QObject):
             }
             return self._emit_shipping_payload(settings)
 
+        confirmed = self._confirmed_shipping_rows(settings)
+        sent_ids = {str(row.get("PersNr", "")) for row in confirmed}
         if dry_run:
-            self._shipping_rows = []
-            self._shipping_source_rows = []
+            if selected_persnr is not None:
+                selected_persnr = selected_persnr - sent_ids
+            elif sent_ids:
+                selected_persnr = {str(row.get("persnr", "")) for row in self._shipping_rows_from_validation()
+                                  if row.get("email") and row.get("status") in {"Bereit", "Dry-Run", "Fehler"}} - sent_ids
+        else:
+            prepared_ids = {str(row.get("PersNr", "")) for row in self._shipping_source_rows
+                            if row.get("Status") == "Dry-Run"} - sent_ids
+            requested = prepared_ids if selected_persnr is None else selected_persnr - sent_ids
+            if requested - prepared_ids:
+                self._shipping_status["message"] = "Auswahl geändert. Bitte Versand erneut vorbereiten."
+                return self._emit_shipping_payload(settings)
+            selected_persnr = requested
+        if selected_persnr == set():
+            self._shipping_status["message"] = "Keine nicht gesendeten Einträge ausgewählt. Bereits gesendete E-Mails werden nicht erneut gesendet."
+            return self._emit_shipping_payload(settings)
+
+        previous_status = dict(self._shipping_status)
+        preparation_preserved = bool(
+            self._shipping_company_id == company_id
+            and self._shipping_input_signature == current_shipping_signature
+            and previous_status.get("finished") and previous_status.get("dry_run") is True
+        )
+        preflight = check_connection or not dry_run
+        if not self._shipping_inputs_match(settings):
+            # Do not expose another company's old preparation during preflight.
+            self._shipping_source_rows = confirmed
+            self._shipping_rows = [self._shipping_row(row) for row in confirmed]
         self._shipping_company_id = company_id
         self._shipping_input_signature = current_shipping_signature
         self._shipping_running = True
@@ -1606,18 +1755,57 @@ class WebBridge(QObject):
             "operation_id": uuid.uuid4().hex,
             "running": True,
             "can_send": False,
-            "current_step": "Versand wird vorbereitet" if dry_run else "E-Mails werden gesendet",
-            "progress": 8,
+            "current_step": "Verbindung wird geprüft…" if preflight else "Versand wird vorbereitet",
+            "checking_connection": preflight,
+            "progress": 0 if preflight else 8,
             "dry_run": dry_run,
-            "message": "Dry-Run läuft. Anhänge und Versandbericht werden vorbereitet." if dry_run else "E-Mail Versand läuft. Verbindung und Anhänge werden geprüft.",
+            "message": "Verbindung wird geprüft… Es werden noch keine E-Mails gesendet." if preflight else "Dry-Run läuft. Anhänge und Versandbericht werden vorbereitet.",
         }
         self._emit_shipping_payload(settings)
 
         def run_shipping() -> None:
+            if preflight:
+                try:
+                    self._check_shipping_connection(settings)
+                except Exception as exc:
+                    from core.diagnostics import safe_failure
+                    from core.mailer import user_facing_mail_error
+                    self._shipping_running = False
+                    self._shipping_status = {
+                        **(previous_status if preparation_preserved else self._idle_shipping_status()),
+                        "operation_id": self._shipping_status["operation_id"],
+                        "running": False, "checking_connection": False,
+                        "connection_failed": True, "failed": True, "can_send": True,
+                        "dry_run": True, "progress": 0, "errors": 1,
+                        "code": safe_failure(exc)["code"], "stage": "mail_test",
+                        "current_step": "Verbindungsprüfung fehlgeschlagen",
+                        "message": "Verbindungsprüfung fehlgeschlagen: " + user_facing_mail_error(exc),
+                    }
+                    self.shippingError.emit(self._emit_shipping_payload(settings))
+                    return
+                # Settings/inputs changed while the network check was pending:
+                # never prepare or send using the now-stale snapshot.
+                if self._settings_with_company_mail(load_settings()) != settings:
+                    self._shipping_running = False
+                    self._shipping_status = {**self._idle_shipping_status(), "failed": True,
+                        "operation_id": self._shipping_status["operation_id"],
+                        "message": "Einstellungen wurden geändert. Bitte den Versand erneut starten."}
+                    self.shippingError.emit(self._emit_shipping_payload(settings))
+                    return
             try:
                 from core.jobs import run_main_job
 
-                result = run_main_job(
+                if dry_run:
+                    # Only discard stale preparation after transport succeeds.
+                    # Existing PDFs on disk are never deleted by a failed check.
+                    self._shipping_source_rows = confirmed
+                    self._shipping_rows = [self._shipping_row(row) for row in confirmed]
+                self._shipping_status.update(checking_connection=False,
+                    current_step="Versand wird vorbereitet" if dry_run else "E-Mails werden gesendet",
+                    message="Verbindung ist bereit. Versand wird vorbereitet." if preflight else "Versand wird vorbereitet.",
+                    progress=8)
+                self._emit_shipping_payload(settings)
+                result = self._diagnosed_job("prepare" if dry_run else "send", settings, run_main_job,
                     mode="send",
                     pdf_input=pdf_input,
                     excel_path=excel_path,
@@ -1714,10 +1902,16 @@ class WebBridge(QObject):
             and self._validation_company_id == company_id
             and self._validation_input_signature == current_input_signature
         )
-        rows = self._shipping_rows if shipping_matches else []
-        if not rows and validation_matches:
-            rows = self._shipping_rows_from_validation()
-        status = {**(self._shipping_status if shipping_matches else self._idle_shipping_status())}
+        rows = self._shipping_rows_from_validation() if validation_matches else []
+        overrides = self._shipping_rows if shipping_matches else [
+            self._shipping_row(row) for row in self._confirmed_shipping_rows(settings)
+        ]
+        by_id = {str(row.get("persnr", "")): row for row in rows}
+        by_id.update({str(row.get("persnr", "")): row for row in overrides})
+        rows = list(by_id.values())
+        # A settings edit cannot make an active worker disappear from the UI.
+        running_same_inputs = self._shipping_running and self._shipping_inputs_match(settings)
+        status = {**(self._shipping_status if shipping_matches or running_same_inputs else self._idle_shipping_status())}
         inputs_ready = self._inputs_ready(settings)
         validation_ready = bool(validation_matches and self._validation_state.get("ready"))
         ready_count = sum(1 for row in rows if row.get("status") in {"Bereit", "Dry-Run", "Gesendet"})
@@ -1954,6 +2148,18 @@ class WebBridge(QObject):
         ).hexdigest()
         return (*self._input_signature(effective), digest)
 
+    def _shipping_inputs_match(self, settings: dict) -> bool:
+        return bool(
+            self._shipping_company_id == self._active_company_id(settings)
+            and self._shipping_input_signature
+            and self._shipping_input_signature[:4] == self._input_signature(settings)
+        )
+
+    def _confirmed_shipping_rows(self, settings: dict) -> list[dict]:
+        if not self._shipping_inputs_match(settings):
+            return []
+        return [dict(row) for row in self._shipping_source_rows if row.get("Status") == "Gesendet"]
+
     @staticmethod
     def _company_mail_settings(company: dict | None) -> dict:
         if not isinstance(company, dict):
@@ -1969,6 +2175,8 @@ class WebBridge(QObject):
 
     def _settings_with_company_mail(self, settings: dict) -> dict:
         effective = deepcopy(settings)
+        if not OUTLOOK_SUPPORTED:
+            effective["mail_mode"] = "smtp"
         company = self._selected_company(effective)
         mail_settings = self._company_mail_settings(company)
         if mail_settings.get("scope") != "custom":
@@ -2051,7 +2259,7 @@ class WebBridge(QObject):
 
     def _license_payload(self, settings: dict, refresh: bool = False, state: dict | None = None) -> dict:
         manager = LicenseManager(settings)
-        state = state or (manager.refresh(force=False, start_trial=True) if refresh else manager.load_state())
+        state = state or (self._diagnosed_job("license", {}, manager.refresh, force=False, start_trial=True) if refresh else manager.load_state())
         licensee = self._licensee_settings(settings, state)
         raw_key = str(state.get("license_key", "") or settings.get("license", {}).get("key", "") or "").strip()
         related_trial_key = str(state.get("related_trial_license_key", "") or "").strip()
@@ -2277,7 +2485,11 @@ class WebBridge(QObject):
         ui_settings = settings.get("ui", {})
         notification_settings = settings.get("notifications", {})
         return {
-            "mail_mode": str(settings.get("mail_mode", "smtp") or "smtp"),
+            "mail_mode": (
+                str(settings.get("mail_mode", "smtp") or "smtp")
+                if OUTLOOK_SUPPORTED
+                else "smtp"
+            ),
             "smtp": {
                 "server": str(smtp.get("server", "") or ""),
                 "port": int(smtp.get("port", 587) or 587),
@@ -2323,7 +2535,8 @@ class WebBridge(QObject):
             "company": self._company_payload(settings),
             "licensee": self._licensee_settings(settings),
             "license": self._license_payload(settings),
-            "outlook_supported": True,
+            "outlook_supported": OUTLOOK_SUPPORTED,
+            "updates_supported": SELF_UPDATES_SUPPORTED,
         }
 
     def _mass_message_payload(self, settings: dict) -> dict:
@@ -2443,6 +2656,7 @@ class WebBridge(QObject):
 
     @Slot(str)
     def _on_processing_progress(self, message: str) -> None:
+        record_progress()
         settings = load_settings()
         if (
             self._processing_company_id != self._active_company_id(settings)
@@ -2457,11 +2671,9 @@ class WebBridge(QObject):
 
     @Slot(object)
     def _on_shipping_progress(self, message: object) -> None:
+        record_progress()
         settings = self._settings_with_company_mail(load_settings())
-        if (
-            self._shipping_company_id != self._active_company_id(settings)
-            or self._shipping_input_signature != self._shipping_signature(settings)
-        ):
+        if not self._shipping_inputs_match(settings):
             return
         if isinstance(message, dict) and message.get("kind") == "shipping_progress":
             live_progress = dict(message)
@@ -2473,6 +2685,16 @@ class WebBridge(QObject):
             self._shipping_status["message"] = operation
             self._shipping_status["progress"] = min(99, round((current / total) * 100)) if total else 0
             self._shipping_status["current_step"] = "Versand wird vorbereitet" if phase == "preparing" else "E-Mails werden gesendet"
+            if (phase == "sending" and self._shipping_status.get("dry_run") is False
+                    and live_progress.get("status") == "complete"):
+                # Persist each confirmed handoff before the batch/report writer
+                # finishes, so a later exception or restart cannot resend it.
+                persnr = str(live_progress.get("persnr", ""))
+                for row in self._shipping_source_rows:
+                    if str(row.get("PersNr", "")) == persnr:
+                        row["Status"] = "Gesendet"
+                        row["Error"] = ""
+                self._shipping_rows = [self._shipping_row(row) for row in self._shipping_source_rows]
         else:
             self._shipping_status["message"] = str(message or "")
         serialized = self._emit_shipping_payload(settings)
@@ -2480,6 +2702,7 @@ class WebBridge(QObject):
 
     @Slot(str)
     def _on_mass_message_progress(self, message: str) -> None:
+        record_progress()
         self._mass_message_status["message"] = message
         self._mass_message_status["progress"] = min(92, int(self._mass_message_status.get("progress", 8)) + 8)
         self._mass_message_status["current_step"] = "Nachricht wird gesendet"
@@ -2543,10 +2766,7 @@ class WebBridge(QObject):
     @Slot(dict)
     def _on_shipping_finished(self, result: dict) -> None:
         settings = self._settings_with_company_mail(load_settings())
-        if (
-            self._shipping_company_id != self._active_company_id(settings)
-            or self._shipping_input_signature != self._shipping_signature(settings)
-        ):
+        if not self._shipping_inputs_match(settings):
             self._shipping_running = False
             self._shipping_status = self._idle_shipping_status()
             self._shipping_input_signature = None
@@ -2572,8 +2792,13 @@ class WebBridge(QObject):
             }
             result = {**result, "summary": summary}
         self._shipping_running = False
-        self._shipping_source_rows = [row for row in table_rows if isinstance(row, dict)]
-        self._shipping_rows = [self._shipping_row(row) for row in table_rows if isinstance(row, dict)]
+        combined = {str(row.get("PersNr", "")): row for row in table_rows if isinstance(row, dict)}
+        for row in self._confirmed_shipping_rows(settings):
+            persnr = str(row.get("PersNr", ""))
+            if combined.get(persnr, {}).get("Status") != "Gesendet":
+                combined[persnr] = row
+        self._shipping_source_rows = list(combined.values())
+        self._shipping_rows = [self._shipping_row(row) for row in self._shipping_source_rows]
         failed_count = int(summary.get("failed_count", 0) or 0)
         if dry_run:
             current_step = "Dry-Run abgeschlossen"
@@ -2666,10 +2891,7 @@ class WebBridge(QObject):
     @Slot(str)
     def _on_shipping_error(self, message: str) -> None:
         settings = self._settings_with_company_mail(load_settings())
-        if (
-            self._shipping_company_id != self._active_company_id(settings)
-            or self._shipping_input_signature != self._shipping_signature(settings)
-        ):
+        if not self._shipping_inputs_match(settings):
             self._shipping_running = False
             self._shipping_status = self._idle_shipping_status()
             self._shipping_input_signature = None

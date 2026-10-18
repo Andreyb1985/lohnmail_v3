@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import json
+import socket
 import tempfile
 import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from pywebview_app import ApiAdapter
+from pywebview_app import ApiAdapter, _get_numeric_loopback_port
 from core.config import build_default_settings
-from ui_web.bridge import WebBridge
+from ui_web.bridge import WebBridge, _self_updates_supported
 from ui_web.bridge_compat import Signal
 from ui_web.workflow_sessions import WorkflowSessionStore
 
@@ -90,6 +91,24 @@ class PywebviewAdapterTests(unittest.TestCase):
             self.assertNotIn("PySide6", text, relative)
             self.assertNotIn("QFileDialog", text, relative)
             self.assertNotIn("QThread", text, relative)
+
+    def test_local_http_port_uses_numeric_ipv4_loopback(self) -> None:
+        mock_socket = unittest.mock.MagicMock()
+        mock_socket.__enter__.return_value = mock_socket
+        mock_socket.getsockname.return_value = ("127.0.0.1", 43123)
+
+        with patch("pywebview_app.socket.socket", return_value=mock_socket) as socket_factory:
+            port = _get_numeric_loopback_port()
+
+        socket_factory.assert_called_once_with(socket.AF_INET, socket.SOCK_STREAM)
+        mock_socket.bind.assert_called_once_with(("127.0.0.1", 0))
+        self.assertEqual(port, 43123)
+
+    def test_self_updates_are_disabled_only_for_packaged_macos(self) -> None:
+        self.assertFalse(_self_updates_supported(platform="darwin", frozen=True))
+        self.assertTrue(_self_updates_supported(platform="darwin", frozen=False))
+        self.assertTrue(_self_updates_supported(platform="win32", frozen=True))
+        self.assertTrue(_self_updates_supported(platform="win32", frozen=False))
 
     def test_all_webbridge_public_methods_are_exposed(self) -> None:
         missing = [
@@ -334,7 +353,7 @@ class PywebviewAdapterTests(unittest.TestCase):
                 "ui_web.bridge.LicenseManager.require_action", return_value=(True, {})
             ), patch("ui_web.bridge.company_output_dir", return_value=root / "output"), patch(
                 "core.jobs.run_main_job", side_effect=job
-            ):
+            ), patch("core.mailer.test_smtp_connection"):
                 bridge = WebBridge()
                 bridge._register_result_reports = lambda *_args, **_kwargs: None
                 bridge._validation_company_id = "test"
@@ -342,7 +361,14 @@ class PywebviewAdapterTests(unittest.TestCase):
                 bridge._validation_state = {"ready": True}
                 bridge.shippingStateChanged.connect(lambda payload: events.append(json.loads(payload)))
                 ids = []
-                for dry in (True, False, True):
+                for index, dry in enumerate((True, False, True)):
+                    if index == 2:
+                        # A new validated workflow may start after completion;
+                        # retrying the same workflow must not resend its mail.
+                        bridge._reset_validation_and_shipping()
+                        bridge._validation_company_id = "test"
+                        bridge._validation_input_signature = bridge._input_signature(settings)
+                        bridge._validation_state = {"ready": True}
                     events.clear()
                     bridge._start_shipping(dry_run=dry)
                     bridge.worker_thread.join(3)
@@ -562,7 +588,9 @@ class PywebviewAdapterTests(unittest.TestCase):
                 "label": "Lohnbuchhaltung <payroll@example.de>",
             }
         ]
-        with patch("ui_web.bridge.load_settings", side_effect=lambda: settings), patch(
+        with patch("ui_web.bridge.OUTLOOK_SUPPORTED", True), patch(
+            "ui_web.bridge.load_settings", side_effect=lambda: settings
+        ), patch(
             "core.mailer.list_outlook_accounts", return_value=accounts
         ):
             bridge = WebBridge()
@@ -570,6 +598,21 @@ class PywebviewAdapterTests(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["accounts"], accounts)
+
+    def test_outlook_is_disabled_in_macos_test_build(self) -> None:
+        settings = build_default_settings()
+        settings["mail_mode"] = "outlook"
+        with patch("ui_web.bridge.OUTLOOK_SUPPORTED", False), patch(
+            "ui_web.bridge.load_settings", side_effect=lambda: settings
+        ):
+            bridge = WebBridge()
+            state = json.loads(bridge.getSettingsState())
+            accounts = json.loads(bridge.getOutlookAccounts())
+
+        self.assertEqual(state["mail_mode"], "smtp")
+        self.assertFalse(state["outlook_supported"])
+        self.assertFalse(accounts["ok"])
+        self.assertEqual(accounts["accounts"], [])
 
 
 if __name__ == "__main__":

@@ -43,7 +43,7 @@ def test_mass_message_ui_contains_attachment_selection_and_confirmation():
 
 def test_shipping_preparation_uses_selected_rows():
     script = (Path(__file__).resolve().parents[1] / "web" / "app.js").read_text(encoding="utf-8")
-    assert "bridge.startSelectedShippingDryRun(JSON.stringify(selected)" in script
+    assert "bridge.prepareSelectedShippingSend(JSON.stringify(selected)" in script
     assert "Bitte mindestens einen sendbaren Mitarbeiter für die Versandvorbereitung auswählen." in script
 
 

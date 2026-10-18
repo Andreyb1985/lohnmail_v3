@@ -1329,6 +1329,9 @@ def action_send(
                 _p(progress_cb, f"Gesendet via {mail_mode}: {persnr} -> {email}")
         except Exception as exc:
             from .mailer import user_facing_mail_error
+            from .diagnostics import record_handled_error
+
+            record_handled_error(exc)
 
             row["Status"] = "Fehler"
             row["Error"] = user_facing_mail_error(exc)

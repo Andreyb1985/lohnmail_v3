@@ -64,7 +64,9 @@ foreach ($RequiredPath in @($StandaloneRoot, $TemplatePath, $AssetsGenerator)) {
 if (Test-Path $BuildRoot) { Remove-Item -Recurse -Force $BuildRoot }
 New-Item -ItemType Directory -Force $StageRoot, $ValidationRoot, $OutputRoot | Out-Null
 Copy-Item -Recurse -Force "$StandaloneRoot\*" $StageRoot
-& ".venv\Scripts\python.exe" $AssetsGenerator --output (Join-Path $StageRoot "Assets")
+$ListingRoot = Join-Path $OutputRoot 'store-listing'
+$ListingIcon = Join-Path $ListingRoot 'Lohn-mail-Store-300x300.png'
+& ".venv\Scripts\python.exe" $AssetsGenerator --output (Join-Path $StageRoot "Assets") --listing-output $ListingRoot
 if ($LASTEXITCODE -ne 0) { throw "MSIX icon generation failed." }
 
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -160,7 +162,7 @@ if (-not $ValidatedManifestText.Contains($ExpectedDescription)) {
     throw "Die UTF-8-Zeichen im MSIX-Manifest sind ungueltig."
 }
 
-& ".venv\Scripts\python.exe" (Join-Path $PSScriptRoot 'verify-icons.py') --root $ValidationRoot --pri-dump $PriDump --report (Join-Path $OutputRoot 'icon-verification.json')
+& ".venv\Scripts\python.exe" (Join-Path $PSScriptRoot 'verify-icons.py') --root $ValidationRoot --pri-dump $PriDump --listing-icon $ListingIcon --report (Join-Path $OutputRoot 'icon-verification.json')
 if ($LASTEXITCODE -ne 0) { throw 'Packaged icon contract failed.' }
 
 $Hash = (Get-FileHash $OutputMsix -Algorithm SHA256).Hash.ToLowerInvariant()

@@ -53,8 +53,8 @@
   var latestUpdateState = {
     supported: true,
     distribution: 'direct',
-    installed_version: '2.1.0',
-    installed_build: '2026.09.10.1',
+    installed_version: '',
+    installed_build: '',
     last_checked_at: '',
     auto_check: true,
     status: 'idle',
@@ -81,6 +81,29 @@
   var helpShowAll = false;
   var appDialogConfirm = null;
   var appDialogCancel = null;
+  var smtpOnlyHelpPrepared = false;
+  function applyPlatformCapabilities(outlookSupported, updatesSupported){
+    document.querySelectorAll('[data-self-update-only]').forEach(function(node){
+      node.hidden = !updatesSupported;
+    });
+    document.querySelectorAll('[data-outlook-only], [data-settings-action="load-outlook"], [data-settings-outlook-from], [data-settings-outlook-note]').forEach(function(node){
+      node.hidden = !outlookSupported;
+    });
+    var modeField = document.querySelector('[data-settings-field="mail_mode"]');
+    if (modeField) {
+      var outlookOption = modeField.querySelector('option[value="outlook"]');
+      if (outlookOption) outlookOption.hidden = !outlookSupported;
+      if (!outlookSupported) modeField.value = 'smtp';
+      modeField.disabled = !outlookSupported;
+    }
+    if (!outlookSupported) {
+      var message = 'Der Versand erfolgt in dieser macOS-Version ausschließlich über SMTP.';
+      if (!updatesSupported) message += ' Updates werden automatisch über den Mac App Store bereitgestellt.';
+      setSettingsMailMessage(message);
+      prepareSmtpOnlyHelpContent();
+    }
+    setText('[data-about-mail-engine]', outlookSupported ? 'SMTP / Outlook Classic' : 'SMTP');
+  }
   function applyBrandLogoVariant(){
     var source = 'assets/brand/lohnmail-app-icon-previous.png';
     document.documentElement.setAttribute('data-logo-variant', 'production');
@@ -98,7 +121,7 @@
     }
   }
   function normalizeUpdateStatus(value){
-    var allowed = ['idle', 'checking', 'current', 'available', 'downloading', 'ready', 'installing', 'required', 'error', 'disabled'];
+    var allowed = ['idle', 'checking', 'current', 'available', 'downloading', 'ready', 'installing', 'required', 'error'];
     var normalized = String(value || 'idle').toLowerCase();
     return allowed.indexOf(normalized) === -1 ? 'idle' : normalized;
   }
@@ -187,7 +210,6 @@
       errorTitle = 'Zugriff auf den Update-Server nicht möglich';
     }
     var copies = {
-      disabled: ['Microsoft Store', message || 'Updates werden über den Microsoft Store bereitgestellt.'],
       idle: ['Noch nicht geprüft', 'Starten Sie die manuelle Update-Prüfung.'],
       checking: ['Suche läuft...', 'Der Update-Dienst wird nach einer neueren Version gefragt.'],
       current: ['LohnMail ist aktuell', 'Für diese Installation ist kein neueres Update verfügbar.'],
@@ -261,12 +283,10 @@
   function renderUpdateSettings(){
     var state = latestUpdateState;
     var status = normalizeUpdateStatus(state.status);
-    var storeMode = state.distribution === 'store' || state.supported === false;
     var copy = updateStatusCopy(state);
-    setText('[data-update="installed-version"]', 'v' + String(state.installed_version || '2.1.0').replace(/^v/i, ''));
+    setText('[data-update="installed-version"]', state.installed_version ? 'v' + String(state.installed_version).replace(/^v/i, '') : '—');
     setText('[data-update="installed-build"]', 'Build ' + (state.installed_build || '-'));
     setText('[data-update="last-checked"]', state.last_checked_at ? formatDateTime(state.last_checked_at) : 'Noch nicht geprüft');
-    setText('[data-update="channel"]', storeMode ? 'Kanal: Microsoft Store' : 'Kanal: Direct');
     setText('[data-update="status-title"]', copy[0]);
     setText('[data-update="status-detail"]', copy[1]);
 
@@ -277,11 +297,8 @@
     }
     var autoCheck = document.querySelector('[data-update-pref="auto-check"]');
     if (autoCheck) autoCheck.checked = state.auto_check !== false;
-    document.querySelectorAll('[data-update-direct-only]').forEach(function(node){ node.hidden = storeMode; });
-    document.querySelectorAll('[data-update-store-only]').forEach(function(node){ node.hidden = !storeMode; });
     var primaryButton = document.querySelector('[data-update-action="primary"], [data-update-primary-action]');
     if (primaryButton) {
-      primaryButton.hidden = storeMode;
       var primaryAction = 'check';
       var primaryLabel = 'Nach Updates suchen';
       if (status === 'available' || status === 'required') {
@@ -333,10 +350,15 @@
       });
       notes.appendChild(list);
     }
-    if (!storeMode) renderUpdateFlow(state);
+    renderUpdateFlow(state);
   }
   function applyUpdateState(payload){
     var next = parseUpdatePayload(payload);
+    if (next.supported === false) {
+      latestUpdateState = Object.assign({}, latestUpdateState, next, {auto_check: false});
+      document.querySelectorAll('[data-self-update-only]').forEach(function(node){ node.hidden = true; });
+      return latestUpdateState;
+    }
     latestUpdateState = Object.assign({}, latestUpdateState, next);
     latestUpdateState.status = normalizeUpdateStatus(latestUpdateState.status);
     if (latestUpdateState.status === 'required' && !updateIsMandatory(latestUpdateState)) {
@@ -513,6 +535,7 @@
   }
   function bridgeReady(bridge){
     window.lohnmailBridge = bridge;
+    if (window.LohnMailDiagnostics) window.LohnMailDiagnostics.attach(bridge);
     bindBridgeSignals();
     loadDashboardState();
     loadCompanyState();
@@ -1794,6 +1817,7 @@
               try {
                 var testResult = JSON.parse(testPayload || '{}');
                 setCompanyMessage(testResult.message || (testResult.ok ? 'Mandant SMTP ist bereit.' : 'Mandant SMTP konnte nicht geprüft werden.'));
+                if (!testResult.ok && window.LohnMailDiagnostics) window.LohnMailDiagnostics.showError(testResult);
               } catch (error) {
                 setCompanyMessage('Mandant SMTP konnte nicht geprüft werden.');
               }
@@ -2221,6 +2245,10 @@
     });
 
     var smtp = state.smtp || {};
+    var outlookSupported = state.outlook_supported !== false;
+    var updatesSupported = state.updates_supported !== false;
+    applyPlatformCapabilities(outlookSupported, updatesSupported);
+    if (!updatesSupported) latestUpdateState.auto_check = false;
     var company = state.company || {};
     var period = state.period || {};
     var ui = state.ui || {};
@@ -2338,6 +2366,7 @@
         try {
           var result = JSON.parse(payload || '{}');
           setSettingsMailMessage(result.message || (result.ok ? 'Mail-Verbindung ist bereit.' : 'Mail-Verbindung fehlgeschlagen.'));
+          if (!result.ok && window.LohnMailDiagnostics) window.LohnMailDiagnostics.showError(Object.assign({}, result, {stage:'mail_test'}));
         } catch (error) {
           setSettingsMailMessage('Mail-Verbindung konnte nicht geprüft werden.');
         }
@@ -2374,6 +2403,10 @@
       return;
     }
     if (action === 'load-outlook') {
+      if (latestSettingsState && latestSettingsState.outlook_supported === false) {
+        setSettingsMailMessage('Outlook Classic ist in dieser macOS-Testversion deaktiviert. Bitte verwenden Sie SMTP.');
+        return;
+      }
       if (!bridge || !bridge.getOutlookAccounts) {
         setSettingsMailMessage('Outlook-Classic-Konten sind im Bridge nicht verfügbar.');
         return;
@@ -2800,11 +2833,12 @@
     {
       id: 'data-security', topic: 'start', category: 'Datenschutz', tag: 'neutral', updated: '13.07.2026',
       title: 'Lokale Datenverarbeitung, Datenschutz und sichere Arbeitsweise',
-      summary: 'Lohnunterlagen werden lokal verarbeitet. Eine externe Übertragung erfolgt nur durch einen ausdrücklich gestarteten E-Mail-Versand; Lizenzdaten werden getrennt davon geprüft.',
+      summary: 'Lohnunterlagen werden lokal verarbeitet und nur nach Versandbestätigung verschickt. Lizenzprüfung und freiwillige technische Diagnose sind davon getrennt.',
       keywords: 'datenschutz lokal cloud tracking sicherheit löschung backup lohndaten',
       sections: [
         {title: 'Was lokal bleibt', bullets: ['Ausgewählte PDF- und Excel-Dateien', 'Prüfergebnisse und erzeugte Berichte', 'Anwendungseinstellungen und Mandantenzuordnungen', 'Versandvorbereitung bis zum aktiv bestätigten Versand']},
         {title: 'Wann Daten übertragen werden', text: ['Lohnunterlagen werden nur übertragen, wenn ein Benutzer den Versand über SMTP oder Outlook Classic final bestätigt. Die Online-Lizenzprüfung enthält keine Lohnunterlagen.']},
+        {title: 'Freiwillige Fehlerdiagnose', text: ['Unter Einstellungen → Erweitert können Sie einen bereinigten technischen Bericht nach Vorschau senden oder automatische Fehlerberichte einschalten. Standardmäßig ist die automatische Übertragung aus. Berichte werden der Lizenz und dem bei der Operation aktiven Unternehmen zugeordnet; Mitarbeiterdaten und Dokumente werden nicht mitgesendet. Lokal werden Berichte höchstens 14 Tage, auf dem Lizenzserver 30 Tage aufbewahrt.']},
         {title: 'Sichere Praxis', bullets: ['Ausgabeordner mit passenden Zugriffsrechten verwenden', 'Nicht benötigte Exporte nach interner Aufbewahrungsregel löschen', 'Vor dem Versand Empfänger und Anhang kontrollieren', 'Keine vollständigen Lohnunterlagen unaufgefordert an den Support senden']},
         {title: 'Sicherung', text: ['Sichern Sie die benötigten Eingabe- und Ergebnisdateien nach den Regeln Ihrer Organisation. LohnMail ersetzt kein zentrales Backup- oder Dokumentenmanagementsystem.']}
       ]
@@ -2840,12 +2874,37 @@
       keywords: 'support email diagnose fernwartung problem ticket',
       sections: [
         {title: 'Kontakt', text: ['E-Mail: support@lohn-mail.de. Beschreiben Sie das Problem sachlich und nennen Sie, auf welcher Seite und nach welcher Aktion es auftritt.']},
+        {title: 'Diagnosebericht', steps: ['Einstellungen → Erweitert → Fehlerdiagnose öffnen.', 'Betroffenen Bericht auswählen und Details prüfen.', 'Diagnosebericht jetzt senden wählen und die Vorschau bestätigen; alternativ einen bereinigten ZIP-Bericht erstellen.', 'Dem Support die angezeigte Berichtsnummer nennen. Automatische Berichte sind optional und standardmäßig ausgeschaltet.']},
         {title: 'Bitte mitsenden', bullets: ['LohnMail-Version aus Über LohnMail', 'Betriebssystem und Python-Version', 'Exakter Wortlaut der Fehlermeldung', 'Zeitpunkt des Fehlers', 'Verwendeter Eingabemodus Ordner oder Gesamt-PDF', 'Ob SMTP oder Outlook Classic verwendet wird']},
         {title: 'Nur wenn erforderlich', bullets: ['Anonymisierter Screenshot ohne personenbezogene Daten', 'Relevanter Ausschnitt aus dem Aktivitätsprotokoll', 'Beispieldatei ausschließlich nach ausdrücklicher Abstimmung und möglichst anonymisiert']},
         {title: 'Nicht unaufgefordert senden', bullets: ['Vollständige Lohnabrechnungen', 'Unverschlüsselte Mitarbeiterlisten', 'SMTP-Passwörter', 'Lizenz- oder Administrationsgeheimnisse'], note: 'Fernsupport wird nur nach Termin gestartet. Sie müssen jede Sitzung aktiv freigeben und können sie jederzeit beenden.'}
       ]
     }
   ];
+  function prepareSmtpOnlyHelpContent(){
+    if (smtpOnlyHelpPrepared) return;
+    smtpOnlyHelpPrepared = true;
+    function smtpOnlyText(value){
+      return String(value)
+        .replace(/SMTP oder Outlook Classic/g, 'SMTP')
+        .replace(/SMTP \/ Outlook Classic/g, 'SMTP')
+        .replace(/über SMTP oder Outlook Classic/g, 'über SMTP')
+        .replace(/Ob SMTP oder Outlook Classic verwendet wird/g, 'Verwendete SMTP-Konfiguration');
+    }
+    helpArticles.forEach(function(article){
+      ['title', 'summary', 'keywords'].forEach(function(key){ article[key] = smtpOnlyText(article[key] || ''); });
+      article.sections = (article.sections || []).filter(function(section){
+        return !/Outlook/i.test(String(section.title || ''));
+      }).map(function(section){
+        Object.keys(section).forEach(function(key){
+          if (Array.isArray(section[key])) section[key] = section[key].map(smtpOnlyText);
+          else if (typeof section[key] === 'string') section[key] = smtpOnlyText(section[key]);
+        });
+        return section;
+      });
+    });
+    renderHelpKnowledge();
+  }
   var helpTopicNames = {
     all: 'Alle Themen', start: 'Erste Schritte', processing: 'Verarbeitung', validation: 'Prüfung',
     shipping: 'Versand', reports: 'Berichte', settings: 'Einstellungen', support: 'Support'
@@ -3014,12 +3073,15 @@
   var aboutLegalContent = {
     privacy: {
       title: 'Datenschutzerklärung',
-      intro: 'LohnMail verarbeitet Lohnunterlagen lokal auf diesem Rechner. Die Anwendung sammelt keine Nutzungsanalyse, überträgt keine Lohnunterlagen an Cloud-Dienste und sendet keine personenbezogenen Daten an den Hersteller.',
+      intro: 'LohnMail verarbeitet Lohnunterlagen lokal auf diesem Rechner. Lizenzprüfung und freiwillige technische Fehlerberichte verwenden den LohnMail-Lizenzserver; Lohnunterlagen werden dabei nicht übertragen.',
       sections: [
         ['Welche Daten verarbeitet werden', 'Verarbeitet werden nur die vom Benutzer ausgewählten PDF-Dateien, Excel-Listen, Ausgabepfade, E-Mail-Adressen und Versandinformationen, die für Prüfung, Berichtserstellung und Versand benötigt werden.'],
         ['Keine automatische Übertragung', 'LohnMail lädt keine Lohnunterlagen, Mitarbeiterdaten oder Prüfberichte automatisch ins Internet hoch. Eine Übertragung erfolgt nur, wenn der Benutzer aktiv einen Versand über SMTP oder Outlook Classic auslöst.'],
         ['Lokale Speicherung', 'Temporäre Dateien, Berichte, Pfade und Anwendungseinstellungen werden lokal gespeichert. Der Benutzer bestimmt den Ausgabeordner und kann erzeugte Dateien außerhalb der Anwendung verwalten oder löschen.'],
-        ['Keine Analyse und kein Tracking', 'Die Anwendung enthält kein Werbe-Tracking, keine Telemetrie und keine automatische Nutzungsstatistik. Zur Lizenzprüfung werden Lizenzschlüssel, Computer-ID, App-Version und technische Verbindungsdaten an den LohnMail-Lizenzserver übertragen. Lohnunterlagen werden dabei nicht übertragen.'],
+        ['Lizenzprüfung', 'Lizenzschlüssel und Computer-ID werden zur Prüfung der Lizenz an den Lizenzserver übertragen. Diese Prüfung ist unabhängig von freiwilligen Diagnoseberichten.'],
+        ['Freiwillige Fehlerdiagnose', 'Automatische Fehlerberichte sind standardmäßig ausgeschaltet und können unter Einstellungen → Erweitert aktiviert oder deaktiviert werden. Einzelne Berichte können nach Vorschau und Bestätigung manuell gesendet werden. Übertragen werden Version/Build, Betriebssystem, Fehlercode, Zeitpunkt, Programmmodule und Zeilennummern, Vorgangs-ID und bereinigte Ablaufereignisse sowie ID und Name des betroffenen Unternehmens. Die Lizenz und Computer-ID dienen der Authentifizierung und Zuordnung. Keine Dokumente, Mitarbeiter-/Gehaltsdaten, Empfängeradressen, E-Mail-Texte, Passwörter, vollständigen Pfade oder Datenbankinhalte werden mitgesendet.'],
+        ['Aufbewahrung und Widerruf', 'Der lokale Diagnosejournal ist auf 14 Tage und 20 MB begrenzt. Berichte auf dem Lizenzserver werden nach 30 Tagen gelöscht. Ausschalten stoppt neue automatische Übertragungen und entfernt wartende automatische Übertragungen. Bereits laufende Übertragungen können nicht zurückgerufen werden. Für die Löschung bereits übermittelter Berichte kontaktieren Sie support@lohn-mail.de mit der Berichtsnummer. Technische Infrastruktur-Zugriffsprotokolle sind von diesen Berichten getrennt.'],
+        ['Keine Werbung oder Nutzungsanalyse', 'Die Diagnose dient der Fehlersuche, nicht Werbung oder Nutzungsstatistiken.'],
         ['Verantwortlichkeit', 'Der Betreiber der Installation bleibt für die Auswahl, Pflege und rechtmäßige Nutzung der Lohn- und Mitarbeiterdaten verantwortlich.']
       ]
     },
@@ -3286,8 +3348,8 @@
   function applyDashboardState(state){
     if (!state) return;
     latestDashboardState = state;
-    setText('[data-app-version]', 'v' + String(state.version || '2.1.0') + ' Enterprise Edition');
-    setText('[data-about="version"]', 'v' + String(state.version || '2.1.0') + ' (Build ' + String(state.build || '-') + ')');
+    setText('[data-app-version]', 'v' + String(state.version || '-') + ' Enterprise Edition');
+    setText('[data-about="version"]', 'v' + String(state.version || '-') + ' (Build ' + String(state.build || '-') + ')');
     setText('[data-about="build-date"]', String(state.build || '-').replace(/^(\d{4})\.(\d{2})\.(\d{2}).*$/, '$3.$2.$1'));
     setText('[data-about="distribution"]', state.distribution_label || (state.distribution === 'store' ? 'Microsoft Store' : 'Direct'));
     var metrics = state.metrics || {};
@@ -3826,7 +3888,7 @@
       var phase = String(live.phase || (realSendRunning ? 'sending' : 'preparing'));
       if (shippingLiveProgress.phase === 'idle' || shippingLiveProgress.companyId !== companyId ||
           shippingLiveProgress.operationId !== String(status.operation_id || '')) {
-        resetShippingLiveProgress(companyId, realSendRunning ? selectedShippingRows() : shippingRows(), phase);
+        resetShippingLiveProgress(companyId, selectedShippingRows(), phase);
       }
       shippingLiveProgress.operationId = String(status.operation_id || '');
       shippingLiveProgress.phase = phase;
@@ -3848,17 +3910,24 @@
         };
       }
     } else if (anyTerminal) {
+      // Metrics cover the whole workflow, including earlier successful sends.
+      // The progress panel describes only this preparation/delivery attempt.
+      var terminalCounts = status.failed && live.total !== undefined ? live : status;
+      var prepared = Number(terminalCounts.prepared !== undefined ? terminalCounts.prepared : metrics.exported) || 0;
+      var sent = Number(terminalCounts.sent !== undefined ? terminalCounts.sent : metrics.sent) || 0;
+      var errors = Number(terminalCounts.errors !== undefined ? terminalCounts.errors : metrics.errors) || 0;
       if (shippingLiveProgress.phase === 'idle' || shippingLiveProgress.companyId !== companyId ||
           shippingLiveProgress.operationId !== String(status.operation_id || '')) {
-        var terminalTotal = Number(status.dry_run !== false ? metrics.exported : metrics.sent) + Number(metrics.errors || 0);
+        var terminalTotal = live.total !== undefined ? Number(live.total) : ((status.dry_run !== false ? prepared : sent) + errors);
         resetShippingLiveProgress(companyId, [], status.dry_run !== false ? 'preparing' : 'sending');
         shippingLiveProgress.total = terminalTotal;
+        shippingLiveProgress.completed = Number(live.current || 0);
       }
       shippingLiveProgress.operationId = String(status.operation_id || '');
       shippingLiveProgress.dryRun = status.dry_run !== false;
-      shippingLiveProgress.prepared = Math.max(shippingLiveProgress.prepared, Number(metrics.exported || 0));
-      shippingLiveProgress.sent = Math.max(shippingLiveProgress.sent, Number(metrics.sent || 0));
-      shippingLiveProgress.errors = Math.max(shippingLiveProgress.errors, Number(metrics.errors || 0));
+      shippingLiveProgress.prepared = Math.max(shippingLiveProgress.prepared, prepared);
+      shippingLiveProgress.sent = Math.max(shippingLiveProgress.sent, sent);
+      shippingLiveProgress.errors = Math.max(shippingLiveProgress.errors, errors);
       if (!status.failed) shippingLiveProgress.completed = shippingLiveProgress.total || ((shippingLiveProgress.dryRun ? shippingLiveProgress.prepared : shippingLiveProgress.sent) + shippingLiveProgress.errors);
       shippingLiveProgress.total = Math.max(shippingLiveProgress.total, shippingLiveProgress.completed);
       shippingLiveProgress.phase = status.failed ? 'failed' : 'complete';
@@ -3891,6 +3960,11 @@
     } else if (shippingLiveProgress.phase === 'failed') {
       title = 'Versand abgebrochen';
       current = String(status && status.message || 'Der Versand konnte nicht abgeschlossen werden.');
+    }
+    if (status && status.checking_connection) {
+      title = 'Verbindung wird geprüft…';
+      current = status.message || title;
+      percent = 0;
     }
     setText('[data-shipping-live="title"]', title);
     var successful = shippingLiveProgress.dryRun ? shippingLiveProgress.prepared : shippingLiveProgress.sent;
@@ -3931,7 +4005,7 @@
   }
   function shippingRowSelectable(row){
     var status = row && row.status;
-    return !!(row && row.persnr && row.email && (status === 'Bereit' || status === 'Dry-Run'));
+    return !!(row && row.persnr && row.email && (status === 'Bereit' || status === 'Dry-Run' || status === 'Fehler'));
   }
   function syncShippingSelectionDefaults(){
     var rows = (latestShippingState && latestShippingState.rows) || [];
@@ -3960,8 +4034,10 @@
   function shippingPreparationReady(){
     var status = (latestShippingState && latestShippingState.status) || {};
     var metrics = (latestShippingState && latestShippingState.metrics) || {};
+    var selected = selectedShippingRows();
     return !shippingSelectionDirty &&
-      !!status.finished &&
+      !!status.finished && (!status.failed || status.connection_failed === true) && status.dry_run === true &&
+      selected.length > 0 && selected.every(function(row){ return row.status === 'Dry-Run'; }) &&
       Number(metrics.exported || 0) > 0 &&
       Number(metrics.ready || 0) > Number(metrics.sent || 0);
   }
@@ -3986,12 +4062,16 @@
         ? 'Versand läuft · ' + shippingLiveProgress.completed + '/' + shippingLiveProgress.total
         : 'Vorbereitung läuft...';
       title = realSendRunning ? 'E-Mails werden versendet' : 'Versand wird vorbereitet';
+      if (status.checking_connection) {
+        text = 'Verbindung wird geprüft…';
+        title = 'Mail-Verbindung prüfen, bevor PDF-Dateien vorbereitet werden';
+      }
     } else if (realSendFailed) {
-      text = 'Versand fehlgeschlagen';
-      title = status.message || 'E-Mail Versand konnte nicht abgeschlossen werden';
+      text = 'Vorbereitung wiederholen';
+      title = 'Nicht gesendete Einträge mit den aktuellen Einstellungen erneut vorbereiten';
     } else if (realSendFinished) {
-      text = 'Versand abgeschlossen';
-      title = status.message || 'E-Mail Versand wurde abgeschlossen';
+      text = selected ? 'Vorbereitung wiederholen' : 'Versand abgeschlossen';
+      title = selected ? 'Nur nicht gesendete Einträge erneut vorbereiten' : (status.message || 'E-Mail Versand wurde abgeschlossen');
     } else if (!selected) {
       title = 'Bitte mindestens einen sendbaren Mitarbeiter auswählen';
     } else if (!status.can_send) {
@@ -4000,7 +4080,9 @@
 
     button.setAttribute('data-shipping-action', action);
     button.classList.toggle('danger-send', prepared || realSendRunning);
-    button.disabled = !!status.running || realSendFinished || realSendFailed || !status.can_send || selected < 1;
+    button.disabled = !!status.running || !status.can_send || selected < 1;
+    var offlineButton = document.querySelector('[data-shipping-offline]');
+    if (offlineButton) offlineButton.disabled = button.disabled;
     button.classList.toggle('soft-disabled', button.disabled);
     button.title = title;
     if (label) label.textContent = text;
@@ -4020,7 +4102,8 @@
     if (shippingSelectionDirty) {
       setText('[data-shipping="selection-message"]', 'Auswahl geändert. Versand erneut vorbereiten.');
     } else if (status.running) {
-      setText('[data-shipping="selection-message"]', status.dry_run === false ? 'E-Mails werden versendet.' : 'Anhänge und Empfänger werden geprüft.');
+      setText('[data-shipping="selection-message"]', status.checking_connection
+        ? 'Verbindung wird geprüft…' : (status.dry_run === false ? 'E-Mails werden versendet.' : 'Anhänge und Empfänger werden geprüft.'));
     } else if (status.finished && status.dry_run === false) {
       setText('[data-shipping="selection-message"]', status.message || 'E-Mail Versand wurde abgeschlossen.');
     } else if (shippingPreparationReady()) {
@@ -4320,9 +4403,10 @@
       }
     });
   }
-  function startShippingDryRun(){
+  function startShippingDryRun(offline){
+    if (latestShippingState && latestShippingState.status && latestShippingState.status.running) return;
     var bridge = window.lohnmailBridge;
-    if (!bridge || !bridge.startSelectedShippingDryRun) {
+    if (!bridge || (offline ? !bridge.startSelectedShippingDryRun : !bridge.prepareSelectedShippingSend)) {
       setShippingMessage('Bridge ist noch nicht bereit.');
       return;
     }
@@ -4333,7 +4417,16 @@
     }
     shippingTerminalState = null;
     resetShippingLiveProgress(activeCompanyId(), selectedShippingRows());
-    bridge.startSelectedShippingDryRun(JSON.stringify(selected), function(payload){
+    // Disable immediately, before the asynchronous backend response arrives.
+    if (latestShippingState) latestShippingState.status = Object.assign({}, latestShippingState.status,
+      {running:true, checking_connection:!offline, dry_run:true});
+    updateShippingPrimaryAction();
+    setShippingMessage(offline ? 'PDF-Dateien werden ohne E-Mail-Versand vorbereitet…' : 'Verbindung wird geprüft…');
+    if (offline) {
+      bridge.startSelectedShippingDryRun(JSON.stringify(selected), function(payload){ consumeShippingPayload(payload); });
+      return;
+    }
+    bridge.prepareSelectedShippingSend(JSON.stringify(selected), function(payload){
       consumeShippingPayload(payload);
     });
   }
@@ -4444,6 +4537,10 @@
     setText('[data-shipping="selection-message"]', message);
   }
   function runShippingAction(action){
+    if (action === 'prepare-offline') {
+      startShippingDryRun(true);
+      return;
+    }
     if (action === 'start-dry-run') {
       startShippingDryRun();
       return;
@@ -4818,6 +4915,13 @@
     if (normalized === 'Über LohnMail') setInfoBanner('Produktinformationen geöffnet.', true);
     updateCompactWorkflowTrackers(normalized);
   }
+  window.lohnmailOpenMailSettings = function(){
+    // Do not reload an already open settings form: it may contain unsaved edits.
+    if (!document.querySelector('.page-settings.active')) setPage('Einstellungen');
+    activateSettingsTab('email');
+    var tab = document.querySelector('[data-settings-tab="email"]');
+    if (tab) tab.focus({preventScroll:true});
+  };
   window.addEventListener('DOMContentLoaded', function(){
     applyBrandLogoVariant();
     renderHelpKnowledge();

@@ -276,6 +276,8 @@ class UpdateService:
             }
             return self._save_changes(changes)
         except Exception as exc:
+            from core.diagnostics import record_handled_error
+            record_handled_error(exc)
             return self._save_changes({
                 "last_checked_at": checked_at,
                 "status": "error",
@@ -328,6 +330,8 @@ class UpdateService:
                 "message": "Update wurde geprüft und ist zur Installation bereit.",
             })
         except Exception as exc:
+            from core.diagnostics import record_handled_error
+            record_handled_error(exc)
             partial.unlink(missing_ok=True)
             return self._save_changes({
                 "status": "error",

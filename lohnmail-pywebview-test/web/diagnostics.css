@@ -1,0 +1,25 @@
+.diagnostics-card { padding:24px; margin-bottom:20px; min-width:0; }
+.diagnostics-card p, .diagnostics-dialog p { line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; }
+.diagnostics-card p { color:#53657a; margin:12px 0; }
+.diagnostics-consent { display:flex; align-items:flex-start; gap:12px; font-weight:700; margin:20px 0 12px; }
+.diagnostics-consent input { width:20px; height:20px; flex-shrink:0; accent-color:#00845a; }
+.diagnostics-actions { display:flex; flex-wrap:wrap; gap:12px; margin:20px 0 12px; }
+.diagnostics-card button, .diagnostics-dialog button { padding:12px 18px; background:#fff; color:#15342d; border:1px solid #c8d8d1; border-radius:10px; cursor:pointer; font:inherit; font-weight:650; white-space:normal; }
+.diagnostics-card button:disabled, .diagnostics-dialog button:disabled { opacity:.55; cursor:default; }
+.diagnostics-card select { display:block; width:100%; min-width:0; max-width:100%; padding:12px; margin:8px 0 12px; }
+.diagnostics-card summary, .diagnostics-dialog summary { cursor:pointer; padding:10px 0; }
+.diagnostics-dialog { width:min(780px, calc(100vw - 48px)); max-height:calc(100vh - 48px); box-sizing:border-box; overflow:auto; border:1px solid #d9e4ed; border-radius:20px; padding:28px; color:#142337; background:#fff; box-shadow:0 24px 80px #102c4050; }
+.diagnostics-dialog::backdrop { background:#13253670; backdrop-filter:blur(3px); }
+.diagnostics-dialog h2 { font-size:24px; margin:0 0 16px; }
+.diagnostics-dialog pre { white-space:pre-wrap; overflow-wrap:anywhere; background:#f3f7fa; padding:16px; border-radius:10px; max-height:280px; overflow:auto; font-size:13px; }
+.diagnostics-dialog .diagnostics-primary { background:#00845a; color:white; border-color:#00845a; }
+.diagnostics-dialog .diagnostics-actions { position:sticky; bottom:-28px; background:white; padding:12px 0; }
+.diagnostics-error-dialog { width:min(540px, calc(100vw - 32px)); padding:24px; }
+.diagnostics-error-dialog p { color:#53657a; margin:12px 0 0; }
+.diagnostics-error-dialog h2 { font-size:20px; line-height:1.4; margin:0; overflow-wrap:anywhere; }
+.diagnostics-error-dialog .diagnostics-actions { position:static; justify-content:flex-end; margin:20px 0 0; padding:0; }
+.diagnostics-error-dialog button { min-width:88px; }
+.diagnostics-dialog button:focus-visible, .diagnostics-card button:focus-visible { outline:3px solid #19b77b; outline-offset:2px; }
+.diagnostics-notice { position:fixed; right:20px; bottom:54px; z-index:90; max-width:calc(100vw - 40px); padding:14px 18px; white-space:normal; border:1px solid #e4aa69; border-radius:12px; color:#8a4309; background:#fff8ed; box-shadow:0 8px 24px #1b293422; font:inherit; cursor:pointer; }
+/* Error explanations must wrap; paths/table cells retain their compact layout. */
+.settings-message, .processing-message, .shipping-message, .mass-message-status { white-space:pre-wrap; overflow-wrap:anywhere; text-overflow:clip; height:auto; min-height:40px; }
