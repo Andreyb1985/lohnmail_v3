@@ -58,6 +58,12 @@ class LicenseManager:
     responses and asks the license server to create/check/activate licenses.
     """
 
+    def __new__(cls, settings=None):
+        from .appstore_license import is_app_store, AppStoreLicenseManager
+        if cls is LicenseManager and is_app_store():
+            return AppStoreLicenseManager(settings)
+        return super().__new__(cls)
+
     def __init__(self, settings: dict | None = None) -> None:
         self.settings = settings or {}
         self.server_url = str(

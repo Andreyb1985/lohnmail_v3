@@ -68,7 +68,8 @@ def write_audit_check_xlsx(
     ws2 = wb.create_sheet("Ungültige Dateien")
     ws2.append(["PersNr", "Dateiname", "Grund"])
     for p in invalid_files:
-        ws2.append(["", p.name, "Ungültiger Dateiname"])
+        if not any(row.get("file") == p.name for row in (invalid_pdf_details or [])):
+            ws2.append(["", p.name, "Ungültiger Dateiname"])
     for row in (invalid_pdf_details or []):
         ws2.append([
             row.get("persnr", ""),

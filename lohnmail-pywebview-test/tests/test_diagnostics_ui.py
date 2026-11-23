@@ -67,7 +67,33 @@ const all=(tag,n=dialog())=>n.children.flatMap(c=>[...(c.tag===tag?[c]:[]),...al
  await api.showError('invalid JSON');assert.equal(all('h2')[0].textContent,'Vorgang fehlgeschlagen');
  state={...state,reports:[]};await api.showError({message:'no report available'});
  assert.equal(all('h2')[0].textContent,'Vorgang fehlgeschlagen');assert.equal(sent,0);
+ assert.equal(nodes.get('diagnostics-empty').hidden,false);
+ assert.equal(nodes.get('diagnostics-report-controls').hidden,true);
+ assert.equal(nodes.get('diagnostics-details').disabled,true);
+ assert.equal(nodes.get('diagnostics-pending').textContent,'Keine ausstehenden Berichte');
+ assert.equal(nodes.get('diagnostics-status').hidden,true);
  state={...state,reports:[{report,sent:false}]};await api.showError({});
+ assert.equal(nodes.get('diagnostics-empty').hidden,true);
+ assert.equal(nodes.get('diagnostics-report-controls').hidden,false);
+ assert.equal(nodes.get('diagnostics-report-picker').hidden,true);
+ assert.equal(nodes.get('diagnostics-report-title').textContent,'E-Mail-Server nicht gefunden');
+ assert.ok(nodes.get('diagnostics-report-meta').textContent.includes('Lokal gespeichert'));
+ const second={...report,id:'second-report',code:'SMTP_AUTH',company:{id:'two',name:'<b>Example Two</b>'}};
+ state={...state,pending:1,reports:[{report,sent:false},{report:second,sent:true}]};await api.showError({});
+ assert.equal(nodes.get('diagnostics-report-picker').hidden,false);
+ nodes.get('diagnostics-report').value=second.id;nodes.get('diagnostics-report').onchange();
+ assert.equal(nodes.get('diagnostics-report-title').textContent,'Anmeldung am Mailserver fehlgeschlagen');
+ assert.ok(nodes.get('diagnostics-report-meta').textContent.includes('<b>Example Two</b>'));
+ assert.equal(nodes.get('diagnostics-report-meta').children.length,0); // text, never HTML
+ await api.showError({}); // polling must preserve selection and selected report details
+ assert.equal(nodes.get('diagnostics-report').value,second.id);
+ assert.ok(nodes.get('diagnostics-report-meta').textContent.includes('Übermittelt'));
+ assert.equal(nodes.get('diagnostics-pending').textContent,'Ausstehende Berichte: 1');
+ state={...state,automatic:true,storage_ok:false,last_send:'Übertragung fehlgeschlagen'};await api.showError({});
+ assert.ok(nodes.get('diagnostics-consent-caption').textContent.includes('Eingeschaltet'));
+ assert.ok(nodes.get('diagnostics-status').textContent.includes('nicht gespeichert'));
+ assert.equal(nodes.get('diagnostics-status').hidden,false);
+ state={...state,automatic:false,storage_ok:true,pending:0,last_send:'',reports:[{report,sent:false}]};await api.showError({});
  // Detailed metadata is still accessible only by explicit settings action.
  nodes.get('diagnostics-details').onclick();
  assert.equal(all('h2')[0].textContent,'Fehlerdetails');
@@ -85,3 +111,21 @@ const all=(tag,n=dialog())=>n.children.flatMap(c=>[...(c.tag===tag?[c]:[]),...al
 '''
     result = subprocess.run([node, "-e", script, str(source)], capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_diagnostics_settings_reuse_product_controls_and_keep_disclosures():
+    root = Path(__file__).resolve().parents[1] / "web"
+    html = (root / "index.html").read_text()
+    css = (root / "diagnostics.css").read_text()
+    assert 'class="settings-toggle-list diagnostics-consent"' in html
+    assert 'id="diagnostics-auto" type="checkbox" role="switch"' in html
+    assert 'class="primary" id="diagnostics-send"' in html
+    assert 'class="secondary-action" id="diagnostics-export"' in html
+    assert 'id="diagnostics-empty" hidden' in html
+    assert 'id="diagnostics-report-controls" hidden' in html
+    assert '<details class="diagnostics-privacy">' in html
+    for disclosure in ["Lizenzschlüssel und Computer-ID", "aller Unternehmen", "Server: 30 Tage",
+                       "standardmäßig ausgeschaltet", "nicht zurückgerufen"]:
+        assert disclosure in html
+    assert '.diagnostics-card [hidden]' in css
+    assert '.diagnostics-card button, .diagnostics-dialog button' not in css

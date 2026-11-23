@@ -7,6 +7,7 @@ from .excel_io import load_email_records
 from .message_templates import build_mail_context, format_message_template
 from .orchestrator import action_check, action_send
 from .storage_paths import validate_output_location
+from .pdf_filename import company_rule
 
 ProgressCb = Callable[[str], None] | None
 
@@ -71,9 +72,11 @@ def run_main_job(
     output_dir = company_output_dir(settings, settings.get("selected_company_id"))
     validate_output_location(output_dir)
     if mode == "check":
-        return action_check(pdf_input, excel_path, progress_cb=progress_cb, output_dir=output_dir)
+        return action_check(pdf_input, excel_path, progress_cb=progress_cb, output_dir=output_dir,
+                            filename_rule=company_rule(settings) if pdf_input.is_dir() else None)
     if mode == "send_preview":
-        result = action_check(pdf_input, excel_path, progress_cb=progress_cb, output_dir=output_dir)
+        result = action_check(pdf_input, excel_path, progress_cb=progress_cb, output_dir=output_dir,
+                              filename_rule=company_rule(settings) if pdf_input.is_dir() else None)
         result["mode"] = "send_preview"
         return result
 

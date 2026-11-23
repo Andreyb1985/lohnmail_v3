@@ -1,12 +1,36 @@
-.diagnostics-card { padding:24px; margin-bottom:20px; min-width:0; }
+.diagnostics-card { padding:24px; min-width:0; min-height:0; }
 .diagnostics-card p, .diagnostics-dialog p { line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; }
-.diagnostics-card p { color:#53657a; margin:12px 0; }
-.diagnostics-consent { display:flex; align-items:flex-start; gap:12px; font-weight:700; margin:20px 0 12px; }
-.diagnostics-consent input { width:20px; height:20px; flex-shrink:0; accent-color:#00845a; }
+.diagnostics-card p { color:var(--muted); margin:4px 0 0; }
+.diagnostics-card h2, .diagnostics-card h3 { margin:0; }
+.diagnostics-card h3 { font-size:14px; }
+.diagnostics-heading { display:flex; align-items:center; gap:14px; padding-bottom:22px; }
+.diagnostics-heading > div, .diagnostics-support-copy, .diagnostics-report-copy { min-width:0; }
+.diagnostics-heading-icon { width:44px; height:44px; flex:0 0 auto; display:grid; place-items:center; border-radius:13px; background:var(--mint); color:var(--green); }
+.diagnostics-consent { border-top:1px solid var(--border); }
+.diagnostics-consent label { padding:20px 0; }
+.diagnostics-consent input { justify-self:end; margin:0; cursor:pointer; }
+.diagnostics-consent small { overflow-wrap:anywhere; }
+.diagnostics-support-row { display:grid; grid-template-columns:24px minmax(0,1fr); align-items:start; gap:12px; padding:20px 0; border-top:1px solid var(--border); }
+.diagnostics-support-row > [data-icon] { margin-top:2px; width:18px; height:18px; color:var(--muted); }
 .diagnostics-actions { display:flex; flex-wrap:wrap; gap:12px; margin:20px 0 12px; }
-.diagnostics-card button, .diagnostics-dialog button { padding:12px 18px; background:#fff; color:#15342d; border:1px solid #c8d8d1; border-radius:10px; cursor:pointer; font:inherit; font-weight:650; white-space:normal; }
+.diagnostics-card .diagnostics-actions { margin:14px 0 0; }
+.diagnostics-card button { max-width:100%; min-height:44px; height:auto; padding:12px 18px; white-space:normal; justify-content:center; }
+.diagnostics-card [hidden] { display:none!important; }
+.diagnostics-privacy { padding-top:14px; border-top:1px solid var(--border); }
+.diagnostics-privacy summary { color:var(--muted); font-weight:700; }
+.diagnostics-privacy p { margin-top:10px; }
+.diagnostics-history-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+.diagnostics-pending { color:var(--muted); background:var(--bg); border-radius:20px; padding:4px 10px; font-size:12px; }
+.diagnostics-empty { display:flex; align-items:center; gap:14px; padding:17px; margin-top:16px; border-radius:12px; background:var(--bg); }
+.diagnostics-empty > [data-icon] { color:var(--green); }
+.diagnostics-empty p { margin:3px 0 0; }
+.diagnostics-report-picker { margin-top:16px; }
+.diagnostics-report-picker label { color:var(--muted); font-weight:600; font-size:12px; }
+.diagnostics-report-row { display:flex; align-items:center; flex-wrap:wrap; gap:14px; margin-top:16px; }
+.diagnostics-report-copy { flex:1 1 180px; overflow-wrap:anywhere; }
+.diagnostics-dialog button { padding:12px 18px; background:#fff; color:#15342d; border:1px solid #c8d8d1; border-radius:10px; cursor:pointer; font:inherit; font-weight:650; white-space:normal; }
 .diagnostics-card button:disabled, .diagnostics-dialog button:disabled { opacity:.55; cursor:default; }
-.diagnostics-card select { display:block; width:100%; min-width:0; max-width:100%; padding:12px; margin:8px 0 12px; }
+.diagnostics-card select { display:block; width:100%; min-width:0; max-width:100%; padding:10px 12px; margin:8px 0 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); font:inherit; text-overflow:ellipsis; }
 .diagnostics-card summary, .diagnostics-dialog summary { cursor:pointer; padding:10px 0; }
 .diagnostics-dialog { width:min(780px, calc(100vw - 48px)); max-height:calc(100vh - 48px); box-sizing:border-box; overflow:auto; border:1px solid #d9e4ed; border-radius:20px; padding:28px; color:#142337; background:#fff; box-shadow:0 24px 80px #102c4050; }
 .diagnostics-dialog::backdrop { background:#13253670; backdrop-filter:blur(3px); }
@@ -23,3 +47,9 @@
 .diagnostics-notice { position:fixed; right:20px; bottom:54px; z-index:90; max-width:calc(100vw - 40px); padding:14px 18px; white-space:normal; border:1px solid #e4aa69; border-radius:12px; color:#8a4309; background:#fff8ed; box-shadow:0 8px 24px #1b293422; font:inherit; cursor:pointer; }
 /* Error explanations must wrap; paths/table cells retain their compact layout. */
 .settings-message, .processing-message, .shipping-message, .mass-message-status { white-space:pre-wrap; overflow-wrap:anywhere; text-overflow:clip; height:auto; min-height:40px; }
+@media(max-width:640px){
+  .diagnostics-card { padding:18px; }
+  .diagnostics-card .diagnostics-actions button { flex:1 1 180px; }
+  .diagnostics-support-row { grid-template-columns:minmax(0,1fr); }
+  .diagnostics-support-row > [data-icon] { display:none; }
+}

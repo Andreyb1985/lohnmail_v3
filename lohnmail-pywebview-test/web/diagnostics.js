@@ -57,29 +57,60 @@
       } catch(error){ finished = true; clearTimeout(timeout); reject(error); }
     });
   }
-  function status(message){ if ($('diagnostics-status')) $('diagnostics-status').textContent = message; }
+  function status(message){
+    var node = $('diagnostics-status');
+    if (node) { node.textContent = message; node.hidden = !message; }
+  }
+  function reportTitle(report){
+    if (report.code === 'SUPPORT_REQUEST') return 'Zustandsbericht für den Support';
+    if (report.stage === 'prepare' && ['INVALID_INPUT', 'OPERATION_FAILED'].indexOf(report.code) !== -1) return 'PDF-Vorbereitung fehlgeschlagen – Ursachen unter Versand prüfen';
+    if (report.code === 'NETWORK_DNS' && ['mail_test', 'send', 'mass_message'].indexOf(report.stage) !== -1) return 'E-Mail-Server nicht gefunden';
+    return errorTitle(report.code);
+  }
+  function reportTime(report){
+    var date = new Date(report.occurred_at);
+    return Number.isNaN(date.getTime()) ? 'Zeitpunkt unbekannt' : date.toLocaleString('de-DE', {dateStyle:'short', timeStyle:'short'});
+  }
+  function renderSelectedReport(){
+    var report = selectedReport();
+    if (!report) return;
+    var entry = state.reports.find(function(e){ return e.report.id === report.id; });
+    $('diagnostics-report-title').textContent = reportTitle(report);
+    $('diagnostics-report-meta').textContent = reportTime(report) + ' · ' + (report.company.name || 'Programmweit') +
+      (entry.sent ? ' · Übermittelt' : ' · Lokal gespeichert');
+  }
   function render(data){
     if (!data || !Array.isArray(data.reports)) return;
     state = data;
     var newest = data.reports[0] && data.reports[0].report;
     if (newest && seenReport !== undefined && newest.id !== seenReport && newest.code !== 'SUPPORT_REQUEST') {
       if (!notice) { notice = document.createElement('button'); notice.type = 'button'; notice.className = 'diagnostics-notice'; document.body.appendChild(notice); }
-      notice.textContent = errorTitle(newest.code);
+      notice.textContent = reportTitle(newest);
       notice.hidden = false;
       notice.onclick = function(){ showBriefError(newest.code, newest.stage); };
     }
     seenReport = newest ? newest.id : '';
     $('diagnostics-auto').checked = data.automatic === true;
+    $('diagnostics-consent-caption').textContent = data.automatic === true
+      ? 'Eingeschaltet · Neue Fehlerberichte werden automatisch gesendet.'
+      : 'Ausgeschaltet · Keine automatische Übertragung.';
+    var pending = Math.max(0, Number(data.pending) || 0);
+    $('diagnostics-pending').textContent = data.sending ? 'Übertragung läuft…' :
+      (pending ? 'Ausstehende Berichte: ' + pending : 'Keine ausstehenden Berichte');
     status((data.storage_ok === false ? 'Lokaler Diagnosejournal konnte nicht gespeichert werden. ' : '') +
-      (data.sending ? 'Bericht wird übermittelt. ' : '') + 'Wartende Berichte: ' + data.pending + '. ' + (data.last_send || 'Noch keine Übertragung.'));
+      (data.last_send || ''));
+    $('diagnostics-empty').hidden = data.reports.length > 0;
+    $('diagnostics-report-controls').hidden = !data.reports.length;
+    $('diagnostics-report-picker').hidden = data.reports.length < 2;
     var select = $('diagnostics-report'), selected = select.value;
     select.replaceChildren();
     data.reports.forEach(function(entry){
       var r = entry.report, option = document.createElement('option'); option.value = r.id;
-      option.textContent = r.occurred_at + ' · ' + r.code + ' · ' + (r.company.name || 'Programmweit') + (entry.sent ? ' · gesendet' : '');
+      option.textContent = reportTime(r) + ' · ' + reportTitle(r) + ' · ' + (r.company.name || 'Programmweit') + (entry.sent ? ' · gesendet' : '');
       select.appendChild(option);
     });
-    if (Array.from(select.options).some(function(o){return o.value === selected;})) select.value = selected;
+    select.value = data.reports.some(function(e){return e.report.id === selected;}) ? selected : (newest ? newest.id : '');
+    renderSelectedReport();
     $('diagnostics-details').disabled = !data.reports.length;
   }
   async function refresh(){ try { render(await call('getDiagnosticsState')); } catch (_) { status('Diagnose momentan nicht erreichbar.'); } }
@@ -105,6 +136,10 @@
       (/^NETWORK_/.test(code || '') && ['mail_test', 'send', 'mass_message'].indexOf(stage) !== -1);
     var titleText = errorTitle(code);
     var explanation = advice[code] || advice.OPERATION_FAILED;
+    if (stage === 'prepare' && ['INVALID_INPUT', 'OPERATION_FAILED'].indexOf(code) !== -1) {
+      titleText = 'PDF-Vorbereitung fehlgeschlagen';
+      explanation = 'Unter Versand finden Sie die betroffenen Mitarbeiter, die genaue Ursache und den nächsten Schritt. Fehlerhafte Einträge werden nicht zum Versand freigegeben.';
+    }
     if (mailError && /^NETWORK_/.test(code)) {
       var mode = document.querySelector('[data-settings-field="mail_mode"]');
       var server = mode && mode.value === 'smtp' ? 'SMTP-Server' : 'E-Mail-Server';
@@ -209,6 +244,7 @@
       } catch (_) { status('Export konnte nicht abgeschlossen werden.'); }
     };
     $('diagnostics-details').onclick = function(){ show(selectedReport(), false); };
+    $('diagnostics-report').onchange = renderSelectedReport;
     ['processingError','shippingError','massMessageError'].forEach(function(name){ if (bridge[name]) bridge[name].connect(showError); });
     if (bridge.diagnosticsStateChanged) bridge.diagnosticsStateChanged.connect(function(payload){ try { render(JSON.parse(payload)); } catch (_) {} });
     refresh();

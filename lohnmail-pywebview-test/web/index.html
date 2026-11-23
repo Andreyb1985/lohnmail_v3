@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LohnMail v2 — Enterprise Edition</title>
   <link rel="stylesheet" href="styles.css?v=shipping-preflight-20261018-001" />
-  <link rel="stylesheet" href="diagnostics.css?v=compact-errors-20261018-002" />
+  <link rel="stylesheet" href="diagnostics.css?v=settings-design-20261019-001" />
+  <link rel="stylesheet" href="pdf-filenames.css?v=20261020-001" />
 </head>
 <body>
   <div class="app-shell">
@@ -43,7 +44,7 @@
           <div class="side-status-subtitle">Alle Dienste aktiv</div>
         </div>
       </div>
-      <div class="side-version" data-app-version>Enterprise Edition</div>
+      <div class="side-version" data-app-version="sidebar">Enterprise Edition</div>
     </aside>
 
     <section class="main">
@@ -516,7 +517,7 @@
 
               <div class="shipping-selection-strip" aria-live="polite">
                 <span data-icon="check-circle"></span>
-                <strong data-shipping="selection-title">0 von 0 sendbaren Einträgen ausgewählt</strong>
+                <strong data-shipping="selection-title">0 von 0 Einträgen ausgewählt</strong>
                 <span data-shipping="selection-message">Empfänger auswählen und Versand vorbereiten.</span>
                 <div class="shipping-live-progress" data-shipping-live hidden>
                   <div class="shipping-live-progress-head">
@@ -535,6 +536,7 @@
                 </div>
               </div>
 
+              <section class="shipping-issues" data-shipping="issues" aria-label="Ursachen und nächste Schritte" hidden></section>
               <div class="mailing-table-scroll">
                 <table class="mailing-table">
                   <thead>
@@ -801,6 +803,42 @@
         </section>
 
         <section class="page page-license" data-page="Lizenzen">
+          <section class="apple-subscription" data-apple-subscription hidden>
+            <div class="content-heading license-heading">
+              <div><h1>Lizenzen</h1><p>Abonnement und Zahlungsverwaltung über den App Store.</p></div>
+              <button class="secondary-action" data-license-action="refresh"><span data-icon="process"></span>Aktualisieren</button>
+            </div>
+            <div class="license-metrics apple-metrics">
+              <article class="license-metric status"><span data-icon="key"></span><div><small>Status</small><strong data-apple="status">Wird geprüft …</strong><em>Apple-Abonnement</em></div></article>
+              <article class="license-metric type"><span data-icon="building"></span><div><small>Abonnementpreis</small><strong data-apple="price">Wird geladen …</strong><em>Preis laut Apple Storefront</em></div></article>
+              <article class="license-metric seats"><span data-icon="clock"></span><div><small>Gültigkeit</small><strong data-apple="expiry">Noch nicht aktiviert</strong><em data-apple="renewal">Verwaltung über Apple</em></div></article>
+            </div>
+            <article class="card license-actions-card">
+              <h2>Aktionen</h2>
+              <div class="license-actions">
+                <button class="license-primary-action" data-apple-action="purchase" disabled><span data-icon="key"></span>Abonnieren</button>
+                <button data-apple-action="restore"><span data-icon="process"></span>Käufe wiederherstellen</button>
+                <button data-apple-action="manage"><span data-icon="arrow-up-right"></span>Abonnement verwalten</button>
+              </div>
+              <div class="license-note" data-apple="message" role="status" aria-live="polite"></div>
+            </article>
+            <div class="license-details-grid apple-details">
+              <article class="card">
+                <h2>Ihr Abonnement</h2>
+                <div class="apple-offer" data-apple="trial" hidden></div>
+                <p>Preis und gegebenenfalls kostenlose Probezeit werden vor Abschluss von Apple bestätigt.</p>
+                <p>Das Abonnement verlängert sich automatisch, sofern es nicht gekündigt wird. Nach einer kostenlosen Probezeit gilt der oben angezeigte Abonnementpreis.</p>
+              </article>
+              <article class="card">
+                <h2>Verwaltung &amp; Datenschutz</h2>
+                <p>Käufe wiederherstellen oder die Verlängerung direkt bei Apple verwalten. Bestehende Dokumente bleiben nach Ablauf erhalten.</p>
+                <div class="apple-legal-actions">
+                  <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/" target="_blank" rel="noopener">Nutzungsbedingungen (Apple EULA) ↗</a>
+                  <button class="secondary-action" data-about-action="privacy"><span data-icon="info"></span>Datenschutzerklärung</button>
+                </div>
+              </article>
+            </div>
+          </section>
           <div class="content-heading license-heading">
             <div>
               <h1>Lizenzen</h1>
@@ -911,6 +949,7 @@
           <nav class="settings-tabs" aria-label="Einstellungen Kategorien">
             <button class="active" data-settings-tab="general"><span data-icon="settings"></span>Allgemein</button>
             <button data-settings-tab="email"><span data-icon="mail"></span>E-Mail</button>
+            <button data-settings-tab="pdf-files"><span data-icon="doc"></span>PDF-Dateien</button>
             <button data-settings-tab="templates"><span data-icon="table"></span>Vorlagen</button>
             <button data-settings-tab="notifications"><span data-icon="bell"></span>Benachrichtigungen</button>
             <button data-settings-tab="updates" data-self-update-only><span data-icon="process"></span>Updates</button>
@@ -977,6 +1016,43 @@
 
               </article>
 
+              <article class="settings-panel" data-settings-panel="pdf-files">
+                <section class="card pdf-rule-card">
+                  <h2>PDF-Dateien zuordnen</h2>
+                  <p class="muted">Ordnen Sie Ihre PDF-Dateien über die Personalnummer zu.</p>
+                  <div class="pdf-rule-company"><span data-icon="building"></span><div><strong id="pdf-rule-company">Bitte ein Unternehmen auswählen</strong><p>Andere Unternehmen behalten ihre eigenen Einstellungen.</p></div></div>
+                  <fieldset id="pdf-rule-fields">
+                    <legend class="sr-only">Dateiformat für das aktive Unternehmen</legend>
+                    <div class="pdf-rule-modes">
+                      <label><input type="radio" name="pdf-rule-mode" value="standard" checked><span><strong>Standardformat</strong><small>00022.pdf · 00022_1.pdf</small></span></label>
+                      <label><input type="radio" name="pdf-rule-mode" value="custom"><span><strong>Eigenes Dateiformat</strong><small>Personalnummer im Dateinamen festlegen</small></span></label>
+                      <label><input type="radio" name="pdf-rule-mode" value="content"><span><strong>Personalnummer aus PDF-Inhalt lesen</strong><small>Dateiname wird nicht zur Zuordnung verwendet</small></span></label>
+                    </div>
+                    <div id="pdf-rule-content" class="pdf-rule-preview" hidden>
+                      <strong>Zuordnung anhand des PDF-Inhalts</strong>
+                      <p>Alle Seiten müssen dieselbe eindeutig gekennzeichnete Personalnummer enthalten (z. B. Pers.-Nr. oder Personalnummer). Die Nummer wird mit der Mitarbeiter-Excel verglichen.</p>
+                      <p>Fehlende oder unterschiedliche Nummern, passwortgeschützte PDFs und Scans ohne Text werden nicht zugeordnet. Kein OCR und kein automatischer Rückgriff auf den Dateinamen. Bitte vor dem Speichern am PDF-Ordner prüfen.</p>
+                    </div>
+                    <div id="pdf-rule-custom" hidden>
+                      <h3>1. Beispieldatei auswählen</h3>
+                      <div class="pdf-rule-example"><span id="pdf-rule-example">Noch keine Beispieldatei ausgewählt</span><button id="pdf-rule-choose" class="secondary-action" type="button"><span data-icon="folder"></span>PDF auswählen</button></div>
+                      <h3>2. Personalnummer markieren</h3>
+                      <p class="muted">Klicken Sie auf den Teil des Dateinamens, der die Personalnummer enthält.</p>
+                      <label class="pdf-rule-separator">Trennzeichen <select id="pdf-rule-separator"><option value="_">Unterstrich (_)</option><option value="-">Bindestrich (-)</option><option value=" ">Leerzeichen</option></select></label>
+                      <div id="pdf-rule-parts" class="pdf-rule-parts" aria-label="Teile des Dateinamens"></div>
+                      <p id="pdf-rule-structure" class="muted">Monat, Jahr und Namen dürfen sich ändern. Die Anzahl und Reihenfolge der Teile muss gleich bleiben.</p>
+                      <div id="pdf-rule-preview" class="pdf-rule-preview" role="status" aria-live="polite">Bitte ein PDF auswählen und die Personalnummer markieren.</div>
+                    </div>
+                    <div class="pdf-rule-test"><button id="pdf-rule-test" type="button" class="secondary-action"><span data-icon="folder"></span>An PDF-Ordner prüfen</button><span id="pdf-rule-note" class="muted">Standardnamen bleiben auch mit eigenem Format gültig. Gesamt-PDF bleibt unverändert.</span></div>
+                    <div id="pdf-rule-results" hidden><h3 id="pdf-rule-counts"></h3><div class="pdf-rule-table-wrap"><table><thead><tr><th>Datei</th><th>Personalnummer</th><th>Mitarbeiter / Ergebnis</th></tr></thead><tbody id="pdf-rule-rows"></tbody></table></div></div>
+                    <div class="pdf-rule-footer">
+                      <div><p class="muted">Die Originaldateien werden nicht umbenannt.</p><button id="pdf-rule-reset" class="secondary-action" type="button"><span data-icon="process"></span>Standard wiederherstellen</button></div>
+                      <div class="pdf-rule-actions"><button id="pdf-rule-cancel" class="secondary-action" type="button">Abbrechen</button><button id="pdf-rule-save" class="primary" type="button"><span data-icon="checkcircle"></span>Für diese Firma speichern</button></div>
+                    </div>
+                  </fieldset>
+                  <p id="pdf-rule-status" role="status" aria-live="polite"></p>
+                </section>
+              </article>
               <article class="settings-panel" data-settings-panel="templates">
                 <section class="card settings-reference-card">
                   <h2>E-Mail Vorlagen</h2>
@@ -1019,7 +1095,7 @@
                       <div class="update-version-grid">
                         <div class="update-version-item">
                           <span data-icon="info"></span>
-                          <span><small>Installierte Version</small><strong data-update="installed-version">—</strong><em data-update="installed-build">Build —</em></span>
+                          <span><small>Installierte Version</small><strong data-update="installed-version">—</strong><em data-update="installed-build">—</em></span>
                         </div>
                         <div class="update-version-item">
                           <span data-icon="clock"></span>
@@ -1042,16 +1118,30 @@
                     </section>
 
                     <section class="card settings-reference-card">
-                      <div class="update-card-head compact"><div><h2>Release Notes</h2><p data-update="release-version">Installierte Version</p></div></div>
+                      <div class="update-card-head compact"><div><h2>Release Notes</h2><p data-update="release-version">Installierte Version —</p></div></div>
                       <div class="update-release-notes" data-update="release-notes"><p>Release Notes werden hier angezeigt, sobald ein Update verfügbar ist.</p></div>
                     </section>
 
-                    <section class="card settings-reference-card update-protection-card">
+                    <section class="card settings-reference-card" data-mac-update-only hidden>
+                      <h2>macOS manuell aktualisieren</h2>
+                      <p>Der Download wird im Browser geöffnet. LohnMail installiert nichts automatisch.</p>
+                      <details><summary>So aktualisieren Sie LohnMail</summary>
+                        <ol>
+                          <li>Die neue Version über „Neue Version herunterladen“ herunterladen.</li>
+                          <li>PDF-Verarbeitung und E-Mail-Versand vollständig abschließen.</li>
+                          <li>LohnMail mit ⌘Q vollständig beenden.</li>
+                          <li>Die DMG-Datei öffnen. LohnMail in „Programme“ ziehen und das Ersetzen bestätigen.</li>
+                          <li>LohnMail aus „Programme“ starten und die Versionsnummer prüfen.</li>
+                        </ol>
+                      </details>
+                      <p><strong>Den Benutzerdatenordner nicht löschen.</strong> Nur LohnMail.app ersetzen. Einstellungen, Unternehmen, Dokumente und Lizenz liegen außerhalb der Anwendung. Vor dem Update wichtige Daten sichern.</p>
+                    </section>
+                    <section class="card settings-reference-card update-protection-card" data-installed-update-only>
                       <div class="update-policy-note"><span data-icon="key"></span><p><strong>Benutzerdaten bleiben geschützt</strong><small>Nur der Ordner App wird ersetzt. Settings, Unternehmen, Berichte und Lizenzdaten werden nicht durch das Update-Paket überschrieben. Bei einem Fehler wird die vorherige App-Version wiederhergestellt.</small></p></div>
                     </section>
                   </div>
 
-                  <aside class="card settings-reference-card update-flow-card">
+                  <aside class="card settings-reference-card update-flow-card" data-installed-update-only>
                     <div class="update-flow-head"><h2>Ablauf</h2><p>Jeder Schritt wird vor dem Neustart kontrolliert.</p></div>
                     <div class="update-flow-list">
                       <div class="update-flow-step active" data-update-step="check"><span>1</span><p><strong>Update prüfen</strong><small>Manifest, Version und Kanal</small></p></div>
@@ -1071,9 +1161,16 @@
                   <h2>Sicherheit</h2>
                   <div class="reference-form-grid">
                     <label class="settings-check"><input data-settings-field="pdf_password.enabled" type="checkbox">PDF Passwort aktivieren</label>
-                    <label>Passwort-Basis<select data-settings-field="pdf_password.source"><option value="persnr">Personalnummer</option><option value="birth_date">Geburtsdatum (TTMMJJJJ)</option></select></label>
+                    <label>Passwort-Basis<select data-settings-field="pdf_password.source" aria-describedby="pdf-birth-date-help"><option value="persnr">Personalnummer</option><option value="birth_date">Geburtsdatum – DATEV (TTMMJJJJ)</option></select></label>
                     <label>Passwort Prefix<input data-settings-field="pdf_password.prefix"></label>
                     <label>Passwort Suffix<input data-settings-field="pdf_password.suffix"></label>
+                  </div>
+                  <div class="settings-message pdf-birth-date-help" id="pdf-birth-date-help">
+                    <strong>Geburtsdatum aus PDF oder Excel</strong>
+                    <p>Das Geburtsdatum wird zuerst aus dem PDF gelesen. Die automatische Erkennung unterstützt DATEV-Lohnabrechnungen.</p>
+                    <p>Wird im PDF kein Datum erkannt, verwendet LohnMail die Spalte <strong>Geburtsdatum</strong> aus Ihrer Excel-Tabelle. Tragen Sie das Datum beim Mitarbeiter mit der passenden Personalnummer ein, z. B. <strong>03.02.1990</strong>. Die Reihenfolge der Spalten ist beliebig. Daraus wird das Passwort <strong>03021990</strong>, ergänzt um einen eingestellten Präfix oder Suffix.</p>
+                    <p>Wenn gültige Datumsangaben in PDF und Excel voneinander abweichen oder in beiden Quellen fehlen, werden die Dokumente dieses Mitarbeiters nicht für den Versand vorbereitet und nicht gesendet. Korrigieren Sie die Angaben und starten Sie die Vorbereitung erneut.</p>
+                    <p>Für andere Abrechnungsformate ist eine Anpassung auf Anfrage möglich. Bitte wenden Sie sich an unseren Support.</p>
                   </div>
                   <div class="settings-message compact" data-settings="security-message">PDF-Verschlüsselung wird lokal angewendet.</div>
                   <div class="settings-bottom-actions">
@@ -1085,23 +1182,54 @@
 
               <article class="settings-panel" data-settings-panel="advanced">
                 <section class="card diagnostics-card" aria-labelledby="diagnostics-title">
-                  <h2 id="diagnostics-title">Fehlerdiagnose</h2>
-                  <p>Technische Berichte helfen dem Support bei der Fehlersuche. Sie werden Ihrer Lizenz und dem bei der Operation aktiven Unternehmen (ID und Name) zugeordnet.</p>
-                  <label class="diagnostics-consent"><input id="diagnostics-auto" type="checkbox"> Fehlerberichte automatisch senden</label>
-                  <p>Ausgeschaltet: keine automatische Übertragung. Eingeschaltet: neue Fehlerberichte werden im Hintergrund an den LohnMail-Lizenzserver gesendet, bei fehlender Verbindung später erneut. Ausschalten entfernt wartende automatische Übertragungen; bereits gesendete Berichte bleiben beim Support.</p>
-                  <details><summary>Welche Daten werden übertragen?</summary>
+                  <header class="diagnostics-heading">
+                    <span class="diagnostics-heading-icon"><span data-icon="checkcircle" aria-hidden="true"></span></span>
+                    <div><h2 id="diagnostics-title">Fehlerdiagnose</h2><p>Technische Unterstützung, wenn etwas nicht funktioniert.</p></div>
+                  </header>
+                  <div class="settings-toggle-list diagnostics-consent">
+                    <label for="diagnostics-auto">
+                      <span data-icon="process" aria-hidden="true"></span>
+                      <span><strong>Fehlerberichte automatisch senden</strong><small id="diagnostics-consent-caption">Freiwillig · Standardmäßig ausgeschaltet.</small></span>
+                      <input id="diagnostics-auto" type="checkbox" role="switch" aria-describedby="diagnostics-consent-caption">
+                    </label>
+                  </div>
+                  <div class="diagnostics-support-row">
+                    <span data-icon="send" aria-hidden="true"></span>
+                    <div class="diagnostics-support-copy">
+                      <h3>Support kontaktieren</h3>
+                      <p>Bericht vor dem Senden prüfen oder als ZIP speichern.</p>
+                      <div class="diagnostics-actions">
+                        <button class="primary" id="diagnostics-send" type="button"><span data-icon="send" aria-hidden="true"></span>Bericht senden</button>
+                        <button class="secondary-action" id="diagnostics-export" type="button"><span data-icon="doc" aria-hidden="true"></span>ZIP speichern</button>
+                      </div>
+                    </div>
+                  </div>
+                  <details class="diagnostics-privacy"><summary>Datenschutz &amp; übertragene Daten</summary>
+                    <p>Technische Berichte werden Ihrer Lizenz und dem bei der Operation aktiven Unternehmen (ID und Name) zugeordnet.</p>
                     <p>Programmversion und Build, Betriebssystem, Zeitpunkt, technischer Fehlercode, Programmmodul und Zeile, Vorgangs-ID und bereinigte Ablaufereignisse sowie Unternehmens-ID und -Name. Lizenzschlüssel und Computer-ID werden zur Zuordnung und Authentifizierung mitübertragen, aber nicht im Diagnosebericht gespeichert.</p>
                     <p>Keine PDF-/Excel-Dateien, Gehalts- oder Mitarbeiterdaten, Empfängeradressen, E-Mail-Texte, Passwörter, vollständigen Dateipfade oder Datenbankinhalte. Lokale Aufbewahrung: 14 Tage, höchstens 20 MB; Server: 30 Tage. Infrastruktur-Zugriffsprotokolle sind davon getrennt.</p>
+                    <p>Automatisches Senden ist freiwillig und standardmäßig ausgeschaltet. Eingeschaltet werden neue Fehlerberichte im Hintergrund an den LohnMail-Lizenzserver gesendet, bei fehlender Verbindung später erneut. Ausschalten entfernt wartende automatische Übertragungen; bereits gesendete Berichte bleiben beim Support. Bereits laufende Übertragungen können nicht zurückgerufen werden.</p>
+                    <p>Der ZIP-Export enthält die lokal gespeicherten bereinigten Berichte aller Unternehmen (maximal 14 Tage). Beim Erstellen wird nichts übertragen.</p>
                   </details>
-                  <div class="diagnostics-actions">
-                    <button id="diagnostics-send" type="button">Diagnosebericht jetzt senden…</button>
-                    <button id="diagnostics-export" type="button">Diagnosebericht erstellen (ZIP)…</button>
-                  </div>
-                  <p>Der ZIP-Export enthält die lokal gespeicherten bereinigten Berichte aller Unternehmen (maximal 14 Tage). Beim Erstellen wird nichts übertragen.</p>
                   <p id="diagnostics-status" role="status" aria-live="polite">Diagnose wird geladen.</p>
-                  <label for="diagnostics-report">Letzte Berichte</label>
-                  <select id="diagnostics-report"><option value="">Noch keine Berichte</option></select>
-                  <button id="diagnostics-details" type="button">Details anzeigen / kopieren</button>
+                </section>
+                <section class="card diagnostics-card diagnostics-history" aria-labelledby="diagnostics-history-title">
+                  <div class="diagnostics-history-heading"><h2 id="diagnostics-history-title">Letzte Berichte</h2><span class="diagnostics-pending" id="diagnostics-pending">Wird geladen…</span></div>
+                  <div class="diagnostics-empty" id="diagnostics-empty" hidden>
+                    <span data-icon="checkcircle" aria-hidden="true"></span>
+                    <div><strong>Noch keine Fehlerberichte</strong><p>Neue Berichte werden hier angezeigt.</p></div>
+                  </div>
+                  <div id="diagnostics-report-controls" hidden>
+                    <div class="diagnostics-report-picker" id="diagnostics-report-picker" hidden>
+                      <label for="diagnostics-report">Bericht auswählen</label>
+                      <select id="diagnostics-report"></select>
+                    </div>
+                    <div class="diagnostics-report-row">
+                      <span class="diagnostics-heading-icon"><span data-icon="doc" aria-hidden="true"></span></span>
+                      <div class="diagnostics-report-copy"><h3 id="diagnostics-report-title"></h3><p id="diagnostics-report-meta"></p></div>
+                      <button class="secondary-action" id="diagnostics-details" type="button" disabled><span data-icon="info" aria-hidden="true"></span>Details</button>
+                    </div>
+                  </div>
                 </section>
                 <section class="card settings-reference-card">
                   <h2>Erweitert</h2>
@@ -1211,7 +1339,7 @@
                   </div>
                 </div>
                 <div class="product-meta-list">
-                  <div><span data-icon="info"></span><span>Version</span><b data-about="version">—</b></div>
+                  <div><span data-icon="info"></span><span>Version</span><b data-app-version="about" data-about="version">—</b></div>
                   <div><span data-icon="screen"></span><span>Distribution</span><b data-about="distribution">—</b></div>
                   <div><span data-icon="key"></span><span>Edition</span><b class="success-text">Enterprise Edition</b></div>
                   <div><span data-icon="clock"></span><span>Build Datum</span><b data-about="build-date">—</b></div>
@@ -1566,7 +1694,8 @@
   </div>
 
   <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
-  <script src="diagnostics.js?v=preflight-errors-20261018-001"></script>
+  <script src="diagnostics.js?v=settings-design-20261019-001"></script>
+  <script src="pdf-filenames.js?v=20261020-001"></script>
   <script src="app.js?v=shipping-preflight-20261018-002"></script>
 </body>
 </html>

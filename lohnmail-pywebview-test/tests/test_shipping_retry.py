@@ -62,6 +62,55 @@ def run(bridge, dry, selected):
     return json.loads(bridge.getShippingState())
 
 
+@pytest.mark.parametrize("error_code", ["BIRTH_DATE_MISSING", "BIRTH_DATE_MISMATCH"])
+@pytest.mark.parametrize("statuses,outcome,finished", [
+    ({"1": "Fehler", "2": "Fehler"}, "failed", False),
+    ({"1": "Dry-Run", "2": "Fehler"}, "partial", True),
+    ({"1": "Dry-Run", "2": "Dry-Run"}, "success", True),
+])
+def test_preparation_outcomes_and_actionable_reasons(shipping, statuses, outcome, finished, error_code):
+    from core.shipping_errors import issue_fields
+    bridge, _, job = shipping
+    payload = result(statuses, True)
+    for row in payload["table_rows"]:
+        if row["Status"] == "Fehler":
+            row.update(issue_fields(error_code))
+            row["Attachment"] = ""
+    job.return_value = payload
+    state = run(bridge, True, set(statuses))
+    assert state["status"]["outcome"] == outcome
+    assert state["status"]["finished"] == finished
+    assert state["status"]["failed"] == (not finished)
+    assert state["status"]["processed"] == 2
+    assert "Anhänge und Bericht wurden erstellt" not in state["status"]["message"]
+    for row in state["rows"]:
+        if row["status"] == "Fehler":
+            assert row["error_code"] == error_code
+            assert row["error_action"] == issue_fields(error_code)["ErrorAction"]
+    if "Fehler" in statuses.values():
+        assert not json.loads(bridge.previewSelectedShippingSend(json.dumps(sorted(statuses))))["ok"]
+    if outcome == "partial":
+        assert json.loads(bridge.previewSelectedShippingSend('["1"]'))["ok"]
+    restored = json.loads(WebBridge().getShippingState())
+    assert restored["status"]["outcome"] == outcome
+    assert [(r.get("error_code"), r.get("error_action")) for r in restored["rows"]] == [
+        (r.get("error_code"), r.get("error_action")) for r in state["rows"]]
+
+
+@pytest.mark.parametrize("with_ready", [False, True])
+def test_skipped_and_unmatched_documents_are_not_reported_as_clean_success(shipping, with_ready):
+    bridge, _, job = shipping
+    statuses = {"1": "Dry-Run" if with_ready else "Keine Dateien"}
+    payload = result(statuses, True)
+    payload["summary"]["skipped_count"] = 0 if with_ready else 1
+    payload["filename_errors"] = [{"file": "unknown.pdf", "reason": "Keine Personalnummer erkannt."}]
+    job.return_value = payload
+    state = run(bridge, True, {"1"})
+    assert state["status"]["outcome"] == ("partial" if with_ready else "failed")
+    assert "ohne sichere Zuordnung" in state["status"]["message"]
+    assert state["status"]["input_issues"] == payload["filename_errors"]
+
+
 @pytest.mark.parametrize("change", ["password", "server", "connectivity"])
 def test_connection_failure_reprepare_confirm_send_uses_fresh_settings(shipping, change):
     bridge, settings, job = shipping

@@ -18,7 +18,7 @@ from core.config import (
 )
 from core.license_manager import LicenseManager
 from ui_web.bridge import WebBridge
-from ui_web.version import APP_VERSION
+from ui_web.version import app_metadata
 
 
 ROOT = Path(__file__).resolve().parent
@@ -118,6 +118,32 @@ class ApiAdapter:
             save_settings(settings)
             self._bridge._reset_workflow_state()
         return self._processing_payload_after_selection()
+
+    def choosePdfFilenameExample(self) -> str:
+        if self._window is None or self._bridge._workflow_running():
+            return json.dumps({"ok": False, "message": "Bitte laufende Verarbeitung abwarten."})
+        company_id = self._bridge._active_company_id(load_settings())
+        selected = self._window.create_file_dialog(webview.FileDialog.OPEN,
+            directory=self._bridge._dialog_start_path(""), allow_multiple=False,
+            file_types=("PDF (*.pdf)",))
+        if not selected:
+            return json.dumps({"ok": False, "cancelled": True})
+        if company_id != self._bridge._active_company_id(load_settings()):
+            return json.dumps({"ok": False, "message": "Unternehmen wurde geändert. Bitte erneut auswählen."})
+        return json.dumps({"ok": True, "company_id": company_id, "filename": Path(selected[0]).name}, ensure_ascii=False)
+
+    def choosePdfFilenameFolder(self, payload: str) -> str:
+        try:
+            self._bridge._pdf_rule_request(payload)
+            if self._window is None:
+                raise ValueError("Kein Fenster verfügbar.")
+            selected = self._window.create_file_dialog(webview.FileDialog.FOLDER,
+                directory=self._bridge._dialog_start_path(""), allow_multiple=False)
+            if not selected:
+                return json.dumps({"ok": False, "cancelled": True})
+            return self._bridge.checkPdfFilenameFolder(payload, str(selected[0]))
+        except (ValueError, OSError) as exc:
+            return json.dumps({"ok": False, "message": str(exc)}, ensure_ascii=False)
 
     def chooseExcelInput(self) -> str:
         settings = load_settings()
@@ -220,6 +246,9 @@ class ApiAdapter:
         return json.dumps(result, ensure_ascii=False)
 
     def promptActivateLicenseKey(self) -> str:
+        from core.appstore_license import is_app_store
+        if is_app_store():
+            return self._bridge.promptActivateLicenseKey()
         if self._window is None:
             return self._bridge.promptActivateLicenseKey()
         value = self._window.evaluate_js("window.prompt('Lizenzschlüssel eingeben:')")
@@ -449,7 +478,7 @@ def run() -> None:
     bridge = WebBridge()
     api = ApiAdapter(bridge)
     window = webview.create_window(
-        f"LohnMail {APP_VERSION} — Enterprise Edition",
+        f"LohnMail {app_metadata()['version']} — Enterprise Edition",
         str(HTML_PATH),
         js_api=api,
         width=1440,

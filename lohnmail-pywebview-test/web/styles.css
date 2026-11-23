@@ -1266,7 +1266,8 @@ input, input:focus, input:focus-visible {
   height:auto;
   min-height:0;
   display:grid;
-  grid-template-rows:52px auto auto auto 58px;
+  grid-template-rows:none;
+  grid-auto-rows:auto;
   overflow:hidden;
 }
 .mailing-table-scroll{
@@ -1357,7 +1358,7 @@ input, input:focus, input:focus-visible {
     margin: 4px 0;
   }
   .page-mailing .mailing-table-card {
-    grid-template-rows: 44px auto auto auto 50px;
+    grid-template-rows: none;
   }
   .page-mailing .mailing-tabs {
     height: 44px;
@@ -3872,6 +3873,22 @@ input, input:focus, input:focus-visible {
   align-items:center;
   font-size:13px;
 }
+.settings-message.pdf-birth-date-help{
+  display:block;
+  padding:18px 20px;
+  font-size:16px;
+  line-height:1.6;
+  color:var(--text);
+  overflow-wrap:anywhere;
+}
+.pdf-birth-date-help > strong{
+  display:block;
+  font-size:18px;
+  color:var(--green);
+}
+.pdf-birth-date-help p{
+  margin:10px 0 0;
+}
 .settings-message.compact{
   min-height:38px;
   margin-top:10px;
@@ -5862,3 +5879,42 @@ input, input:focus, input:focus-visible {
 [hidden]{display:none!important}
 .file-field.output-folder-field{grid-template-columns:minmax(0,1fr) 110px 38px}
 .file-field.output-folder-field button{white-space:nowrap;padding:0 8px}
+
+/* StoreKit reuses the shared license cards, actions and typography. */
+.apple-subscription{min-width:0}
+.apple-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+.apple-metrics .license-metric{height:auto;min-height:120px}
+.apple-metrics .license-metric strong,
+.apple-metrics .license-metric em{white-space:normal;overflow-wrap:anywhere;line-height:1.35}
+.apple-metrics .license-metric strong{font-size:20px}
+.apple-subscription .license-actions{grid-template-columns:repeat(3,minmax(0,1fr))}
+.apple-subscription .license-actions button{white-space:normal;min-height:48px}
+.apple-details{margin-top:16px}
+.apple-details p{color:var(--muted,#64748b);line-height:1.6}
+.apple-offer{padding:14px 16px;border:1px solid #a7f3d0;border-radius:12px;background:#ecfdf5;color:#008357;font-weight:750;line-height:1.5;margin-top:16px}
+.apple-legal-actions{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:18px}
+.apple-legal-actions a{color:#008357;font-weight:650;text-underline-offset:3px;overflow-wrap:anywhere}
+.apple-subscription .license-note:empty{display:none}
+@media(max-width:1200px){
+  .apple-metrics{grid-template-columns:1fr}
+  .apple-subscription .license-actions-card{grid-template-columns:1fr}
+  .apple-details{grid-template-columns:1fr}
+}
+@media(max-width:800px){
+  .apple-subscription .license-actions{grid-template-columns:1fr}
+  .apple-subscription .content-heading{align-items:flex-start;gap:12px;flex-wrap:wrap}
+}
+.settings-update-panel.mac-manual-updates .update-page-layout { grid-template-columns: minmax(0, 1fr); }
+.mac-manual-updates details { margin: 16px 0; }
+.mac-manual-updates summary { cursor: pointer; color: #008357; font-weight: 700; }
+.mac-manual-updates li { margin: 10px 0; line-height: 1.5; }
+.shipping-issues { margin: 16px 20px; padding: 16px 20px; border: 1px solid #f2c48e; border-radius: 14px; background: #fff8ed; color: #713f12; }
+.shipping-issues[hidden] { display: none; }
+.shipping-issues details + details { margin-top: 12px; }
+.shipping-issues summary { font-weight: 700; cursor: pointer; }
+.shipping-issues p, .mailing-table .shipping-issue-row p { margin: 8px 0 0; line-height: 1.5; overflow-wrap: anywhere; white-space: normal; }
+.shipping-issue-employees { max-height: 140px; overflow: auto; }
+.mailing-table .shipping-issue-row td { white-space: normal; max-width: none; padding: 12px 24px; background: #fff8ed; color: #713f12; }
+.shipping-live-progress.is-warning .shipping-live-progress-head,
+.shipping-live-progress.is-warning .shipping-live-current { color: #a16207; }
+.shipping-live-progress.is-warning [data-shipping-live="bar"] { background: #d97706; }

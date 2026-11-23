@@ -87,7 +87,7 @@ class WorkflowSessionTests(unittest.TestCase):
             settings = build_default_settings()
             settings["companies"] = [{"id": "alpha", "name": "Alpha", "email_excel_file": ""}]
             settings["selected_company_id"] = "alpha"
-            signature = ("alpha", "folder", "", "")
+            signature = ("alpha", "folder", "", "", '{"mode": "standard"}')
             store.save(
                 "alpha",
                 {

@@ -35,9 +35,14 @@ from core.config import (
 from core.distribution import distribution_label, get_distribution_channel, is_store_build
 from core.license_manager import LicenseManager
 from core.diagnostics import Diagnostics, record_progress
+from core.pdf_filename import company_rule, validate_rule, match_filename
+from core.pdf_content import PERSONNEL_RECOGNITION_REVISION
+from core.excel_io import load_email_records
+from core.input_scan import scan_pdf_folder
 from ui_web.report_history import ReportHistoryStore
 from ui_web.updater import UpdateService
-from ui_web.version import APP_BUILD, APP_VERSION
+from ui_web.macos_updates import MacWebsiteUpdates, website_metadata
+from ui_web.version import APP_BUILD, APP_VERSION, app_metadata
 from ui_web.workflow_sessions import WorkflowSessionStore
 
 
@@ -73,11 +78,13 @@ def _self_updates_supported(
 
 
 SELF_UPDATES_SUPPORTED = _self_updates_supported()
+WEBSITE_UPDATES_SUPPORTED = bool(website_metadata())
 
 
 def _app_store_update_state() -> dict:
     if is_store_build():
         return _store_update_state()
+    metadata = app_metadata()
     return {
         "ok": False,
         "supported": False,
@@ -85,8 +92,8 @@ def _app_store_update_state() -> dict:
         "install_on_exit": False,
         "install_supported": False,
         "status": "disabled",
-        "installed_version": APP_VERSION,
-        "installed_build": APP_BUILD,
+        "installed_version": metadata["version"],
+        "installed_build": metadata["build"],
         "message": "Updates werden über den Mac App Store bereitgestellt.",
     }
 
@@ -288,10 +295,10 @@ class WebBridge(QObject):
         self._processing_running = False
         self._processing_status = self._idle_processing_status()
         self._processing_company_id = ""
-        self._processing_input_signature: tuple[str, str, str, str] | None = None
+        self._processing_input_signature: tuple[str, ...] | None = None
         self._validation_state = self._empty_validation_state()
         self._validation_company_id = ""
-        self._validation_input_signature: tuple[str, str, str, str] | None = None
+        self._validation_input_signature: tuple[str, ...] | None = None
         self._shipping_running = False
         self._shipping_revision = 0
         self._shipping_status = self._idle_shipping_status()
@@ -306,7 +313,8 @@ class WebBridge(QObject):
         self._license_manager = LicenseManager(load_settings())
         self._diagnostics = Diagnostics(SETTINGS_DIR / "diagnostics", version=APP_VERSION,
             build=APP_BUILD, platform=sys.platform, credentials=self._diagnostic_credentials)
-        self._update_service = UpdateService() if SELF_UPDATES_SUPPORTED else None
+        self._update_service = (MacWebsiteUpdates() if WEBSITE_UPDATES_SUPPORTED else
+                                UpdateService() if SELF_UPDATES_SUPPORTED else None)
         if self._update_service is not None:
             self._update_service.recover_interrupted_state()
         self._update_thread: threading.Thread | None = None
@@ -326,6 +334,8 @@ class WebBridge(QObject):
         self._restore_workflow_session(load_settings())
 
     def _diagnostic_credentials(self):
+        if getattr(self._license_manager, "channel", "") == "appstore":
+            return {}
         state = self._license_manager.load_state()
         if state.get("status") == "device_mismatch":
             return {}
@@ -392,11 +402,15 @@ class WebBridge(QObject):
 
     @Slot(result=str)
     def appVersion(self) -> str:
-        return APP_VERSION
+        return app_metadata()["version"]
 
     @Slot(result=str)
     def appBuild(self) -> str:
-        return APP_BUILD
+        return app_metadata()["build"]
+
+    @Slot(result=str)
+    def getAppInfo(self) -> str:
+        return json.dumps(app_metadata())
 
     @Slot(result=str)
     def appDistribution(self) -> str:
@@ -620,6 +634,9 @@ class WebBridge(QObject):
 
     @Slot(result=str)
     def buyLicense(self) -> str:
+        from core.appstore_license import is_app_store
+        if is_app_store():
+            return self.appStoreAction("purchase")
         settings = load_settings()
         manager = LicenseManager(settings)
         try:
@@ -656,6 +673,9 @@ class WebBridge(QObject):
 
     @Slot(result=str)
     def buyLicenseByInvoice(self) -> str:
+        from core.appstore_license import is_app_store
+        if is_app_store():
+            return json.dumps({"ok": False, "message": "Abonnements werden ausschließlich über Apple verwaltet."})
         settings = load_settings()
         manager = LicenseManager(settings)
         try:
@@ -706,6 +726,9 @@ class WebBridge(QObject):
 
     @Slot(str, result=str)
     def saveLicenseeState(self, payload: str) -> str:
+        from core.appstore_license import is_app_store
+        if is_app_store():
+            return json.dumps({"ok": False, "message": "Abonnements werden über Apple verwaltet."})
         try:
             data = json.loads(payload or "{}")
             if not isinstance(data, dict):
@@ -757,6 +780,9 @@ class WebBridge(QObject):
 
     @Slot(result=str)
     def openCustomerPortal(self) -> str:
+        from core.appstore_license import is_app_store
+        if is_app_store():
+            return self.appStoreAction("manage")
         settings = load_settings()
         manager = LicenseManager(settings)
         try:
@@ -783,6 +809,9 @@ class WebBridge(QObject):
 
     @Slot(result=str)
     def promptActivateLicenseKey(self) -> str:
+        from core.appstore_license import is_app_store
+        if is_app_store():
+            return json.dumps({"ok": False, "message": "Bitte Käufe über Apple wiederherstellen."})
         return json.dumps(
             {
                 "ok": False,
@@ -806,9 +835,94 @@ class WebBridge(QObject):
         except Exception as exc:
             return json.dumps({"ok": False, "message": str(exc), "state": self._license_payload(settings)}, ensure_ascii=False)
 
+    @Slot(str, result=str)
+    def appStoreAction(self, action: str) -> str:
+        from core.appstore_license import is_app_store
+        if not is_app_store():
+            return json.dumps({"ok": False, "message": "Nur in der App-Store-Version verfügbar."})
+        manager = LicenseManager(load_settings())
+        try:
+            result = manager.purchase(action)
+            return json.dumps({**result, "state": manager.payload()}, ensure_ascii=False)
+        except Exception:
+            return json.dumps({"ok": False, "message": "Apple-Anfrage fehlgeschlagen. Bitte erneut versuchen."})
+
     @Slot(result=str)
     def getSettingsState(self) -> str:
         return json.dumps(self._settings_payload(load_settings()), ensure_ascii=False)
+
+    @Slot(result=str)
+    def getPdfFilenameState(self) -> str:
+        settings = load_settings()
+        company = self._selected_company(settings) or {}
+        try:
+            rule, error = company_rule(settings), ""
+        except ValueError as exc:
+            rule, error = {"mode": "standard"}, str(exc)
+        return json.dumps({"ok": not error, "company_id": company.get("id", ""),
+            "company_name": company.get("name", ""), "rule": rule, "message": error,
+            "busy": self._workflow_running()}, ensure_ascii=False)
+
+    def _pdf_rule_request(self, payload: str):
+        data = json.loads(payload)
+        if not isinstance(data, dict):
+            raise ValueError("Ungültige PDF-Einstellungen.")
+        settings = load_settings()
+        company = self._selected_company(settings)
+        if not company or data.get("company_id") != company["id"]:
+            raise ValueError("Das aktive Unternehmen wurde geändert. Bitte PDF-Einstellungen neu laden.")
+        if self._workflow_running():
+            raise ValueError("Bitte laufende Prüfung oder Versand zuerst abschließen.")
+        if not isinstance(data.get("rule"), dict):
+            raise ValueError("Bitte ein PDF-Dateiformat auswählen.")
+        return data, settings, company, validate_rule(data.get("rule"))
+
+    @Slot(str, result=str)
+    def previewPdfFilename(self, payload: str) -> str:
+        try:
+            data, settings, company, rule = self._pdf_rule_request(payload)
+            excel = get_company_email_excel_file(settings, company["id"])
+            if not excel:
+                raise ValueError("Bitte zuerst die Mitarbeiter-Excel für dieses Unternehmen auswählen.")
+            records = load_email_records(Path(excel))
+            match = match_filename(data.get("filename", ""), rule, records)
+            return json.dumps({"ok": True, "company_id": company["id"], "match": match}, ensure_ascii=False)
+        except (ValueError, OSError) as exc:
+            return json.dumps({"ok": False, "message": str(exc)}, ensure_ascii=False)
+
+    @Slot(str, str, result=str)
+    def checkPdfFilenameFolder(self, payload: str, folder: str) -> str:
+        try:
+            data, settings, company, rule = self._pdf_rule_request(payload)
+            excel = get_company_email_excel_file(settings, company["id"])
+            if not excel:
+                raise ValueError("Bitte zuerst die Mitarbeiter-Excel für dieses Unternehmen auswählen.")
+            records = load_email_records(Path(excel))
+            scan = scan_pdf_folder(Path(folder), rule=rule, records=records)
+            return json.dumps({"ok": True, "company_id": company["id"],
+                "total": scan["total_pdf_files"], "matched": scan["valid_pdf_files"],
+                "problems": len(scan["invalid_files"]), "rows": scan["filename_matches"][:500],
+                "truncated": len(scan["filename_matches"]) > 500}, ensure_ascii=False)
+        except (ValueError, OSError) as exc:
+            return json.dumps({"ok": False, "message": str(exc)}, ensure_ascii=False)
+
+    @Slot(str, result=str)
+    def savePdfFilenameRule(self, payload: str) -> str:
+        try:
+            data, settings, company, rule = self._pdf_rule_request(payload)
+            # Only persist structural fields, never the customer's sample/name.
+            if rule != company.get("pdf_filename_rule", {"mode": "standard"}):
+                company["pdf_filename_rule"] = rule
+                save_settings(settings)
+                if self._pdf_input_mode(settings) == "folder":
+                    self._reset_workflow_state()
+                    self._processing_status["message"] = "PDF-Dateiformat geändert. Bitte erneut prüfen."
+                    self._persist_workflow_session(settings)
+                    self.processingStateChanged.emit(json.dumps(self._processing_payload(settings), ensure_ascii=False))
+                    self.shippingStateChanged.emit(json.dumps(self._shipping_payload(settings), ensure_ascii=False))
+            return json.dumps({"ok": True, "message": "PDF-Dateiformat für dieses Unternehmen gespeichert. Ordner bitte erneut prüfen."}, ensure_ascii=False)
+        except (ValueError, OSError) as exc:
+            return json.dumps({"ok": False, "message": str(exc)}, ensure_ascii=False)
 
     @Slot(str, result=str)
     def saveCompanyState(self, payload: str) -> str:
@@ -1832,8 +1946,8 @@ class WebBridge(QObject):
         company_id = self._active_company_id(settings)
         pdf_input_mode = self._pdf_input_mode(settings)
 
-        pdf_input = str(ui_settings.get("last_pdf_dir", "") or "").strip()
-        excel_file = str(get_company_email_excel_file(settings, company_id) or "").strip()
+        pdf_input = str(ui_settings.get("last_pdf_dir", "") or "")
+        excel_file = str(get_company_email_excel_file(settings, company_id) or "")
 
         pdf_state = self._path_state(
             pdf_input,
@@ -2058,7 +2172,7 @@ class WebBridge(QObject):
 
         def signature(key: str) -> tuple[str, ...] | None:
             value = state.get(key)
-            expected_length = 5 if key == "shipping_input_signature" else 4
+            expected_length = 6 if key == "shipping_input_signature" else 5
             if isinstance(value, list) and len(value) == expected_length:
                 return tuple(str(item or "") for item in value)
             return None
@@ -2074,6 +2188,11 @@ class WebBridge(QObject):
         self._shipping_status = {**self._idle_shipping_status(), **dict(state.get("shipping_status") or {})}
         self._shipping_rows = list(state.get("shipping_rows") or [])
         self._shipping_source_rows = list(state.get("shipping_source_rows") or [])
+        if state.get("processing_input_signature") and self._processing_input_signature is None:
+            # Older workflows predate filename rules. Keep reports/history, but
+            # require a fresh check before trusting any prepared attachments.
+            self._reset_workflow_state()
+            return
         self._mass_message_status = {**self._idle_mass_message_status(), **dict(state.get("mass_message_status") or {})}
         self._mass_message_preview = {**self._empty_mass_message_preview(), **dict(state.get("mass_message_preview") or {})}
         if self._mass_message_preview.get("attachments"):
@@ -2117,19 +2236,26 @@ class WebBridge(QObject):
         self._shipping_running = False
         self._mass_message_running = False
 
-    def _input_signature(self, settings: dict) -> tuple[str, str, str, str]:
+    def _input_signature(self, settings: dict) -> tuple[str, ...]:
         company_id = self._active_company_id(settings)
         ui_settings = settings.get("ui", {})
-        raw_pdf_input = str(ui_settings.get("last_pdf_dir", "") or "").strip()
-        raw_excel_input = str(get_company_email_excel_file(settings, company_id) or "").strip()
+        raw_pdf_input = str(ui_settings.get("last_pdf_dir", "") or "")
+        raw_excel_input = str(get_company_email_excel_file(settings, company_id) or "")
         pdf_input = Path(raw_pdf_input).expanduser() if raw_pdf_input else None
         excel_input = Path(raw_excel_input).expanduser() if raw_excel_input else None
-        return (
+        signature = (
             company_id,
             self._pdf_input_mode(settings),
             str(pdf_input.resolve(strict=False)) if pdf_input else "",
             str(excel_input.resolve(strict=False)) if excel_input else "",
+            json.dumps((self._selected_company(settings) or {}).get("pdf_filename_rule", {"mode": "standard"}),
+                       sort_keys=True) if self._pdf_input_mode(settings) == "folder" else "",
         )
+        rule = (self._selected_company(settings) or {}).get("pdf_filename_rule", {})
+        if self._pdf_input_mode(settings) == "single_pdf" or (isinstance(rule, dict) and rule.get("mode") == "content"):
+            # Old prepared attachments must be rechecked with the shared recognizer.
+            return (*signature[:-1], f"{signature[-1]}|{PERSONNEL_RECOGNITION_REVISION}")
+        return signature
 
     def _shipping_signature(self, settings: dict) -> tuple[str, ...]:
         effective = self._settings_with_company_mail(settings)
@@ -2152,7 +2278,7 @@ class WebBridge(QObject):
         return bool(
             self._shipping_company_id == self._active_company_id(settings)
             and self._shipping_input_signature
-            and self._shipping_input_signature[:4] == self._input_signature(settings)
+            and self._shipping_input_signature[:5] == self._input_signature(settings)
         )
 
     def _confirmed_shipping_rows(self, settings: dict) -> list[dict]:
@@ -2199,7 +2325,7 @@ class WebBridge(QObject):
             if not isinstance(company, dict):
                 continue
             company_id = str(company.get("id", "") or "").strip()
-            excel_file = str(company.get("email_excel_file", "") or "").strip()
+            excel_file = str(company.get("email_excel_file", "") or "")
             mail_settings = self._company_mail_settings(company)
             companies.append(
                 {
@@ -2217,7 +2343,7 @@ class WebBridge(QObject):
         smtp_settings = effective_settings.get("smtp", {})
         license_settings = settings.get("license", {})
         period_settings = settings.get("period", {})
-        selected_excel = str(get_company_email_excel_file(settings) or "").strip()
+        selected_excel = str(get_company_email_excel_file(settings) or "")
         smtp_server = str(smtp_settings.get("server", "") or "").strip()
         smtp_from = str(smtp_settings.get("from_email", "") or smtp_settings.get("username", "") or "").strip()
         license_status = str(license_settings.get("status", "") or "unregistered").strip().lower()
@@ -2259,6 +2385,8 @@ class WebBridge(QObject):
 
     def _license_payload(self, settings: dict, refresh: bool = False, state: dict | None = None) -> dict:
         manager = LicenseManager(settings)
+        if getattr(manager, "channel", "") == "appstore":
+            return manager.payload(state)
         state = state or (self._diagnosed_job("license", {}, manager.refresh, force=False, start_trial=True) if refresh else manager.load_state())
         licensee = self._licensee_settings(settings, state)
         raw_key = str(state.get("license_key", "") or settings.get("license", {}).get("key", "") or "").strip()
@@ -2536,12 +2664,12 @@ class WebBridge(QObject):
             "licensee": self._licensee_settings(settings),
             "license": self._license_payload(settings),
             "outlook_supported": OUTLOOK_SUPPORTED,
-            "updates_supported": SELF_UPDATES_SUPPORTED,
+            "updates_supported": SELF_UPDATES_SUPPORTED or WEBSITE_UPDATES_SUPPORTED,
         }
 
     def _mass_message_payload(self, settings: dict) -> dict:
         company_id = str(settings.get("selected_company_id", "") or "").strip()
-        excel_file = str(get_company_email_excel_file(settings, company_id) or "").strip()
+        excel_file = str(get_company_email_excel_file(settings, company_id) or "")
         preview_payload = {
             key: value
             for key, value in self._mass_message_preview.items()
@@ -2800,19 +2928,23 @@ class WebBridge(QObject):
         self._shipping_source_rows = list(combined.values())
         self._shipping_rows = [self._shipping_row(row) for row in self._shipping_source_rows]
         failed_count = int(summary.get("failed_count", 0) or 0)
+        skipped_count = int(summary.get("skipped_count", 0) or 0)
+        input_issues = [dict(item) for item in result.get("filename_errors", []) if isinstance(item, dict)]
         if dry_run:
-            current_step = "Dry-Run abgeschlossen"
-            message = "Versand-Dry-Run abgeschlossen. Anhänge und Bericht wurden erstellt."
-            finished = True
-            failed = False
-        elif failed_count and completed_count:
+            finished = completed_count > 0
+            failed = not finished
+            current_step = ("Vorbereitung teilweise abgeschlossen" if failed_count or skipped_count else "Vorbereitung abgeschlossen") if finished else "Keine PDF-Datei vorbereitet"
+            message = f"{completed_count} Mitarbeiter-PDFs vorbereitet · {failed_count} Fehler · {skipped_count} übersprungen."
+            if failed_count or skipped_count:
+                message += " Ursachen unten prüfen und betroffene Einträge erneut vorbereiten."
+        elif (failed_count or skipped_count) and completed_count:
             current_step = "Versand teilweise abgeschlossen"
-            message = f"{completed_count} E-Mails wurden gesendet, {failed_count} konnten nicht gesendet werden."
+            message = f"{completed_count} E-Mails gesendet · {failed_count} Fehler · {skipped_count} übersprungen. Ursachen unten prüfen."
             finished = True
             failed = False
-        elif failed_count:
+        elif failed_count or not completed_count:
             current_step = "Versand fehlgeschlagen"
-            message = f"Keine E-Mail wurde gesendet. {failed_count} Versandfehler. Bitte Fehlerdetails prüfen."
+            message = f"Keine E-Mail wurde gesendet. {failed_count} Fehler · {skipped_count} übersprungen. Einträge und Ursachen unten prüfen."
             finished = False
             failed = True
         else:
@@ -2820,18 +2952,23 @@ class WebBridge(QObject):
             message = f"Versand abgeschlossen. {completed_count} E-Mails wurden gesendet."
             finished = True
             failed = False
+        if input_issues:
+            message += f" {len(input_issues)} PDF-Dateien ohne sichere Zuordnung; Dateiformat und Excel prüfen."
         self._shipping_status = {
             **self._idle_shipping_status(),
             "finished": finished,
             "operation_id": self._shipping_status.get("operation_id", ""),
             "failed": failed,
+            "outcome": "failed" if failed else ("partial" if failed_count or skipped_count or input_issues else "success"),
+            "input_issues": input_issues,
+            "processed": completed_count + failed_count + skipped_count,
             "can_send": True,
             "current_step": current_step,
             "progress": 100,
             "dry_run": dry_run,
             "prepared": completed_count if dry_run else 0,
             "sent": 0 if dry_run else completed_count,
-            "skipped": int(summary.get("skipped_count", 0) or 0),
+            "skipped": skipped_count,
             "errors": failed_count,
             "message": message,
             "reports": {
@@ -3040,6 +3177,12 @@ class WebBridge(QObject):
         summary = result.get("summary", {}) if isinstance(result, dict) else {}
         table_rows = result.get("table_rows", []) if isinstance(result, dict) else []
         validation_rows = [self._validation_row(row) for row in table_rows if isinstance(row, dict)]
+        for error in result.get("filename_errors", []):
+            # Never make an unassigned filename selectable as an employee.
+            validation_rows.append(self._validation_row({
+                "Files": error["file"], "Status": "Fehler", "Count": 1,
+                "Error": error["reason"], "PersNr": "", "Name": "Nicht zugeordnet",
+            }))
         critical = sum(1 for row in validation_rows if row["severity"] == "critical")
         warnings = sum(1 for row in validation_rows if row["severity"] == "warning")
         info = sum(1 for row in validation_rows if row["severity"] == "info")
@@ -3153,6 +3296,9 @@ class WebBridge(QObject):
             "status": status,
             "planned": "Dry-Run",
             "error": str(row.get("Error", "") or ""),
+            "error_code": str(row.get("ErrorCode", "") or ""),
+            "error_title": str(row.get("ErrorTitle", "") or ""),
+            "error_action": str(row.get("ErrorAction", "") or ""),
         }
 
     def _shipping_rows_from_validation(self) -> list[dict]:
@@ -3173,7 +3319,8 @@ class WebBridge(QObject):
                     "size": "-",
                     "status": status,
                     "planned": "Dry-Run",
-                    "error": "",
+                    "error": str(row.get("description", "") or "") if status != "Bereit" else "",
+                    "error_title": status if status != "Bereit" else "",
                 }
             )
         return rows
@@ -3181,8 +3328,8 @@ class WebBridge(QObject):
     def _inputs_ready(self, settings: dict) -> bool:
         ui_settings = settings.get("ui", {})
         company_id = self._active_company_id(settings)
-        pdf_input = str(ui_settings.get("last_pdf_dir", "") or "").strip()
-        excel_file = str(get_company_email_excel_file(settings, company_id) or "").strip()
+        pdf_input = str(ui_settings.get("last_pdf_dir", "") or "")
+        excel_file = str(get_company_email_excel_file(settings, company_id) or "")
         pdf_expected = "pdf" if self._pdf_input_mode(settings) == "single_pdf" else "folder"
         return bool(
             self._path_state(pdf_input, expected=pdf_expected)["valid"]
@@ -3239,7 +3386,7 @@ class WebBridge(QObject):
             if str(company.get("id", "") or "").strip() != selected_company_id:
                 continue
             if pdf_input is not None:
-                company["pdf_input"] = str(pdf_input or "").strip()
+                company["pdf_input"] = str(pdf_input or "")
             if mode is not None:
                 resolved_mode = str(mode or "folder").strip()
                 company["pdf_input_mode"] = resolved_mode if resolved_mode in {"folder", "single_pdf"} else "folder"
@@ -3447,7 +3594,7 @@ class WebBridge(QObject):
 
     def _legacy_run_matches_company(self, run_dir: Path, settings: dict) -> bool:
         ui_settings = settings.get("ui", {}) if isinstance(settings, dict) else {}
-        raw_pdf_input = str(ui_settings.get("last_pdf_dir", "") or "").strip()
+        raw_pdf_input = str(ui_settings.get("last_pdf_dir", "") or "")
         if not raw_pdf_input:
             return False
         pdf_input = Path(raw_pdf_input).expanduser()
@@ -3870,7 +4017,8 @@ class WebBridge(QObject):
         return self._report_state_from_path(str(raw_path or ""), filename)
 
     def _path_state(self, raw_path: str, expected: str) -> dict[str, str | bool]:
-        raw_path = str(raw_path or "").strip()
+        # A selected filesystem path is an identifier, not free-form text.
+        raw_path = str(raw_path or "")
         if not raw_path:
             return {
                 "path": "",

@@ -20,6 +20,9 @@ from .config import GESOB_DIR
 from .email_validation import validate_email_records
 from .excel_io import load_email_records, normalize_birth_date
 from .input_scan import scan_pdf_folder
+from .pdf_filename import company_rule
+from .pdf_content import recognize_pdf_content, recognize_personnel_text
+from .shipping_errors import ShippingError, describe_shipping_error, issue_fields
 from .message_templates import (
     append_pdf_password_notice,
     build_mail_context,
@@ -29,7 +32,6 @@ from .message_templates import (
 from .report import write_audit_check_xlsx
 
 ProgressCb = Callable[[Any], None] | None
-PERSNR_TEXT_RE = re.compile(r"Pers\.-Nr\.\s*([0-9]{4,})")
 
 
 def _p(cb: ProgressCb, msg: str) -> None:
@@ -91,12 +93,17 @@ def _pdf_path_key(pdf_path: Path) -> str:
 def _read_pdf_page_count(pdf_path: Path) -> int:
     _require_pdf_support()
     try:
-        page_count = len(PdfReader(str(pdf_path)).pages)
+        reader = PdfReader(str(pdf_path))
+        if reader.is_encrypted and not reader.decrypt(""):
+            raise ShippingError("PDF_LOCKED")
+        page_count = len(reader.pages)
     except Exception as exc:
-        raise ValueError(f"PDF nicht lesbar: {exc}") from exc
+        if isinstance(exc, (ShippingError, OSError)):
+            raise
+        raise ShippingError("PDF_UNREADABLE") from exc
 
     if page_count <= 0:
-        raise ValueError("PDF enthält keine Seiten.")
+        raise ShippingError("PDF_EMPTY")
 
     return page_count
 
@@ -113,12 +120,14 @@ def _validate_grouped_pdf_files(grouped: dict[str, list[Path]]) -> dict:
                 page_counts[_pdf_path_key(pdf_path)] = _read_pdf_page_count(pdf_path)
                 valid_grouped.setdefault(persnr, []).append(pdf_path)
             except Exception as exc:
-                reason = str(exc)
+                issue = describe_shipping_error(exc, "read")
+                reason = issue["Error"]
                 errors_by_persnr.setdefault(persnr, []).append(f"{pdf_path.name}: {reason}")
                 error_details.append({
                     "persnr": persnr,
                     "file": pdf_path.name,
                     "reason": reason,
+                    **issue,
                 })
 
     return {
@@ -344,15 +353,13 @@ def _pdf_password_for_employee(
 
     source = str(password_settings.get("source", "persnr") or "persnr").strip().lower()
     if source == "birth_date":
-        password_basis = str(
-            employee_record.get("PdfGeburtsdatum")
-            or employee_record.get("Geburtsdatum")
-            or ""
-        ).strip()
+        pdf_birth_date = normalize_birth_date(employee_record.get("PdfGeburtsdatum"))
+        excel_birth_date = normalize_birth_date(employee_record.get("Geburtsdatum"))
+        if pdf_birth_date and excel_birth_date and pdf_birth_date != excel_birth_date:
+            raise ShippingError("BIRTH_DATE_MISMATCH")
+        password_basis = pdf_birth_date or excel_birth_date
         if not password_basis:
-            raise ValueError(
-                "Geburtsdatum fehlt oder ist ungültig; PDF-Passwort konnte nicht erstellt werden."
-            )
+            raise ShippingError("BIRTH_DATE_MISSING")
     else:
         password_basis = persnr
 
@@ -373,16 +380,7 @@ def run_dir_from_id(run_id: str, output_dir: Path | None = None) -> Path:
 
 
 def _extract_persnr_from_pdf(pdf_path: Path) -> str | None:
-    doc = fitz.open(pdf_path)
-    try:
-        for page in doc:
-            text = page.get_text("text") or ""
-            match = PERSNR_TEXT_RE.search(text)
-            if match:
-                return match.group(1).zfill(5)
-    finally:
-        doc.close()
-    return None
+    return recognize_pdf_content(pdf_path)["persnr"] or None
 
 
 def _extract_birth_date_from_page(page) -> str | None:
@@ -432,9 +430,7 @@ def _extract_birth_date_from_pdf(pdf_path: Path) -> str | None:
         doc.close()
 
     if len(found) > 1:
-        raise ValueError(
-            f"Widersprüchliche Geburtsdaten in {pdf_path.name}: {', '.join(sorted(found))}."
-        )
+        raise ShippingError("BIRTH_DATE_CONFLICT")
     return next(iter(found), None)
 
 
@@ -445,11 +441,7 @@ def _extract_employee_birth_date(pdf_files: list[Path]) -> str | None:
         if (birth_date := _extract_birth_date_from_pdf(pdf_path))
     }
     if len(found) > 1:
-        raise ValueError(
-            "Widersprüchliche Geburtsdaten in den Abrechnungen dieses Mitarbeiters: "
-            + ", ".join(sorted(found))
-            + "."
-        )
+        raise ShippingError("BIRTH_DATE_CONFLICT")
     return next(iter(found), None)
 
 
@@ -526,8 +518,8 @@ def _extract_employee_full_name_from_page(page, persnr: str) -> str | None:
 
     wanted_persnr = _normalize_personnel_number(persnr)
     for anchor in lines:
-        match = PERSNR_TEXT_RE.search(anchor["text"])
-        if not match or _normalize_personnel_number(match.group(1)) != wanted_persnr:
+        match = recognize_personnel_text(anchor["text"])
+        if not match["persnr"] or match["persnr"] != wanted_persnr:
             continue
 
         candidates = [
@@ -620,7 +612,7 @@ def _enrich_employee_names_from_pdfs(
     return enriched
 
 
-def _split_single_pdf_to_employee_pages(source_pdf: Path, out_dir: Path, progress_cb: ProgressCb = None) -> None:
+def _split_single_pdf_to_employee_pages(source_pdf: Path, out_dir: Path, progress_cb: ProgressCb = None) -> dict[str, str]:
     _require_pdf_support()
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -628,6 +620,7 @@ def _split_single_pdf_to_employee_pages(source_pdf: Path, out_dir: Path, progres
     total_pages = len(reader.pages)
     persnr_counts: dict[str, int] = {}
     unmatched_count = 0
+    recognition_errors = {}
 
     for index, page in enumerate(reader.pages, start=1):
         writer = PdfWriter()
@@ -637,7 +630,8 @@ def _split_single_pdf_to_employee_pages(source_pdf: Path, out_dir: Path, progres
         with temp_path.open("wb") as f:
             writer.write(f)
 
-        persnr = _extract_persnr_from_pdf(temp_path)
+        match = recognize_pdf_content(temp_path)
+        persnr = match["persnr"]
         if persnr:
             suffix_no = persnr_counts.get(persnr, 0)
             filename = f"{persnr}.pdf" if suffix_no == 0 else f"{persnr}_{suffix_no}.pdf"
@@ -645,15 +639,19 @@ def _split_single_pdf_to_employee_pages(source_pdf: Path, out_dir: Path, progres
             temp_path.rename(out_dir / filename)
         else:
             unmatched_count += 1
-            temp_path.rename(out_dir / f"unmatched_{unmatched_count:03d}.pdf")
+            filename = f"unmatched_{unmatched_count:03d}.pdf"
+            temp_path.rename(out_dir / filename)
+            recognition_errors[filename] = f"Original-PDF, Seite {index}: {match['reason']}"
 
         _p(progress_cb, f"PDF wird aufgeteilt: Seite {index}/{total_pages}")
+    return recognition_errors
 
 
-def _prepare_pdf_input(pdf_input: Path, run_dir: Path, progress_cb: ProgressCb = None) -> dict:
+def _prepare_pdf_input(pdf_input: Path, run_dir: Path, progress_cb: ProgressCb = None,
+                       filename_rule=None, records=None) -> dict:
     if pdf_input.is_dir():
         _p(progress_cb, "PDF-Ordner wird analysiert...")
-        scan_result = scan_pdf_folder(pdf_input)
+        scan_result = scan_pdf_folder(pdf_input, rule=filename_rule, records=records)
         scan_result["source_kind"] = "folder"
         scan_result["prepared_folder"] = pdf_input
         return scan_result
@@ -661,8 +659,11 @@ def _prepare_pdf_input(pdf_input: Path, run_dir: Path, progress_cb: ProgressCb =
     if pdf_input.is_file() and pdf_input.suffix.lower() == ".pdf":
         prepared_folder = run_dir / "output_pages"
         _p(progress_cb, "Einzelne PDF wird in Seiten aufgeteilt und nach PersNr benannt...")
-        _split_single_pdf_to_employee_pages(pdf_input, prepared_folder, progress_cb=progress_cb)
+        recognition_errors = _split_single_pdf_to_employee_pages(pdf_input, prepared_folder, progress_cb=progress_cb)
         scan_result = scan_pdf_folder(prepared_folder)
+        for item in scan_result.get("filename_errors", []) + scan_result.get("filename_matches", []):
+            if item["file"] in recognition_errors:
+                item["reason"] = recognition_errors[item["file"]]
         scan_result["source_kind"] = "single_pdf"
         scan_result["prepared_folder"] = prepared_folder
         return scan_result
@@ -797,16 +798,26 @@ def _merge_employee_pdfs(pdf_files: list[Path], out_pdf: Path) -> None:
 
 def _encrypt_pdf(in_pdf: Path, out_pdf: Path, password: str) -> None:
     _require_pdf_support()
+    if not password:
+        raise ShippingError("PDF_ENCRYPTION")
 
     reader = PdfReader(str(in_pdf))
     writer = PdfWriter()
     for page in reader.pages:
         writer.add_page(page)
-    if password:
-        writer.encrypt(password)
+    writer.encrypt(password)
     out_pdf.parent.mkdir(parents=True, exist_ok=True)
-    with out_pdf.open("wb") as f:
-        writer.write(f)
+    temporary = out_pdf.with_name(f".{out_pdf.name}.encrypting")
+    try:
+        with temporary.open("wb") as f:
+            writer.write(f)
+        with temporary.open("rb") as f:
+            protected = PdfReader(f)
+            if not protected.is_encrypted or not protected.decrypt(password) or len(protected.pages) != len(reader.pages):
+                raise ShippingError("PDF_ENCRYPTION")
+        temporary.replace(out_pdf)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _write_send_report_xlsx(out_path: Path, rows: list[dict]) -> None:
@@ -868,12 +879,15 @@ def action_check(
     excel_path: Path,
     progress_cb: ProgressCb = None,
     output_dir: Path | None = None,
+    filename_rule: dict | None = None,
 ) -> dict:
     run_id = make_run_id(pdf_input.name, prefix="check_")
     run_dir = run_dir_from_id(run_id, output_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    scan_result = _prepare_pdf_input(pdf_input, run_dir, progress_cb=progress_cb)
+    email_records = load_email_records(excel_path)
+    scan_result = _prepare_pdf_input(pdf_input, run_dir, progress_cb=progress_cb,
+                                    filename_rule=filename_rule, records=email_records)
 
     grouped = scan_result["grouped"]
     invalid_files = scan_result["invalid_files"]
@@ -886,7 +900,6 @@ def action_check(
     invalid_pdf_details = pdf_validation["error_details"]
 
     _p(progress_cb, "Excel-Datei wird gelesen…")
-    email_records = load_email_records(excel_path)
     _p(progress_cb, "Fehlende Mitarbeiternamen werden aus den Abrechnungen ergänzt…")
     email_records = _enrich_employee_names_from_pdfs(email_records, valid_grouped)
     _p(progress_cb, "E-Mail-Adressen werden geprüft…")
@@ -937,7 +950,7 @@ def action_check(
         email_map=email_map,
         email_records=email_records,
         invalid_files=invalid_files,
-        invalid_pdf_details=invalid_pdf_details,
+        invalid_pdf_details=invalid_pdf_details + scan_result.get("filename_errors", []),
         pdf_errors_by_persnr=pdf_errors_by_persnr,
         missing_email_persnr=missing_email_persnr,
         missing_files_persnr=missing_files_persnr,
@@ -1025,6 +1038,7 @@ def action_check(
         "email_records": email_records,
         "email_validation": email_validation,
         "invalid_files": invalid_files,
+        "filename_errors": scan_result.get("filename_errors", []),
         "invalid_pdf_details": invalid_pdf_details,
         "pdf_errors_by_persnr": pdf_errors_by_persnr,
         "missing_email_persnr": missing_email_persnr,
@@ -1060,7 +1074,10 @@ def action_send(
     run_dir = run_dir_from_id(run_id, output_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    scan_result = _prepare_pdf_input(pdf_input, run_dir, progress_cb=progress_cb)
+    email_records = load_email_records(excel_path)
+    scan_result = _prepare_pdf_input(pdf_input, run_dir, progress_cb=progress_cb,
+                                    filename_rule=company_rule(settings, company_id) if pdf_input.is_dir() else None,
+                                    records=email_records)
     grouped = scan_result["grouped"]
     invalid_files = scan_result["invalid_files"]
 
@@ -1071,7 +1088,6 @@ def action_send(
     invalid_pdf_details = pdf_validation["error_details"]
 
     _p(progress_cb, "Excel-Datei wird gelesen…")
-    email_records = load_email_records(excel_path)
     _p(progress_cb, "Fehlende Mitarbeiternamen werden aus den Abrechnungen ergänzt…")
     email_records = _enrich_employee_names_from_pdfs(email_records, valid_grouped)
     _p(progress_cb, "E-Mail-Adressen werden geprüft…")
@@ -1153,7 +1169,7 @@ def action_send(
         email_map=email_map,
         email_records=email_records,
         invalid_files=invalid_files,
-        invalid_pdf_details=invalid_pdf_details,
+        invalid_pdf_details=invalid_pdf_details + scan_result.get("filename_errors", []),
         pdf_errors_by_persnr=pdf_errors_by_persnr,
         missing_email_persnr=missing_email_persnr,
         missing_files_persnr=missing_files_persnr,
@@ -1248,6 +1264,8 @@ def action_send(
 
         if pdf_errors:
             row["Status"] = "Fehler"
+            detail = next((item for item in invalid_pdf_details if item.get("persnr") == persnr), {})
+            row.update({key: detail[key] for key in ("ErrorCode", "ErrorTitle", "ErrorAction") if key in detail})
             row["Error"] = "; ".join(pdf_errors)
             failed_count += 1
             rows.append(row)
@@ -1262,6 +1280,10 @@ def action_send(
 
         if not email or (email_check and not email_check.get("sendable", False)):
             row["Status"] = _email_status(email_check, email)
+            row.update(issue_fields("EMAIL_INVALID"))
+            row["ErrorTitle"] = row["Status"]
+            row["ErrorCode"] = "EMAIL_" + str(email_check.get("code") or "missing").upper()
+            row["Error"] = str(email_check.get("hint") or row["Status"]) + ". " + row["ErrorAction"]
             skipped_count += 1
             rows.append(row)
             _shipping_progress(
@@ -1276,6 +1298,7 @@ def action_send(
         final_pdf = prepared_dir / f"{persnr}_protected.pdf" if password_enabled else merged_pdf
         password = ""
 
+        preparation_stage = "prepare"
         try:
             employee_record = dict(email_records.get(persnr, {}))
             if (
@@ -1291,8 +1314,10 @@ def action_send(
                 persnr,
                 employee_record,
             )
+            preparation_stage = "merge"
             _merge_employee_pdfs(files, merged_pdf)
             if password_enabled:
+                preparation_stage = "encrypt"
                 _encrypt_pdf(merged_pdf, final_pdf, password)
                 try:
                     merged_pdf.unlink(missing_ok=True)
@@ -1318,6 +1343,7 @@ def action_send(
                 sent_count += 1
                 _p(progress_cb, f"[Dry-Run] {persnr} -> {email}")
             else:
+                preparation_stage = "send"
                 _shipping_progress(
                     progress_cb, phase="sending", current=progress_index - 1, total=progress_total,
                     operation="E-Mail wird an Outlook/SMTP übergeben…", persnr=persnr, email=email,
@@ -1328,26 +1354,26 @@ def action_send(
                 sent_count += 1
                 _p(progress_cb, f"Gesendet via {mail_mode}: {persnr} -> {email}")
         except Exception as exc:
-            from .mailer import user_facing_mail_error
             from .diagnostics import record_handled_error
 
             record_handled_error(exc)
 
             row["Status"] = "Fehler"
-            row["Error"] = user_facing_mail_error(exc)
+            row.update(describe_shipping_error(exc, preparation_stage))
             failed_count += 1
             _p(progress_cb, f"Fehler bei {persnr}: {row['Error']}")
 
         rows.append(row)
         _shipping_progress(
             progress_cb, phase=progress_phase, current=progress_index, total=progress_total,
-            operation=("PDF wurde vorbereitet." if dry_run else ("E-Mail wurde gesendet." if row["Status"] == "Gesendet" else "Versand fehlgeschlagen.")),
+            operation=(row["Error"] if row["Status"] == "Fehler" else ("PDF wurde vorbereitet." if dry_run else "E-Mail wurde gesendet.")),
             persnr=persnr, email=email, prepared=prepared_count,
             sent=sent_count if not dry_run else 0, errors=failed_count,
             status="complete" if row["Status"] in {"Dry-Run", "Gesendet"} else "error",
         )
 
     for persnr in missing_files_persnr:
+        skipped_count += 1
         rows.append(
             {
                 "PersNr": persnr,
@@ -1358,7 +1384,7 @@ def action_send(
                 "Status": "Keine Dateien",
                 "Attachment": "",
                 "Password": "",
-                "Error": "",
+                **issue_fields("PDF_MISSING"),
                 **_email_check_values(email_validation, persnr),
             }
         )
@@ -1405,6 +1431,7 @@ def action_send(
         "email_records": email_records,
         "email_validation": email_validation,
         "invalid_files": invalid_files,
+        "filename_errors": scan_result.get("filename_errors", []),
         "invalid_pdf_details": invalid_pdf_details,
         "pdf_errors_by_persnr": pdf_errors_by_persnr,
         "missing_email_persnr": missing_email_persnr,

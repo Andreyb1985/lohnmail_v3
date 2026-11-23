@@ -50,6 +50,7 @@
   var latestLicenseState = null;
   var latestSettingsState = null;
   var UPDATE_STORAGE_KEY = 'lohnmail.update-ui.v1';
+  var installedAppInfo = null;
   var latestUpdateState = {
     supported: true,
     distribution: 'direct',
@@ -282,6 +283,11 @@
   }
   function renderUpdateSettings(){
     var state = latestUpdateState;
+    var manual = state.manual_download === true;
+    var panel = document.querySelector('[data-settings-panel="updates"]');
+    if (panel) panel.classList.toggle('mac-manual-updates', manual);
+    document.querySelectorAll('[data-mac-update-only]').forEach(function(n){ n.hidden = !manual; });
+    document.querySelectorAll('[data-installed-update-only]').forEach(function(n){ n.hidden = manual; });
     var status = normalizeUpdateStatus(state.status);
     var copy = updateStatusCopy(state);
     setText('[data-update="installed-version"]', state.installed_version ? 'v' + String(state.installed_version).replace(/^v/i, '') : '—');
@@ -320,10 +326,11 @@
       primaryButton.setAttribute('data-update-primary-action', 'true');
       setButtonLabel(primaryButton, primaryLabel);
       primaryButton.disabled = status === 'checking' || status === 'downloading' || status === 'installing'
-        || ((primaryAction === 'download' || primaryAction === 'install-now') && state.install_supported !== true);
+        || ((primaryAction === 'download' || primaryAction === 'install-now') && state.install_supported !== true && !manual);
       primaryButton.title = primaryButton.disabled && state.install_supported !== true
         ? 'Updates werden in dieser Version nur unter Windows installiert.'
         : '';
+      if (manual && primaryAction === 'download') setButtonLabel(primaryButton, 'Neue Version herunterladen');
     }
     var download = document.querySelector('[data-update-download]');
     if (download) download.hidden = status !== 'downloading' && status !== 'ready';
@@ -336,7 +343,7 @@
       ? formatUpdateBytes(state.downloaded_bytes) + ' von ' + formatUpdateBytes(state.total_bytes)
       : [state.available_version ? 'Version ' + state.available_version : '', state.available_build ? 'Build ' + state.available_build : ''].filter(Boolean).join(' · ');
     setText('[data-update="download-detail"]', downloadDetail || 'Download noch nicht gestartet');
-    setText('[data-update="release-version"]', state.available_version ? 'Version ' + state.available_version : 'Installierte Version ' + state.installed_version);
+    setText('[data-update="release-version"]', state.available_version ? 'Version ' + state.available_version : 'Installierte Version ' + (state.installed_version || '—'));
     var notes = document.querySelector('[data-update="release-notes"]');
     if (notes) {
       notes.textContent = '';
@@ -354,6 +361,10 @@
   }
   function applyUpdateState(payload){
     var next = parseUpdatePayload(payload);
+    if (installedAppInfo) {
+      next.installed_version = installedAppInfo.version;
+      next.installed_build = installedAppInfo.build;
+    }
     if (next.supported === false) {
       latestUpdateState = Object.assign({}, latestUpdateState, next, {auto_check: false});
       document.querySelectorAll('[data-self-update-only]').forEach(function(node){ node.hidden = true; });
@@ -378,6 +389,17 @@
   function dispatchUpdateAction(action){
     var bridge = window.lohnmailBridge;
     if (latestUpdateState.supported === false || latestUpdateState.distribution === 'store') return;
+    if (latestUpdateState.manual_download === true && action === 'download') {
+      if (bridge && typeof bridge.downloadUpdate === 'function') {
+        bridge.downloadUpdate(function(payload){
+          applyUpdateState(payload);
+          var result = parseUpdatePayload(payload);
+          openAppDialog({title: 'macOS-Update', message: result.message,
+            confirmLabel: 'OK', cancelable: false});
+        });
+      }
+      return;
+    }
     if (action === 'check') {
       latestUpdateState.status = 'checking';
       latestUpdateState.message = '';
@@ -533,9 +555,26 @@
       set: function(target, property, value){ target[property] = value; return true; }
     });
   }
+  function loadAppInfo(bridge){
+    if (!bridge || typeof bridge.getAppInfo !== 'function') return;
+    bridge.getAppInfo(function(payload){
+      var info = parseUpdatePayload(payload) || {};
+      if (!/^[0-9]+(?:\.[0-9]+)*$/.test(info.version || '') ||
+          !/^[0-9]+(?:\.[0-9]+)*$/.test(info.build || '')) return;
+      installedAppInfo = {version: info.version, build: info.build};
+      latestUpdateState.installed_version = info.version;
+      latestUpdateState.installed_build = info.build;
+      document.title = 'LohnMail ' + info.version + ' — Enterprise Edition';
+      setText('[data-app-version="sidebar"]', 'v' + info.version + ' Enterprise Edition');
+      setText('[data-app-version="about"]', 'v' + info.version + ' (Build ' + info.build + ')');
+      renderUpdateSettings();
+    });
+  }
   function bridgeReady(bridge){
     window.lohnmailBridge = bridge;
+    loadAppInfo(bridge);
     if (window.LohnMailDiagnostics) window.LohnMailDiagnostics.attach(bridge);
+    if (window.LohnMailPdfFilenames) window.LohnMailPdfFilenames.attach(bridge);
     bindBridgeSignals();
     loadDashboardState();
     loadCompanyState();
@@ -1222,6 +1261,7 @@
     var selectedExcel = state.selected_excel || (active && active.excel) || {};
     var name = state.selected_company_name || (active && active.name) || 'Mandant auswählen';
     var id = state.selected_company_id || (active && active.id) || '-';
+    if (window.LohnMailPdfFilenames) window.LohnMailPdfFilenames.companyChanged(id);
     var excelReady = !!selectedExcel.valid;
     var button = document.querySelector('[data-company-switch-toggle]');
     setText('[data-company-switch="initials"]', companyInitials(name));
@@ -1898,6 +1938,47 @@
   function applyLicenseState(state){
     latestLicenseState = state || null;
     state = state || {};
+    if (latestCompanyState) latestCompanyState.license = state;
+    if (latestDashboardState) latestDashboardState.license = state;
+    var apple = state.channel === 'appstore';
+    if (apple) {
+      closeLicensePaymentModal();
+      closeLicenseValidationModal();
+      var licenseHelp = helpArticles && helpArticles.find(function(article){ return article.id === 'license-help'; });
+      if (licenseHelp) {
+        licenseHelp.title = 'Apple-Abonnement kaufen und verwalten';
+        licenseHelp.summary = 'Abonnement und Zahlungen werden ausschließlich über den App Store verwaltet.';
+        licenseHelp.keywords = 'apple abonnement app store kaufen wiederherstellen verwalten probezeit';
+        licenseHelp.sections = [
+          {title: 'Abonnieren', text: ['Unter Lizenzen auf Abonnieren klicken. Preis und ein gegebenenfalls verfügbares Einführungsangebot werden vor dem Abschluss von Apple bestätigt.']},
+          {title: 'Käufe wiederherstellen', text: ['Mit dem Apple Account des ursprünglichen Kaufs anmelden und Käufe wiederherstellen wählen. Ein Lizenzschlüssel ist nicht erforderlich.']},
+          {title: 'Abonnement verwalten', text: ['Abonnement verwalten öffnet die Verwaltung bei Apple. Dort kann die automatische Verlängerung beendet werden.']}
+        ];
+      }
+      document.querySelectorAll('.page-license > *').forEach(function(node){
+        node.hidden = !node.hasAttribute('data-apple-subscription');
+      });
+      function applePeriod(value, unit) {
+        var units = {day:['Tag','Tage'], week:['Woche','Wochen'], month:['Monat','Monate'], year:['Jahr','Jahre']};
+        var names = units[String(unit || '').toLowerCase()];
+        return names && Number(value) > 0 ? value + ' ' + names[Number(value) === 1 ? 0 : 1] : '';
+      }
+      setText('[data-apple="status"]', state.status_label || 'Apple-Abonnement');
+      var period = applePeriod(state.period_value, state.period_unit);
+      setText('[data-apple="price"]', state.display_price ? state.display_price + (period ? ' / ' + period : '') : 'Preis wird geladen …');
+      var trial = applePeriod(state.trial_value, state.trial_unit);
+      setText('[data-apple="trial"]', trial ? 'Einführungsangebot: ' + trial + ' kostenlos' : '');
+      var offer = document.querySelector('[data-apple="trial"]');
+      if (offer) offer.hidden = !trial;
+      setText('[data-apple="expiry"]', state.access_ends_at ? formatDateTime(state.access_ends_at) : 'Noch nicht aktiviert');
+      setText('[data-apple="renewal"]', state.auto_renew === false ? 'Verlängerung deaktiviert' : state.active ? 'Zugriff bis zum angegebenen Datum' : 'Verwaltung über Apple');
+      setText('[data-apple="message"]', state.message || '');
+      var purchase = document.querySelector('[data-apple-action="purchase"]');
+      if (purchase) purchase.disabled = !state.purchase_available || !!state.active;
+      setText('[data-dashboard="license-pill"]', 'Lizenz: ' + state.label);
+      setLabeledIconText('[data-dashboard="footer-license"]', 'Lizenz: ' + state.label);
+      return;
+    }
     if (latestCompanyState) {
       latestCompanyState.license = state;
     }
@@ -2014,6 +2095,10 @@
     });
   }
   function openLicensePaymentModal(){
+    if (!latestLicenseState || latestLicenseState.channel === 'appstore') {
+      setPage('Lizenzen');
+      return;
+    }
     var modal = document.querySelector('[data-license-payment-modal]');
     if (modal) modal.hidden = false;
   }
@@ -2063,6 +2148,16 @@
     window.setTimeout(function(){ field.focus(); }, 350);
   }
   function runLicenseAction(action){
+    if (latestLicenseState && latestLicenseState.channel === 'appstore') {
+      closeLicensePaymentModal();
+      closeLicenseValidationModal();
+      setPage('Lizenzen');
+      return;
+    }
+    if (!latestLicenseState && ['buy', 'buy-card', 'buy-invoice', 'portal', 'activate'].indexOf(action) !== -1) {
+      setPage('Lizenzen');
+      return;
+    }
     if (action === 'refresh') {
       setLicenseMessage('Lizenzstatus wird aktualisiert...');
       loadLicenseState();
@@ -3115,6 +3210,18 @@
   };
   function renderAboutLegal(action){
     var content = aboutLegalContent[action];
+    if (action === 'privacy' && latestLicenseState && latestLicenseState.channel === 'appstore') {
+      content = {
+        title: 'Datenschutzerklärung · App Store',
+        intro: 'LohnMail verarbeitet die ausgewählten Lohnunterlagen lokal. Käufe und Abonnements werden über Apple StoreKit verwaltet.',
+        sections: [
+          ['Dokumente und Versand', 'PDF-Dateien, Excel-Listen, Berichte und Einstellungen werden lokal verarbeitet und gespeichert. E-Mails werden nur auf Ihre ausdrückliche Aktion über den konfigurierten Mailserver versendet.'],
+          ['Apple-Abonnement', 'Die Anwendung prüft von Apple verifizierte Transaktionen, Produkt-ID und Gültigkeitsdauer. Zahlungsdaten werden durch Apple verwaltet. In dieser Version werden keine Lizenzschlüssel oder Computer-IDs an den LohnMail-Lizenzserver gesendet.'],
+          ['Diagnose', 'Lokale technische Protokolle unterstützen die Fehlersuche. Der Versand über den bisherigen Lizenzserver ist in dieser App-Store-Version deaktiviert.'],
+          ['Kontakt', 'Bei Fragen zum Datenschutz wenden Sie sich an support@lohn-mail.de.']
+        ]
+      };
+    }
     var modal = document.querySelector('[data-legal-modal]');
     if (!content || !modal) return false;
     var title = modal.querySelector('[data-legal-detail="title"]');
@@ -3928,6 +4035,10 @@
       shippingLiveProgress.prepared = Math.max(shippingLiveProgress.prepared, prepared);
       shippingLiveProgress.sent = Math.max(shippingLiveProgress.sent, sent);
       shippingLiveProgress.errors = Math.max(shippingLiveProgress.errors, errors);
+      if (status.processed !== undefined) {
+        shippingLiveProgress.completed = Number(status.processed);
+        shippingLiveProgress.total = Math.max(shippingLiveProgress.total, shippingLiveProgress.completed);
+      }
       if (!status.failed) shippingLiveProgress.completed = shippingLiveProgress.total || ((shippingLiveProgress.dryRun ? shippingLiveProgress.prepared : shippingLiveProgress.sent) + shippingLiveProgress.errors);
       shippingLiveProgress.total = Math.max(shippingLiveProgress.total, shippingLiveProgress.completed);
       shippingLiveProgress.phase = status.failed ? 'failed' : 'complete';
@@ -3951,14 +4062,15 @@
     var subject = shippingLiveProgress.currentEmail || (shippingLiveProgress.currentPersnr ? ('Personalnr. ' + shippingLiveProgress.currentPersnr) : '');
     var current = [shippingLiveProgress.operation, subject ? ('Aktuell: ' + subject) : ''].filter(Boolean).join(' · ') || 'Vorgang wird gestartet...';
     if (shippingLiveProgress.phase === 'complete') {
-      title = shippingLiveProgress.dryRun ? 'Vorbereitung abgeschlossen' : 'Versand abgeschlossen';
+      title = (shippingLiveProgress.dryRun ? 'Vorbereitung' : 'Versand') +
+        (shippingLiveProgress.errors || (status && (status.skipped || status.outcome === 'partial')) ? ' mit Hinweisen abgeschlossen' : ' abgeschlossen');
       current = shippingLiveProgress.dryRun
         ? shippingLiveProgress.prepared + ' PDF-Dateien vorbereitet' + (shippingLiveProgress.errors ? ' · ' + shippingLiveProgress.errors + ' Fehler' : '')
         : shippingLiveProgress.sent + ' E-Mails gesendet' +
         (shippingLiveProgress.errors ? ' · ' + shippingLiveProgress.errors + ' Fehler' : '');
       percent = 100;
     } else if (shippingLiveProgress.phase === 'failed') {
-      title = 'Versand abgebrochen';
+      title = shippingLiveProgress.dryRun ? 'Vorbereitung fehlgeschlagen' : 'Versand abgebrochen';
       current = String(status && status.message || 'Der Versand konnte nicht abgeschlossen werden.');
     }
     if (status && status.checking_connection) {
@@ -3980,13 +4092,15 @@
     setText('[data-shipping-live="current"]', current);
     var bar = document.querySelector('[data-shipping-live="bar"]');
     if (bar) bar.style.width = Math.max(0, Math.min(100, percent)) + '%';
-    panel.classList.toggle('is-complete', shippingLiveProgress.phase === 'complete');
+    var warning = shippingLiveProgress.phase === 'complete' && !!(shippingLiveProgress.errors || (status && (status.skipped || status.outcome === 'partial')));
+    panel.classList.toggle('is-complete', shippingLiveProgress.phase === 'complete' && !warning);
+    panel.classList.toggle('is-warning', warning);
     panel.classList.toggle('is-failed', shippingLiveProgress.phase === 'failed');
   }
   function shippingRowPresentation(row){
     var persnr = String(row && row.persnr || '');
     var presented = Object.assign({}, row || {});
-    if (shippingLiveProgress.phase === 'idle' || !shippingLiveProgress.selected[persnr]) return presented;
+    if (['idle', 'complete', 'failed'].indexOf(shippingLiveProgress.phase) !== -1 || !shippingLiveProgress.selected[persnr]) return presented;
     var processed = shippingLiveProgress.processed[persnr];
     if (processed) {
       presented.status = processed.status;
@@ -4097,7 +4211,7 @@
     var selected = selectedShippingList().length;
     var selectable = ((latestShippingState && latestShippingState.rows) || []).filter(shippingRowSelectable).length;
     var status = (latestShippingState && latestShippingState.status) || {};
-    var title = selected + ' von ' + selectable + ' sendbaren Einträgen ausgewählt';
+    var title = selected + ' von ' + selectable + ' Einträgen ausgewählt';
     setText('[data-shipping="selection-title"]', title);
     if (shippingSelectionDirty) {
       setText('[data-shipping="selection-message"]', 'Auswahl geändert. Versand erneut vorbereiten.');
@@ -4192,6 +4306,7 @@
   function renderShippingRows(){
     var tbody = document.querySelector('[data-shipping="table-body"]');
     if (!tbody) return;
+    renderShippingIssues();
     var rows = shippingRows();
     var totalPages = Math.max(1, Math.ceil(rows.length / shippingPageSize));
     currentShippingPage = Math.max(1, Math.min(currentShippingPage, totalPages));
@@ -4226,8 +4341,10 @@
         '<td>' + escapeHtml(displayRow.size || '-') + '</td>' +
         '<td><span class="state ' + shippingStatusClass(displayRow.status) + '">' + escapeHtml(displayRow.status || 'Bereit') + '</span></td>' +
         '<td>' + escapeHtml(displayRow.planned || 'Dry-Run') + '</td>' +
-        '<td>' + escapeHtml(displayRow.error ? 'Fehler' : '') + '</td>' +
-      '</tr>';
+        '<td></td>' +
+      '</tr>' + (displayRow.error ? '<tr class="shipping-issue-row"><td colspan="8"><strong>' +
+        escapeHtml(displayRow.error_title || 'Hinweis zu diesem Eintrag') + '</strong><p>' +
+        escapeHtml(displayRow.error) + '</p></td></tr>' : '');
     }).join('');
     tbody.querySelectorAll('[data-shipping-select]').forEach(function(input){
       input.addEventListener('change', function(event){
@@ -4254,6 +4371,30 @@
     updateShippingPagination(currentShippingPage, totalPages);
     updateShippingSelectionMaster(rows);
     updateShippingSelectionSummary();
+  }
+  function renderShippingIssues(){
+    var panel = document.querySelector('[data-shipping="issues"]');
+    if (!panel) return;
+    var state = latestShippingState || {};
+    var groups = new Map();
+    (state.rows || []).forEach(function(row){
+      if (!row.error) return;
+      var key = row.error_code || row.error;
+      if (!groups.has(key)) groups.set(key, {row:row, employees:[]});
+      groups.get(key).employees.push((row.employee || 'Mitarbeiter') + ' (Personalnr. ' + (row.persnr || '—') + ')');
+    });
+    ((state.status && state.status.input_issues) || []).forEach(function(issue){
+      var key = 'file:' + issue.reason;
+      if (!groups.has(key)) groups.set(key, {row:{error_title:'PDF ohne sichere Zuordnung', error_action:issue.reason + ' Dateiformat unter Einstellungen → PDF-Dateien und Personalnummern in Excel prüfen.'}, employees:[]});
+      groups.get(key).employees.push(issue.file || 'PDF-Datei');
+    });
+    panel.hidden = !groups.size || !!(state.status && state.status.running);
+    panel.innerHTML = Array.from(groups.values()).map(function(group){
+      return '<details' + (groups.size === 1 ? ' open' : '') + '><summary>' +
+        escapeHtml(group.row.error_title || 'Einträge prüfen') + ' · ' + group.employees.length +
+        ' betroffen</summary><p>' + escapeHtml(group.row.error_action || group.row.error) +
+        '</p><p class="shipping-issue-employees">' + escapeHtml(group.employees.join(' · ')) + '</p></details>';
+    }).join('');
   }
   function applyShippingState(state){
     if (!workflowStateMatchesActiveCompany(state)) return;
@@ -5129,6 +5270,23 @@
         if (field.getAttribute('data-company-edit-field') === 'mail_scope') {
           updateCompanyMailEditVisibility();
         }
+      });
+    });
+    document.querySelectorAll('[data-apple-action]').forEach(function(button){
+      button.addEventListener('click', function(){
+        var api = window.lohnmailBridge;
+        if (!api || !api.appStoreAction) return;
+        var buttons = document.querySelectorAll('[data-apple-action]');
+        buttons.forEach(function(b){ b.disabled = true; });
+        setText('[data-apple="message"]', 'Apple-Anfrage läuft …');
+        api.appStoreAction(button.getAttribute('data-apple-action'), function(payload){
+          buttons.forEach(function(b){ b.disabled = false; });
+          try {
+            var result = JSON.parse(payload);
+            if (result.state) applyLicenseState(result.state);
+            setText('[data-apple="message"]', result.message || (result.ok ? 'Apple-Status aktualisiert.' : 'Bitte erneut versuchen.'));
+          } catch (error) { setText('[data-apple="message"]', 'Apple-Antwort konnte nicht gelesen werden.'); }
+        });
       });
     });
     document.querySelectorAll('.page-license [data-license-action]').forEach(function(button){

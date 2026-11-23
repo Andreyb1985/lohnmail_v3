@@ -18,6 +18,19 @@ from core.orchestrator import (
 
 
 class PdfPasswordTests(unittest.TestCase):
+    def test_password_settings_explain_datev_support_without_changing_option_values(self) -> None:
+        html = (Path(__file__).resolve().parents[1] / "web/index.html").read_text(encoding="utf-8")
+        panel = html.split('data-settings-panel="security"', 1)[1].split("</article>", 1)[0]
+        self.assertIn('data-settings-field="pdf_password.source" aria-describedby="pdf-birth-date-help"', panel)
+        self.assertIn('<option value="birth_date">Geburtsdatum – DATEV (TTMMJJJJ)</option>', panel)
+        self.assertIn('<option value="persnr">Personalnummer</option>', panel)
+        hint = panel.split('id="pdf-birth-date-help">', 1)[1].split("</div>", 1)[0]
+        self.assertIn("DATEV-Lohnabrechnungen", hint)
+        self.assertIn("Für andere Abrechnungsformate ist eine Anpassung auf Anfrage möglich.", hint)
+        self.assertIn("Bitte wenden Sie sich an unseren Support.", hint)
+        self.assertIn("Excel-Tabelle", hint)
+        self.assertIn("passenden Personalnummer", hint)
+
     @staticmethod
     def _write_payslip(pdf_path: Path, persnr: str, full_name: str) -> None:
         document = fitz.open()
@@ -164,7 +177,7 @@ class PdfPasswordTests(unittest.TestCase):
         )
         self.assertEqual(password, "LM-03021990-PDF")
 
-    def test_pdf_birth_date_has_priority_over_excel_fallback(self) -> None:
+    def test_matching_pdf_and_excel_dates_use_same_password(self) -> None:
         settings = {
             "enabled": True,
             "source": "birth_date",
@@ -175,11 +188,11 @@ class PdfPasswordTests(unittest.TestCase):
             settings,
             "00123",
             {
-                "PdfGeburtsdatum": "04031991",
+                "PdfGeburtsdatum": "030290",
                 "Geburtsdatum": "03021990",
             },
         )
-        self.assertEqual(password, "LM-04031991-PDF")
+        self.assertEqual(password, "LM-03021990-PDF")
 
     def test_missing_birth_date_stops_password_creation(self) -> None:
         settings = {"enabled": True, "source": "birth_date"}

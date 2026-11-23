@@ -2,7 +2,7 @@
 import re
 from pathlib import Path
 
-from .excel_io import normalize_persnr
+from .pdf_filename import match_pdf_file, validate_rule
 
 PDF_NAME_RE = re.compile(r"^(\d{1,5})(?:_(\d+))?\.pdf$", re.IGNORECASE)
 
@@ -26,7 +26,7 @@ def _sort_key(path: Path):
     return (persnr, suffix, path.name.lower())
 
 
-def scan_pdf_folder(folder: Path) -> dict:
+def scan_pdf_folder(folder: Path, rule=None, records: dict | None = None) -> dict:
     """
     Erwartete Dateinamen:
       02548.pdf
@@ -47,20 +47,18 @@ def scan_pdf_folder(folder: Path) -> dict:
     if not folder.exists() or not folder.is_dir():
         raise ValueError("Der ausgewählte PDF-Ordner existiert nicht oder ist kein Ordner.")
 
-    all_pdfs = sorted(folder.glob("*.pdf"))
+    rule = validate_rule(rule)
+    all_pdfs = sorted((p for p in folder.iterdir() if p.is_file() and p.suffix.lower() == ".pdf"),
+                      key=lambda p: (p.name.casefold(), p.name))
     grouped: dict[str, list[Path]] = {}
     invalid_files: list[Path] = []
+    matches = []
 
     for pdf_path in all_pdfs:
-        m = PDF_NAME_RE.match(pdf_path.name)
-        if not m:
-            invalid_files.append(pdf_path)
-            continue
-
-        persnr_raw = m.group(1)
-        persnr = normalize_persnr(persnr_raw)
-
-        if not persnr:
+        match = match_pdf_file(pdf_path, rule, records)
+        matches.append(match)
+        persnr = match["persnr"]
+        if match["reason"]:
             invalid_files.append(pdf_path)
             continue
 
@@ -75,4 +73,9 @@ def scan_pdf_folder(folder: Path) -> dict:
         "total_pdf_files": len(all_pdfs),
         "valid_pdf_files": sum(len(v) for v in grouped.values()),
         "unique_persnr_count": len(grouped),
+        "filename_matches": matches,
+        "filename_errors": [
+            {"file": m["file"], "persnr": m["persnr"], "reason": m["reason"]}
+            for m in matches if m["reason"]
+        ],
     }

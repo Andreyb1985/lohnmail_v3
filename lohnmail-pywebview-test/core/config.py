@@ -178,7 +178,7 @@ def company_output_dir(settings: dict, company_id: str | None = None) -> Path:
         if not isinstance(company, dict):
             continue
         if str(company.get("id", "") or "").strip() == requested_id:
-            custom = str(company.get("output_dir", "") or "").strip()
+            custom = str(company.get("output_dir", "") or "")
             if custom:
                 return Path(custom).expanduser()
             company_name = str(company.get("name", "") or requested_id or "Unternehmen")
@@ -345,8 +345,9 @@ def _deep_merge_settings(data: dict) -> dict:
                 continue
             if not company_name:
                 company_name = company_id
-            email_excel_file = str(item.get("email_excel_file", "") or item.get("excel_file", "") or "").strip()
-            pdf_input = str(item.get("pdf_input", "") or "").strip()
+            # Filesystem whitespace is significant; never trim selected paths.
+            email_excel_file = str(item.get("email_excel_file", "") or item.get("excel_file", "") or "")
+            pdf_input = str(item.get("pdf_input", "") or "")
             pdf_input_mode = str(item.get("pdf_input_mode", "folder") or "folder").strip()
             if pdf_input_mode not in {"folder", "single_pdf"}:
                 pdf_input_mode = "folder"
@@ -356,7 +357,10 @@ def _deep_merge_settings(data: dict) -> dict:
                 "email_excel_file": email_excel_file,
                 "pdf_input": pdf_input,
                 "pdf_input_mode": pdf_input_mode,
-                "output_dir": str(item.get("output_dir", "") or "").strip(),
+                # Preserve unknown/corrupt rules for explicit validation, never silently
+                # fall back to a different employee-matching algorithm.
+                "pdf_filename_rule": deepcopy(item.get("pdf_filename_rule", {"mode": "standard"})),
+                "output_dir": str(item.get("output_dir", "") or ""),
                 "output_history_dirs": [p for p in (item.get("output_history_dirs") if isinstance(item.get("output_history_dirs"), list) else []) if isinstance(p, str) and p],
             }
             if isinstance(item.get("mail_settings"), dict):
@@ -369,14 +373,14 @@ def _deep_merge_settings(data: dict) -> dict:
     if not selected_company_id or selected_company_id not in known_ids:
         merged["selected_company_id"] = merged["companies"][0]["id"] if merged["companies"] else ""
 
-    last_excel_file = str(merged.get("ui", {}).get("last_excel_file", "") or "").strip()
+    last_excel_file = str(merged.get("ui", {}).get("last_excel_file", "") or "")
     if last_excel_file and not has_company_excel_file:
         for company in merged["companies"]:
             if company["id"] == merged["selected_company_id"] and not company.get("email_excel_file"):
                 company["email_excel_file"] = last_excel_file
                 break
 
-    last_pdf_input = str(merged.get("ui", {}).get("last_pdf_dir", "") or "").strip()
+    last_pdf_input = str(merged.get("ui", {}).get("last_pdf_dir", "") or "")
     if last_pdf_input and not has_company_pdf_input:
         for company in merged["companies"]:
             if company["id"] == merged["selected_company_id"] and not company.get("pdf_input"):
