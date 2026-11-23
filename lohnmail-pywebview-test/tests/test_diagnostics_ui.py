@@ -115,8 +115,8 @@ const all=(tag,n=dialog())=>n.children.flatMap(c=>[...(c.tag===tag?[c]:[]),...al
 
 def test_diagnostics_settings_reuse_product_controls_and_keep_disclosures():
     root = Path(__file__).resolve().parents[1] / "web"
-    html = (root / "index.html").read_text()
-    css = (root / "diagnostics.css").read_text()
+    html = (root / "index.html").read_text(encoding="utf-8")
+    css = (root / "diagnostics.css").read_text(encoding="utf-8")
     assert 'class="settings-toggle-list diagnostics-consent"' in html
     assert 'id="diagnostics-auto" type="checkbox" role="switch"' in html
     assert 'class="primary" id="diagnostics-send"' in html
