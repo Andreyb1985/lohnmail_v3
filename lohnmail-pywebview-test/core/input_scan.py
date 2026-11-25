@@ -4,6 +4,8 @@ from pathlib import Path
 
 from .pdf_filename import match_pdf_file, validate_rule
 
+FOLDER_AUDIT_REVISION = "folder-paper-bundle-v1"
+
 PDF_NAME_RE = re.compile(r"^(\d{1,5})(?:_(\d+))?\.pdf$", re.IGNORECASE)
 
 
@@ -26,7 +28,8 @@ def _sort_key(path: Path):
     return (persnr, suffix, path.name.lower())
 
 
-def scan_pdf_folder(folder: Path, rule=None, records: dict | None = None) -> dict:
+def scan_pdf_folder(folder: Path, rule=None, records: dict | None = None,
+                    *, keep_without_excel: bool = False) -> dict:
     """
     Erwartete Dateinamen:
       02548.pdf
@@ -58,7 +61,10 @@ def scan_pdf_folder(folder: Path, rule=None, records: dict | None = None) -> dic
         match = match_pdf_file(pdf_path, rule, records)
         matches.append(match)
         persnr = match["persnr"]
-        if match["reason"]:
+        # Preview still reports an unmatched employee. The processing pipeline
+        # must retain clearly identified documents for the no-email paper bundle,
+        # even when the employee is absent from the address workbook.
+        if match["reason"] and not (keep_without_excel and match.get("missing_excel")):
             invalid_files.append(pdf_path)
             continue
 

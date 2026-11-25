@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import uuid
+import unicodedata
 import webbrowser
 from copy import deepcopy
 from datetime import datetime
@@ -38,7 +39,7 @@ from core.diagnostics import Diagnostics, record_progress
 from core.pdf_filename import company_rule, validate_rule, match_filename
 from core.pdf_content import PERSONNEL_RECOGNITION_REVISION
 from core.excel_io import load_email_records
-from core.input_scan import scan_pdf_folder
+from core.input_scan import FOLDER_AUDIT_REVISION, scan_pdf_folder
 from ui_web.report_history import ReportHistoryStore
 from ui_web.updater import UpdateService
 from ui_web.macos_updates import MacWebsiteUpdates, website_metadata
@@ -2252,6 +2253,9 @@ class WebBridge(QObject):
                        sort_keys=True) if self._pdf_input_mode(settings) == "folder" else "",
         )
         rule = (self._selected_company(settings) or {}).get("pdf_filename_rule", {})
+        if self._pdf_input_mode(settings) == "folder":
+            # Rebuild paper bundles created before missing Excel rows were kept.
+            signature = (*signature[:-1], f"{signature[-1]}|{FOLDER_AUDIT_REVISION}")
         if self._pdf_input_mode(settings) == "single_pdf" or (isinstance(rule, dict) and rule.get("mode") == "content"):
             # Old prepared attachments must be rechecked with the shared recognizer.
             return (*signature[:-1], f"{signature[-1]}|{PERSONNEL_RECOGNITION_REVISION}")
@@ -3346,7 +3350,9 @@ class WebBridge(QObject):
     def _normalize_company_id(value: str) -> str:
         normalized = []
         previous_dash = False
-        for char in str(value or "").strip().lower():
+        value = unicodedata.normalize("NFC", str(value or "")).strip().lower()
+        value = value.translate(str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"}))
+        for char in value:
             if char.isascii() and char.isalnum():
                 normalized.append(char)
                 previous_dash = False

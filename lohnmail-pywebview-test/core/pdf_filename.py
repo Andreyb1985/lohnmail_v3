@@ -68,10 +68,11 @@ def match_filename(name: str, rule, records: dict) -> dict:
 
 def _match_records(result: dict, name: str, records: dict | None) -> dict:
     number = result["persnr"]
-    if number and records is not None and number not in records:
+    missing_excel = bool(number and not result["reason"] and records is not None and number not in records)
+    if missing_excel:
         result["reason"] = "Personalnummer nicht in der Excel-Liste gefunden."
     record = (records or {}).get(number, {}) if not result["reason"] else {}
-    result.update(file=name, matched=bool(number and not result["reason"]),
+    result.update(file=name, matched=bool(number and not result["reason"]), missing_excel=missing_excel,
                   employee=" ".join(str(record.get(k) or "") for k in ("Vorname", "Name")).strip())
     return result
 

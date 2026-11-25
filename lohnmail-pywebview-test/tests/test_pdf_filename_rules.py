@@ -342,15 +342,34 @@ def test_total_pdf_signature_unchanged_by_filename_rule(environment, saved_rule)
 
 
 @pytest.mark.parametrize("mode", ["folder", "single_pdf"])
-def test_previous_text_recognizer_results_require_recheck(environment, mode):
+@pytest.mark.parametrize("old_revision", ["", "|labelled-personnel-v2"])
+def test_previous_text_recognizer_results_require_recheck(environment, mode, old_revision):
     settings = config.load_settings()
     settings["ui"]["last_pdf_input_mode"] = mode
     settings["companies"][0]["pdf_filename_rule"] = {"mode": "content"}
     config.save_settings(settings)
     bridge = WebBridge()
     signature = bridge._input_signature(settings)
-    old_signature = (*signature[:-1], signature[-1].split("|")[0])
-    assert signature[-1].endswith("|labelled-personnel-v2")
+    old_signature = (*signature[:-1], signature[-1].split("|")[0] + old_revision)
+    assert signature[-1].endswith("|labelled-personnel-v3")
+    WorkflowSessionStore(environment[0] / "workflows.json").save("a", {
+        "processing_input_signature": list(old_signature),
+        "validation_state": {"ready": True},
+        "shipping_rows": [{"persnr": "00022", "status": "Dry-Run"}],
+    })
+    restored = WebBridge()
+    assert not restored._validation_state["ready"]
+    assert not json.loads(restored.previewSelectedShippingSend('["00022"]'))["ok"]
+
+
+@pytest.mark.parametrize("rule", [{"mode": "standard"}, RULE, {"mode": "content"}])
+def test_folder_results_before_paper_bundle_fix_require_recheck(environment, rule):
+    settings = config.load_settings()
+    settings["companies"][0]["pdf_filename_rule"] = rule
+    config.save_settings(settings)
+    signature = WebBridge()._input_signature(settings)
+    old_signature = (*signature[:-1], signature[-1].replace("|folder-paper-bundle-v1", ""))
+    assert old_signature != signature
     WorkflowSessionStore(environment[0] / "workflows.json").save("a", {
         "processing_input_signature": list(old_signature),
         "validation_state": {"ready": True},
@@ -451,6 +470,73 @@ def test_content_sends_all_selected_employee_documents_without_foreign_or_ambigu
                for index, page in enumerate(attachment.pages))
     assert len(result["filename_errors"]) == 3
     assert result["table_rows"][0]["Count"] == 2
+
+
+@pytest.mark.parametrize("saved_rule", [{"mode": "standard"}, RULE, {"mode": "content"}])
+@pytest.mark.parametrize("operation", ["check", "prepare", "mock-send"])
+def test_folder_keeps_documents_without_excel_recipient_in_paper_bundle(environment, monkeypatch, saved_rule, operation):
+    from core import mailer
+    tmp, folder, excel = environment
+    for path in folder.iterdir():
+        path.unlink()
+    # 23 is absent from Excel, 24 has a blank address, 25 only a personnel ID.
+    # None may disappear from the paper bundle or become an email recipient.
+    for number, suffix in [(22, 0), (23, 0), (23, 1), (24, 0), (25, 0)]:
+        name = f"{number:05d}" + (f"_{suffix}" if suffix else "") + ".pdf"
+        if saved_rule == RULE:
+            name = f"Lohnabrechnung_2026_Monat{suffix}_{number:05d}_Muster_Test.pdf"
+        elif saved_rule["mode"] == "content":
+            name = f"document-{number}-{suffix}.pdf"
+        text_pdf(folder / name, [f"*Pers.-Nr. {number:05d}*\nDocument {number}-{suffix}"])
+    workbook(excel, [[22, "test22@example.invalid", "Muster", "Test"],
+                     [24, "", "Muster", "Test"], [25, "", "", ""]])
+    settings = config.load_settings()
+    settings["companies"][0]["pdf_filename_rule"] = saved_rule
+    settings["smtp"]["from_email"] = "sender@example.invalid"
+    transport = Mock()
+    monkeypatch.setattr(mailer, "test_smtp_connection", Mock())
+    monkeypatch.setattr(mailer, "send_email_with_attachment", transport)
+    result = jobs.run_main_job("check" if operation == "check" else "send",
+                               folder, excel, settings, operation != "mock-send", {"00022"})
+    assert result["missing_pdf_path"] is not None
+    with fitz.open(result["missing_pdf_path"]) as bundle:
+        texts = [p.get_text() for p in bundle]
+    assert len(texts) == 4
+    assert [next(n for n in ("00023", "00024", "00025") if n in t) for t in texts] == [
+        "00023", "00023", "00024", "00025"]
+    assert all("00022" not in t for t in texts)
+    assert result["summary"]["missing_email_count"] == 3
+    assert result["summary"]["missing_pdf_count"] == 4
+    assert result["summary"]["valid_pdf_files"] == 5
+    assert result["summary"]["content_check_ok"]
+    if operation == "mock-send":
+        transport.assert_called_once()
+        assert transport.call_args.kwargs["to_email"] == "test22@example.invalid"
+    else:
+        transport.assert_not_called()
+
+
+def test_folder_with_no_matching_excel_rows_still_creates_paper_bundle(environment, monkeypatch):
+    from core import mailer
+    tmp, folder, excel = environment
+    for path in folder.iterdir():
+        path.unlink()
+    text_pdf(folder / "00023.pdf", ["*Pers.-Nr. 00023*\nValid document"])
+    # Conflicting content and broken PDFs are errors, never paper-bundle input.
+    text_pdf(folder / "conflict.pdf", ["Pers.-Nr. 00023\nPers.-Nr. 00024"])
+    (folder / "broken.pdf").write_bytes(b"not a PDF")
+    settings = config.load_settings()
+    settings["companies"][0]["pdf_filename_rule"] = {"mode": "content"}
+    transport = Mock()
+    monkeypatch.setattr(mailer, "test_smtp_connection", Mock())
+    monkeypatch.setattr(mailer, "send_email_with_attachment", transport)
+    result = jobs.run_main_job("send", folder, excel, settings, False, {"00023"})
+    transport.assert_not_called()
+    assert not any(row["Status"] == "Gesendet" for row in result["table_rows"])
+    with fitz.open(result["missing_pdf_path"]) as bundle:
+        assert len(bundle) == 1 and "Valid document" in bundle[0].get_text()
+    assert result["summary"]["missing_email_count"] == 1
+    assert len(result["filename_errors"]) == 3  # unknown Excel number remains visible
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Win32 aliases trailing-space directory names.")

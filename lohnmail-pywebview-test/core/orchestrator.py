@@ -651,7 +651,8 @@ def _prepare_pdf_input(pdf_input: Path, run_dir: Path, progress_cb: ProgressCb =
                        filename_rule=None, records=None) -> dict:
     if pdf_input.is_dir():
         _p(progress_cb, "PDF-Ordner wird analysiert...")
-        scan_result = scan_pdf_folder(pdf_input, rule=filename_rule, records=records)
+        scan_result = scan_pdf_folder(pdf_input, rule=filename_rule, records=records,
+                                      keep_without_excel=True)
         scan_result["source_kind"] = "folder"
         scan_result["prepared_folder"] = pdf_input
         return scan_result

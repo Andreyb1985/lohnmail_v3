@@ -1331,7 +1331,8 @@
     node.classList.toggle('error', !!error);
   }
   function normalizeCompanyId(value){
-    return String(value || '').trim().toLowerCase()
+    return String(value || '').normalize('NFC').trim().toLowerCase()
+      .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
       .replace(/[^a-z0-9_\-\s]/g, '')
       .replace(/[\s_]+/g, '-')
       .replace(/-+/g, '-')
